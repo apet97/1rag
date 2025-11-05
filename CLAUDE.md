@@ -302,3 +302,4 @@ If source KB changes, rebuild is automatically triggered.
 **Date**: 2025-11-05
 **Platform**: macOS/Linux (v1.0 and v2.0); Windows requires manual venv setup
 **Python**: 3.7+
+**Apple Silicon**: ✅ M1/M2/M3 Compatible - See [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) for installation guide
