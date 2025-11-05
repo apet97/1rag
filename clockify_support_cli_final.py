@@ -231,7 +231,8 @@ def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") ->
     vecs_f32 = np.ascontiguousarray(vecs.astype("float32"))
 
     # Detect macOS arm64 and use FlatIP instead of IVFFlat to avoid segfault
-    is_macos_arm64 = platform.system() == "Darwin" and platform.processor() == "arm"
+    # Note: platform.machine() is more reliable than platform.processor() on M1 Macs
+    is_macos_arm64 = platform.system() == "Darwin" and platform.machine() == "arm64"
 
     if is_macos_arm64:
         # macOS arm64: use FlatIP (linear search, no training)
