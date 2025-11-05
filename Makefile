@@ -5,7 +5,7 @@ help:
 	@echo ""
 	@echo "  make venv       - Create Python virtual environment"
 	@echo "  make install    - Install dependencies (requires venv)"
-	@echo "  make build      - Build knowledge base with local embeddings"
+	@echo "  make build      - Build knowledge base (uses local embeddings for speed)"
 	@echo "  make selftest   - Run self-test suite"
 	@echo "  make chat       - Start interactive chat (REPL)"
 	@echo "  make smoke      - Run full smoke test suite"
@@ -22,12 +22,26 @@ venv:
 
 install:
 	@echo "Installing dependencies..."
-	source rag_env/bin/activate && pip install -q -r requirements.txt
+	@if [ -f requirements.lock ]; then \
+		echo "Installing from lockfile..."; \
+		source rag_env/bin/activate && pip install -q -r requirements.lock; \
+	else \
+		echo "Installing from requirements.txt..."; \
+		source rag_env/bin/activate && pip install -q -r requirements.txt; \
+	fi
 	@echo "✅ Dependencies installed"
 
+.PHONY: freeze
+freeze:
+	@echo "Generating requirements.lock..."
+	source rag_env/bin/activate && pip freeze > requirements.lock
+	@echo "✅ Lockfile generated"
+
 build:
-	@echo "Building knowledge base with local embeddings..."
+	@echo "Building knowledge base with local embeddings (faster than Ollama)..."
 	source rag_env/bin/activate && EMB_BACKEND=local python3 clockify_support_cli_final.py build knowledge_full.md
+	@echo ""
+	@echo "Hint: To use Ollama embeddings instead, run: EMB_BACKEND=ollama make build"
 
 selftest:
 	@echo "Running self-test suite..."
