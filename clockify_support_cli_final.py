@@ -56,7 +56,8 @@ EMB_DIM = 384  # all-MiniLM-L6-v2 dimension
 
 # ====== ANN (Approximate Nearest Neighbors) (v4.1) ======
 USE_ANN = os.environ.get("ANN", "faiss")  # "faiss" or "none"
-ANN_NLIST = int(os.environ.get("ANN_NLIST", "256"))  # IVF clusters
+# Note: nlist reduced from 256→64 for arm64 macOS stability (avoid IVF training segfault)
+ANN_NLIST = int(os.environ.get("ANN_NLIST", "64"))  # IVF clusters (reduced for stability)
 ANN_NPROBE = int(os.environ.get("ANN_NPROBE", "16"))  # clusters to search
 
 # ====== HYBRID SCORING (v4.1) ======
@@ -217,23 +218,42 @@ def _try_load_faiss():
         return None
 
 def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") -> object:
-    """Build FAISS IVFFlat index (inner product for cosine on normalized vectors)."""
+    """Build FAISS IVFFlat index (inner product for cosine on normalized vectors).
+
+    FIX (v4.1.2): macOS arm64 uses FlatIP (no training) to avoid segfault in IVF training.
+    Other platforms use IVFFlat with configurable nlist (default 256, reduced to 64 for stability).
+    """
     faiss = _try_load_faiss()
     if faiss is None:
         return None
 
     dim = vecs.shape[1]
-    quantizer = faiss.IndexFlatIP(dim)
-    index = faiss.IndexIVFFlat(quantizer, dim, nlist, faiss.METRIC_INNER_PRODUCT)
+    vecs_f32 = np.ascontiguousarray(vecs.astype("float32"))
 
-    train_size = min(20000, len(vecs))
-    train_indices = np.random.choice(len(vecs), train_size, replace=False)
-    train_vecs = vecs[train_indices].astype("float32")
-    index.train(train_vecs)
-    index.add(vecs.astype("float32"))
+    # Detect macOS arm64 and use FlatIP instead of IVFFlat to avoid segfault
+    is_macos_arm64 = platform.system() == "Darwin" and platform.processor() == "arm"
+
+    if is_macos_arm64:
+        # macOS arm64: use FlatIP (linear search, no training)
+        # Avoids fork+multiprocessing bug in IVFFlat.train() with Python 3.12
+        logger.info(f"macOS arm64 detected: using IndexFlatIP (linear search, no training)")
+        index = faiss.IndexFlatIP(dim)
+        index.add(vecs_f32)
+    else:
+        # Other platforms: use IVFFlat with nlist (default=256, or reduced to 64 from env)
+        quantizer = faiss.IndexFlatIP(dim)
+        index = faiss.IndexIVFFlat(quantizer, dim, nlist, faiss.METRIC_INNER_PRODUCT)
+
+        # Train on sample to build centroids
+        train_size = min(20000, len(vecs))
+        train_indices = np.random.choice(len(vecs), train_size, replace=False)
+        train_vecs = vecs_f32[train_indices]
+        index.train(train_vecs)
+        index.add(vecs_f32)
+
     index.nprobe = ANN_NPROBE
 
-    logger.debug(f"Built FAISS index: nlist={nlist}, nprobe={ANN_NPROBE}, vectors={len(vecs)}")
+    logger.debug(f"Built FAISS index: nlist={nlist}, nprobe={ANN_NPROBE}, vectors={len(vecs)}, platform={'arm64' if is_macos_arm64 else 'standard'}")
     return index
 
 def save_faiss_index(index, path: str = None):
@@ -785,8 +805,38 @@ def build_chunks(md_path: str):
     return chunks
 
 # ====== EMBEDDINGS ======
+def validate_ollama_embeddings(sample_text: str = "test") -> tuple:
+    """Validate Ollama embedding endpoint returns correct format and dimensions.
+
+    FIX (v4.1.2): Detect and report API format issues early before building index.
+    Returns: (embedding_dim: int, is_valid: bool)
+    """
+    try:
+        sess = get_session()
+        r = sess.post(
+            f"{OLLAMA_URL}/api/embeddings",
+            json={"model": EMB_MODEL, "prompt": sample_text},  # Use "prompt" not "input"
+            timeout=(EMB_CONNECT_T, EMB_READ_T),
+            allow_redirects=False
+        )
+        r.raise_for_status()
+
+        resp_json = r.json()
+        emb = resp_json.get("embedding", [])
+
+        if not emb or len(emb) == 0:
+            logger.error(f"❌ Ollama {EMB_MODEL}: empty embedding returned (check API format)")
+            return 0, False
+
+        dim = len(emb)
+        logger.info(f"✅ Ollama {EMB_MODEL}: {dim}-dim embeddings validated")
+        return dim, True
+    except Exception as e:
+        logger.error(f"❌ Ollama validation failed: {e}")
+        return 0, False
+
 def embed_texts(texts, retries=0):
-    """Embed texts using Ollama - Task G."""
+    """Embed texts using Ollama - Task G. Validates response format (v4.1.2)."""
     sess = get_session(retries=retries)
     vecs = []
     for i, t in enumerate(texts):
@@ -802,7 +852,15 @@ def embed_texts(texts, retries=0):
                 allow_redirects=False
             )
             r.raise_for_status()
-            vecs.append(r.json()["embedding"])
+
+            # FIX (v4.1.2): Validate embedding is not empty
+            resp_json = r.json()
+            emb = resp_json.get("embedding", [])
+            if not emb or len(emb) == 0:
+                logger.error(f"Embedding chunk {i}: empty embedding returned (check Ollama API format)")
+                sys.exit(1)
+
+            vecs.append(emb)
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
             logger.error(f"Embedding chunk {i} failed: {e} "
                        f"[hint: check OLLAMA_URL or increase EMB timeouts]")
