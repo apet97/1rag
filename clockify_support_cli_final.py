@@ -1056,6 +1056,78 @@ def normalize_scores_zscore(arr):
         return np.zeros_like(a)
     return (a - m) / s
 
+# ====== QUERY EXPANSION (Rank 13) ======
+# Domain-specific synonyms and acronyms for Clockify terminology
+QUERY_EXPANSION_DICT = {
+    # Time tracking actions
+    "track": ["log", "record", "enter", "add"],
+    "tracking": ["logging", "recording"],
+    "timer": ["stopwatch", "clock"],
+
+    # Time units
+    "time": ["hours", "duration"],
+    "hour": ["hr", "hours"],
+    "minute": ["min", "minutes"],
+
+    # Features
+    "report": ["summary", "analytics", "export"],
+    "reports": ["summaries", "analytics"],
+    "project": ["workspace", "client"],
+    "projects": ["workspaces", "clients"],
+    "task": ["activity", "assignment"],
+    "tasks": ["activities", "assignments"],
+    "tag": ["label", "category"],
+    "tags": ["labels", "categories"],
+    "invoice": ["bill", "billing"],
+    "timesheet": ["time sheet", "time log"],
+
+    # User management
+    "member": ["user", "teammate", "employee"],
+    "members": ["users", "teammates", "employees"],
+    "invite": ["add", "onboard"],
+
+    # Billing
+    "billable": ["chargeable", "invoiceable"],
+    "rate": ["price", "cost"],
+    "price": ["cost", "rate", "pricing"],
+    "pricing": ["plans", "cost", "subscription"],
+
+    # Acronyms
+    "sso": ["single sign-on", "single sign on"],
+    "api": ["application programming interface", "integration"],
+    "csv": ["comma separated values", "spreadsheet"],
+    "pdf": ["portable document format", "document"],
+
+    # Mobile
+    "mobile": ["phone", "smartphone", "app"],
+    "offline": ["no internet", "no connection"],
+}
+
+def expand_query(question: str) -> str:
+    """Expand query with domain-specific synonyms and acronyms.
+
+    Returns expanded query string with original + synonym terms.
+    Example: "How to track time?" → "How to track log record enter time hours duration?"
+    """
+    if not question:
+        return question
+
+    q_lower = question.lower()
+    expanded_terms = set()
+
+    # Find matching terms and add their synonyms
+    for term, synonyms in QUERY_EXPANSION_DICT.items():
+        # Check for whole word matches (avoid partial matches like "track" in "attraction")
+        if re.search(r'\b' + re.escape(term) + r'\b', q_lower):
+            expanded_terms.update(synonyms)
+
+    # Combine original question with expanded terms
+    if expanded_terms:
+        expansion = " ".join(expanded_terms)
+        return f"{question} {expansion}"
+
+    return question
+
 # ====== RETRIEVAL ======
 def embed_query(question: str, retries=0) -> np.ndarray:
     """Embed a query. Returns normalized query vector - Task G."""
@@ -1084,9 +1156,16 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
     """Hybrid retrieval: dense + BM25 + dedup. Optionally uses FAISS/HNSW for fast K-NN.
 
     Scoring: hybrid = ALPHA_HYBRID * normalize(BM25) + (1 - ALPHA_HYBRID) * normalize(dense)
+
+    Query expansion: Applies domain-specific synonym expansion for BM25 (keyword-based),
+    uses original query for dense retrieval (embeddings already capture semantics).
     """
     global _FAISS_INDEX
 
+    # Expand query for BM25 keyword matching (Rank 13)
+    expanded_question = expand_query(question)
+
+    # Use original question for embedding (semantic similarity already captured)
     qv_n = embed_query(question, retries=retries)
 
     # v4.1: Try to load FAISS index once on first call
@@ -1116,7 +1195,8 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
 
     # Compute full scores once for reuse (performance optimization)
     dense_scores_full = vecs_n.dot(qv_n)
-    bm_scores_full = bm25_scores(question, bm)
+    # Use expanded query for BM25 (keyword matching benefits from synonyms)
+    bm_scores_full = bm25_scores(expanded_question, bm)
 
     # Normalize once, then slice for candidates (avoids 4x redundant normalization)
     zs_dense_full = normalize_scores_zscore(dense_scores_full)
