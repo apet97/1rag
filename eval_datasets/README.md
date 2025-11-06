@@ -4,7 +4,7 @@ This directory contains ground truth evaluation datasets for measuring RAG syste
 
 ## clockify_v1.jsonl
 
-**Status**: ⚠️ Needs chunk ID population
+**Status**: ✅ Populated with title/section relevance labels
 **Questions**: 20
 **Format**: JSONL (one JSON object per line)
 
@@ -13,7 +13,10 @@ This directory contains ground truth evaluation datasets for measuring RAG syste
 ```json
 {
   "query": "User question text",
-  "relevant_chunk_ids": ["chunk_id_1", "chunk_id_2"],
+  "relevant_chunks": [
+    {"title": "[ARTICLE] Track your time - Clockify Help", "section": "## Chunk 5"},
+    {"title": "[ARTICLE] Track your time - Clockify Help", "section": "## Chunk 4"}
+  ],
   "difficulty": "easy|medium|hard",
   "tags": ["tag1", "tag2"],
   "language": "en",
@@ -24,79 +27,29 @@ This directory contains ground truth evaluation datasets for measuring RAG syste
 ### Fields
 
 - `query`: The user's question (required)
-- `relevant_chunk_ids`: List of chunk IDs from chunks.jsonl that contain relevant information (required)
+- `relevant_chunks`: List of chunk metadata objects with the article `title` and `section`
+  strings produced by the chunker. Multiple matches are allowed when the same
+  article-section pair appears more than once (e.g., overlapping chunks).
 - `difficulty`: Question difficulty level (easy/medium/hard)
 - `tags`: Categorization tags for analysis
 - `language`: Query language code (ISO 639-1)
 - `notes`: Helper notes for manual chunk ID identification
 
-### How to Populate Chunk IDs
+### How relevance labels are generated
 
-The dataset currently has empty `relevant_chunk_ids` arrays. To populate them:
+The dataset uses title/section pairs instead of raw chunk IDs because the
+Clockify chunker generates UUIDs on every build. We populate
+`relevant_chunks` automatically by:
 
-#### Method 1: Manual Search (Recommended for accuracy)
+1. Chunking `knowledge_full.md` with the production chunker
+2. Building a BM25 index across all chunk texts
+3. Selecting the top matching article sections for each question, constrained
+   by the guidance in the `notes` field (keywords are extracted and matched)
 
-```bash
-# 1. Load chunks.jsonl
-python3 -c "
-import json
-with open('chunks.jsonl') as f:
-    chunks = [json.loads(line) for line in f if line.strip()]
-
-# 2. Search for keywords
-query = 'time tracking'
-for i, chunk in enumerate(chunks):
-    if query.lower() in chunk['text'].lower():
-        print(f\"Chunk {i}: {chunk['id'][:8]}... - {chunk['title']}\")
-        print(f\"  {chunk['text'][:100]}...\")
-        print()
-"
-```
-
-#### Method 2: Automated with Current System
-
-```bash
-# Run queries and capture which chunks were retrieved
-python3 clockify_support_cli_final.py ask "How do I track time?" --debug
-
-# Note the chunk IDs shown in debug output
-# Manually verify they're actually relevant
-# Add IDs to the dataset
-```
-
-#### Method 3: Helper Script
-
-Create `populate_ground_truth.py`:
-
-```python
-import json
-
-# Load chunks
-with open('chunks.jsonl') as f:
-    chunks = [json.loads(line) for line in f if line.strip()]
-
-# Load evaluation dataset
-with open('eval_datasets/clockify_v1.jsonl') as f:
-    eval_data = [json.loads(line) for line in f if line.strip()]
-
-# For each query, manually identify relevant chunks
-for item in eval_data:
-    print(f"\nQuery: {item['query']}")
-    print(f"Notes: {item.get('notes', 'N/A')}")
-    print("\nSearch chunks.jsonl for relevant content...")
-    print("Enter chunk IDs (comma-separated): ", end='')
-
-    chunk_ids = input().strip()
-    if chunk_ids:
-        item['relevant_chunk_ids'] = [cid.strip() for cid in chunk_ids.split(',')]
-
-# Save updated dataset
-with open('eval_datasets/clockify_v1_populated.jsonl', 'w') as f:
-    for item in eval_data:
-        f.write(json.dumps(item) + '\n')
-
-print("\nSaved to eval_datasets/clockify_v1_populated.jsonl")
-```
+This approach keeps the dataset stable across rebuilds while still pointing to
+concrete passages in the knowledge base. If additional curation is needed you
+can edit the `relevant_chunks` list manually—any combination of title + section
+found in `chunks.jsonl` will be resolved by the evaluation script.
 
 ### Evaluation Metrics
 
