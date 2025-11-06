@@ -32,6 +32,19 @@ import requests
 # ====== MODULE LOGGER ======
 logger = logging.getLogger(__name__)
 
+# ====== CUSTOM EXCEPTIONS ======
+class EmbeddingError(Exception):
+    """Embedding generation failed"""
+    pass
+
+class LLMError(Exception):
+    """LLM call failed"""
+    pass
+
+class IndexError(Exception):
+    """Index loading or validation failed"""
+    pass
+
 # ====== CONFIG ======
 # These are module-level defaults, overridable via main()
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -457,13 +470,21 @@ def build_lock():
                         continue  # Retry atomic create
                     except Exception:
                         pass
-            except Exception:
-                # Corrupt lock file, try to remove
+            except FileNotFoundError:
+                # Lock removed by another process between check and read, retry
+                logger.debug("[build_lock] Lock removed during check, retrying...")
+                continue
+            except (json.JSONDecodeError, ValueError) as e:
+                # Corrupt lock file, try to remove and retry
+                logger.warning(f"[build_lock] Corrupt lock file: {e}")
                 try:
                     os.remove(BUILD_LOCK)
-                    continue
                 except Exception:
                     pass
+                continue
+            except Exception as e:
+                logger.warning(f"[build_lock] Unexpected error reading lock: {e}")
+                # Fall through to timeout logic
 
             # Still held by live process; wait and retry with 250 ms polling
             if time.time() > deadline:
@@ -945,7 +966,7 @@ def bm25_scores(query: str, bm, k1=1.2, b=0.75):
         scores[i] = s
     return scores
 
-def normalize_scores(arr):
+def normalize_scores_zscore(arr):
     """Z-score normalize."""
     a = np.asarray(arr, dtype="float32")
     if a.size == 0:
@@ -1017,9 +1038,18 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
         dense_scores = vecs_n.dot(qv_n)
         candidate_idx = np.arange(len(chunks))
 
-    bm_scores = bm25_scores(question, bm)
-    zs_dense = normalize_scores(dense_scores)
-    zs_bm = normalize_scores(bm_scores[candidate_idx] if (_FAISS_INDEX or hnsw) else bm_scores)
+    # Compute full scores once for reuse (performance optimization)
+    dense_scores_full = vecs_n.dot(qv_n)
+    bm_scores_full = bm25_scores(question, bm)
+
+    # Normalize once, then slice for candidates (avoids 4x redundant normalization)
+    zs_dense_full = normalize_scores_zscore(dense_scores_full)
+    zs_bm_full = normalize_scores_zscore(bm_scores_full)
+
+    # Slice cached scores for candidates
+    zs_dense = zs_dense_full[candidate_idx] if (_FAISS_INDEX or hnsw) else zs_dense_full
+    zs_bm = zs_bm_full[candidate_idx] if (_FAISS_INDEX or hnsw) else zs_bm_full
+
     # v4.1: Use configurable ALPHA_HYBRID for blending
     hybrid = ALPHA_HYBRID * zs_bm + (1 - ALPHA_HYBRID) * zs_dense
     top_idx = np.argsort(hybrid)[::-1][:top_k]
@@ -1034,12 +1064,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
         seen.add(key)
         filtered.append(i)
 
-    # Return full dense scores for coverage check
-    dense_scores_full = vecs_n.dot(qv_n)
-    bm_scores_full = bm25_scores(question, bm)
-    zs_dense_full = normalize_scores(dense_scores_full)
-    zs_bm_full = normalize_scores(bm_scores_full)
-    # v4.1: Use configurable ALPHA_HYBRID for full scores too
+    # Reuse cached normalized scores for full hybrid (already computed above)
     hybrid_full = ALPHA_HYBRID * zs_bm_full + (1 - ALPHA_HYBRID) * zs_dense_full
 
     return filtered, {
