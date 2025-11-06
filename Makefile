@@ -1,4 +1,4 @@
-.PHONY: help venv install selftest build chat smoke clean test eval benchmark benchmark-quick typecheck lint format pre-commit-install pre-commit-run
+.PHONY: help venv install selftest build chat smoke clean test eval benchmark benchmark-quick typecheck lint format pre-commit-install pre-commit-run dev
 
 help:
 	@echo "v4.1 Clockify RAG CLI - Make Targets"
@@ -108,3 +108,15 @@ clean:
 	rm -f .build.lock .shim.pid shim.log build.log smoke.log query.log audit.jsonl
 	rm -rf .mypy_cache .pytest_cache htmlcov .ruff_cache
 	@echo "✅ Clean complete"
+
+dev: venv install pre-commit-install
+	@echo ""
+	@echo "✅ Development environment ready!"
+	@echo ""
+	@echo "Next steps:"
+	@echo "  1. Activate venv: source rag_env/bin/activate"
+	@echo "  2. Build index: make build"
+	@echo "  3. Start chat: make chat"
+	@echo ""
+	@echo "Or run all steps: source rag_env/bin/activate && make build && make chat"
+	@echo ""

@@ -1216,7 +1216,7 @@ def bm25_scores(query: str, bm, k1=None, b=None, top_k=None):
     doc_tfs = bm["doc_tfs"]
 
     # Rank 24: Early termination with Wand-like pruning
-    if top_k is not None and top_k > 0 and len(doc_lens) > top_k * 2:
+    if top_k is not None and top_k > 0 and len(doc_lens) > top_k * 1.5:  # Quick Win #4: Lower threshold
         # Compute upper bound per query term (max possible contribution)
         # Upper bound = IDF * (k1 + 1) when term frequency is very high
         term_upper_bounds = {}
@@ -1936,6 +1936,20 @@ def load_index():
             logger.debug("hnswlib not installed; skipping HNSW")
         except Exception as e:
             logger.warning(f"Failed to load HNSW: {e}; continuing without it")
+
+    # Quick Win #2: Preload FAISS index if enabled (50-200ms faster first query)
+    global _FAISS_INDEX
+    if USE_ANN == "faiss" and os.path.exists(FILES["faiss_index"]):
+        try:
+            _FAISS_INDEX = load_faiss_index(FILES["faiss_index"])
+            if _FAISS_INDEX:
+                _FAISS_INDEX.nprobe = ANN_NPROBE
+                logger.info(f"✓ Preloaded FAISS index: nprobe={ANN_NPROBE}")
+            else:
+                logger.info("FAISS index file exists but failed to load, will fall back")
+        except Exception as e:
+            logger.warning(f"Failed to preload FAISS: {e}, will lazy-load on first query")
+            _FAISS_INDEX = None
 
     logger.debug(f"Index loaded: {len(chunks)} chunks, {vecs_n.shape[0]} embeddings, {len(bm['doc_lens'])} BM25 docs")
     return chunks, vecs_n, bm, hnsw
