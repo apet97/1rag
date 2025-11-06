@@ -582,13 +582,12 @@ def build_lock():
             # Still held by live process; wait and retry with 250 ms polling
             if time.time() > deadline:
                 raise RuntimeError("Build already in progress; timed out waiting for lock release")
-            end = time.time() + 10.0
-            while time.time() < end:
+            while time.time() < deadline:  # Use deadline directly
                 time.sleep(0.25)
                 if not os.path.exists(BUILD_LOCK):
                     break
-            else:
-                raise RuntimeError("Build already in progress; timed out waiting for lock release")
+                if time.time() > deadline:  # Check deadline in loop
+                    raise RuntimeError("Build already in progress; timed out waiting for lock release")
             continue
 
     try:
@@ -974,12 +973,14 @@ def sliding_chunks(text: str, maxc=CHUNK_CHARS, overlap=CHUNK_OVERLAP):
                         current_chunk = []
                         current_len = 0
 
-                    # Split long sentence by characters
+                    # Split long sentence by characters with consistent overlap
                     i = 0
                     while i < sent_len:
                         j = min(i + maxc, sent_len)
                         out.append(sent[i:j].strip())
-                        i = j - overlap if j < sent_len else j
+                        if j >= sent_len:
+                            break
+                        i = j - overlap if overlap < j else 0  # FIXED: respect overlap
                     continue
 
                 # Check if adding this sentence exceeds maxc
@@ -1152,14 +1153,17 @@ def embed_texts(texts, retries=0):
                 raise EmbeddingError(f"Embedding chunk {i}: empty embedding returned (check Ollama API format)")
 
             vecs.append(emb)
+        except EmbeddingError:
+            raise  # Re-raise our own errors as-is
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
             raise EmbeddingError(f"Embedding chunk {i} failed: {e} [hint: check OLLAMA_URL or increase EMB timeouts]") from e
         except requests.exceptions.RequestException as e:
             raise EmbeddingError(f"Embedding chunk {i} request failed: {e}") from e
-        except EmbeddingError:
-            raise  # Re-raise EmbeddingError
+        except (KeyError, IndexError, TypeError) as e:  # SPECIFIC errors
+            raise EmbeddingError(f"Embedding chunk {i}: invalid response format: {e}") from e
         except Exception as e:
-            raise EmbeddingError(f"Embedding chunk {i}: {e}") from e
+            logger.error(f"Unexpected error in embed_texts chunk {i}: {e}", exc_info=True)
+            raise  # Let unexpected errors propagate
 
     return np.array(vecs, dtype="float32")
 
@@ -1288,7 +1292,7 @@ def normalize_scores_zscore(arr):
         return a
     m, s = a.mean(), a.std()
     if s == 0:
-        return np.zeros_like(a)
+        return a  # FIXED: preserve original when no variance
     return (a - m) / s
 
 # ====== QUERY EXPANSION (Rank 13) ======
