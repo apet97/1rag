@@ -1791,7 +1791,7 @@ def answer_once(
         selected, scores = retrieve(question, chunks, vecs_n, bm, top_k=top_k, hnsw=hnsw, retries=retries)
         timings["retrieve"] = time.time() - t0
 
-        # Step 2: MMR diversification on deduped candidates (inline)
+        # Step 2: MMR diversification on deduped candidates (VECTORIZED)
         mmr_selected = []
         cand = list(selected)
 
@@ -1801,18 +1801,45 @@ def answer_once(
             mmr_selected.append(top_dense_idx)
             cand.remove(top_dense_idx)
 
-        # Then diversify the rest using actual passage cosine similarity
-        while cand and len(mmr_selected) < pack_top:
-            def mmr_gain(j):
-                rel = scores["dense"][j]
-                # Compute max cosine similarity with already-selected passages
-                div = 0.0
-                if mmr_selected:
-                    div = max(float(vecs_n[j].dot(vecs_n[k])) for k in mmr_selected)
-                return MMR_LAMBDA * rel - (1 - MMR_LAMBDA) * div
-            i = max(cand, key=mmr_gain)
-            mmr_selected.append(i)
-            cand.remove(i)
+        # Then diversify the rest using vectorized MMR
+        if cand and len(mmr_selected) < pack_top:
+            # Convert to numpy arrays for vectorized operations
+            cand_array = np.array(cand, dtype=np.int32)
+            relevance_scores = np.array([scores["dense"][j] for j in cand], dtype=np.float32)
+
+            # Get embedding vectors for candidates
+            cand_vecs = vecs_n[cand_array]  # [num_candidates, emb_dim]
+
+            # Iteratively select using MMR
+            remaining_mask = np.ones(len(cand_array), dtype=bool)
+
+            while np.any(remaining_mask) and len(mmr_selected) < pack_top:
+                # Compute MMR scores for remaining candidates
+                mmr_scores = MMR_LAMBDA * relevance_scores.copy()
+
+                if len(mmr_selected) > 1:  # More than just the first item
+                    # Get vectors of already-selected items (excluding the first one we added manually)
+                    selected_vecs = vecs_n[mmr_selected[1:]]  # [num_selected-1, emb_dim]
+
+                    # Compute similarity matrix: [num_candidates, num_selected]
+                    # Each row is similarities between one candidate and all selected
+                    similarity_matrix = cand_vecs @ selected_vecs.T
+
+                    # Get max similarity for each candidate
+                    max_similarities = similarity_matrix.max(axis=1)
+
+                    # Update MMR scores with diversity penalty
+                    mmr_scores -= (1 - MMR_LAMBDA) * max_similarities
+
+                # Mask out already-selected candidates
+                mmr_scores[~remaining_mask] = -np.inf
+
+                # Select candidate with highest MMR score
+                best_idx = mmr_scores.argmax()
+                selected_chunk_idx = cand_array[best_idx]
+
+                mmr_selected.append(int(selected_chunk_idx))
+                remaining_mask[best_idx] = False
 
         # Step 3: Optional LLM reranking on MMR order (Task B)
         rerank_scores = {}
