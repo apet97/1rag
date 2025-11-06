@@ -24,7 +24,7 @@ DESIGN
 """
 
 import os, re, sys, json, math, uuid, time, argparse, pathlib, unicodedata, subprocess, logging, hashlib, atexit, tempfile, errno, platform
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from contextlib import contextmanager
 import numpy as np
 import requests
@@ -1696,6 +1696,60 @@ def sanitize_question(q: str, max_length: int = 2000) -> str:
 
     return q
 
+# ====== RATE LIMITING ======
+class RateLimiter:
+    """Token bucket rate limiter for DoS prevention."""
+
+    def __init__(self, max_requests=10, window_seconds=60):
+        """Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum number of requests allowed in window
+            window_seconds: Time window in seconds
+        """
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests = deque()
+
+    def allow_request(self) -> bool:
+        """Check if request is allowed under rate limit.
+
+        Returns:
+            True if request is allowed, False if rate limited
+        """
+        now = time.time()
+
+        # Remove old requests outside the window
+        while self.requests and self.requests[0] < now - self.window_seconds:
+            self.requests.popleft()
+
+        # Check if limit exceeded
+        if len(self.requests) >= self.max_requests:
+            return False
+
+        # Allow request and record timestamp
+        self.requests.append(now)
+        return True
+
+    def wait_time(self) -> float:
+        """Calculate seconds until next request allowed.
+
+        Returns:
+            Seconds to wait (0 if request would be allowed now)
+        """
+        if len(self.requests) < self.max_requests:
+            return 0.0
+
+        # Time until oldest request falls out of window
+        oldest = self.requests[0]
+        return max(0.0, self.window_seconds - (time.time() - oldest))
+
+# Global rate limiter (10 queries per minute by default)
+RATE_LIMITER = RateLimiter(
+    max_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "10")),
+    window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+)
+
 # ====== ANSWER (STATELESS) ======
 def answer_once(
     question: str,
@@ -1720,6 +1774,14 @@ def answer_once(
     except ValueError as e:
         logger.warning(f"Invalid question: {e}")
         return f"Invalid question: {e}", {"selected": [], "scores": [], "timings": {}, "refused": False}
+
+    # Check rate limit
+    if not RATE_LIMITER.allow_request():
+        wait_seconds = RATE_LIMITER.wait_time()
+        logger.warning(f"Rate limit exceeded, wait {wait_seconds:.0f}s")
+        return f"Rate limit exceeded. Please wait {wait_seconds:.0f} seconds before next query.", {
+            "selected": [], "scores": [], "timings": {}, "refused": False, "rate_limited": True
+        }
 
     turn_start = time.time()
     timings = {}
