@@ -887,6 +887,55 @@ def validate_ollama_embeddings(sample_text: str = "test") -> tuple:
         logger.error(f"❌ Ollama validation failed: {e}")
         return 0, False
 
+# ====== EMBEDDING CACHE ======
+def load_embedding_cache():
+    """Load embedding cache from disk.
+
+    Returns:
+        dict: {content_hash: embedding_vector} mapping
+    """
+    cache = {}
+    cache_path = FILES["emb_cache"]
+    if os.path.exists(cache_path):
+        logger.info(f"[INFO] Loading embedding cache from {cache_path}")
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        entry = json.loads(line)
+                        cache[entry["hash"]] = np.array(entry["embedding"], dtype=np.float32)
+            logger.info(f"[INFO] Cache contains {len(cache)} embeddings")
+        except Exception as e:
+            logger.warning(f"[WARN] Failed to load cache: {e}; starting fresh")
+            cache = {}
+    return cache
+
+def save_embedding_cache(cache):
+    """Save embedding cache to disk.
+
+    Args:
+        cache: dict of {content_hash: embedding_vector}
+    """
+    cache_path = FILES["emb_cache"]
+    logger.info(f"[INFO] Saving {len(cache)} embeddings to cache")
+    try:
+        # Atomic write with temp file
+        temp_path = cache_path + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            for content_hash, embedding in cache.items():
+                entry = {
+                    "hash": content_hash,
+                    "embedding": embedding.tolist()
+                }
+                f.write(json.dumps(entry) + "\n")
+        # Ensure write hits disk before rename
+        with open(temp_path, "rb") as f:
+            os.fsync(f.fileno())
+        os.replace(temp_path, cache_path)  # Atomic on POSIX
+        logger.info(f"[INFO] Cache saved successfully")
+    except Exception as e:
+        logger.warning(f"[WARN] Failed to save cache: {e}")
+
 def embed_texts(texts, retries=0):
     """Embed texts using Ollama - Task G. Validates response format (v4.1.2)."""
     sess = get_session(retries=retries)
@@ -1328,13 +1377,65 @@ def build(md_path: str, retries=0):
         atomic_write_jsonl(FILES["chunks"], chunks)
 
         logger.info(f"\n[2/4] Embedding with {EMB_BACKEND}...")
-        if EMB_BACKEND == "local":
-            # v4.1: Use local SentenceTransformer embeddings
-            logger.info(f"  Using local embeddings (backend={EMB_BACKEND})...")
-            vecs = embed_local_batch([c["text"] for c in chunks], normalize=False)
-        else:
-            # Fallback to remote Ollama embeddings
-            vecs = embed_texts([c["text"] for c in chunks], retries=retries)
+
+        # Load embedding cache for incremental builds
+        emb_cache = load_embedding_cache()
+
+        # Compute content hashes and identify cache hits/misses
+        chunk_hashes = []
+        cache_hits = []
+        cache_misses = []
+        cache_miss_indices = []
+
+        for i, chunk in enumerate(chunks):
+            chunk_hash = hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest()
+            chunk_hashes.append(chunk_hash)
+
+            if chunk_hash in emb_cache:
+                cache_hits.append(emb_cache[chunk_hash])
+                cache_misses.append(None)
+            else:
+                cache_hits.append(None)
+                cache_misses.append(chunk["text"])
+                cache_miss_indices.append(i)
+
+        # Report cache statistics
+        hit_rate = (len(chunks) - len(cache_miss_indices)) / len(chunks) * 100 if chunks else 0
+        logger.info(f"  Cache: {len(chunks) - len(cache_miss_indices)}/{len(chunks)} hits ({hit_rate:.1f}%)")
+
+        # Embed only cache misses
+        new_embeddings = []
+        if cache_miss_indices:
+            texts_to_embed = [chunks[i]["text"] for i in cache_miss_indices]
+            logger.info(f"  Computing {len(texts_to_embed)} new embeddings...")
+
+            if EMB_BACKEND == "local":
+                # v4.1: Use local SentenceTransformer embeddings
+                logger.info(f"  Using local embeddings (backend={EMB_BACKEND})...")
+                new_embeddings = embed_local_batch(texts_to_embed, normalize=False)
+            else:
+                # Fallback to remote Ollama embeddings
+                new_embeddings = embed_texts(texts_to_embed, retries=retries)
+
+            # Update cache with new embeddings
+            for i, idx in enumerate(cache_miss_indices):
+                chunk_hash = chunk_hashes[idx]
+                emb_cache[chunk_hash] = new_embeddings[i].astype(np.float32)
+
+        # Reconstruct full embedding matrix in original chunk order
+        vecs = []
+        new_emb_idx = 0
+        for i in range(len(chunks)):
+            if cache_hits[i] is not None:
+                vecs.append(cache_hits[i])
+            else:
+                vecs.append(new_embeddings[new_emb_idx])
+                new_emb_idx += 1
+        vecs = np.array(vecs, dtype=np.float32)
+
+        # Save updated cache
+        if cache_miss_indices:  # Only save if there were new embeddings
+            save_embedding_cache(emb_cache)
 
         # Pre-normalize for efficient retrieval, Task H: ensure float32
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
