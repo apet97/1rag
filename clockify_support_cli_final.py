@@ -57,6 +57,12 @@ DEFAULT_TOP_K = 12
 DEFAULT_PACK_TOP = 6
 DEFAULT_THRESHOLD = 0.30
 DEFAULT_SEED = 42
+
+# BM25 parameters (tuned for technical documentation)
+# Lower k1 (1.2→1.0): Reduces term frequency saturation for repeated technical terms
+# Lower b (0.75→0.65): Reduces length normalization penalty for longer docs
+BM25_K1 = float(os.environ.get("BM25_K1", "1.0"))
+BM25_B = float(os.environ.get("BM25_B", "0.65"))
 DEFAULT_NUM_CTX = 8192
 DEFAULT_NUM_PREDICT = 512
 DEFAULT_RETRIES = 0
@@ -944,8 +950,19 @@ def build_bm25(chunks):
         "doc_tfs": [{k: v for k, v in tf.items()} for tf in doc_tfs]
     }
 
-def bm25_scores(query: str, bm, k1=1.2, b=0.75):
-    """Compute BM25 scores."""
+def bm25_scores(query: str, bm, k1=None, b=None):
+    """Compute BM25 scores.
+
+    Args:
+        query: Query string
+        bm: BM25 index dict with idf, avgdl, doc_lens, doc_tfs
+        k1: Term frequency saturation parameter (default: BM25_K1)
+        b: Length normalization parameter (default: BM25_B)
+    """
+    if k1 is None:
+        k1 = BM25_K1
+    if b is None:
+        b = BM25_B
     q = tokenize(query)
     idf = bm["idf"]
     avgdl = bm["avgdl"]
