@@ -199,6 +199,10 @@ Document and monitor any deployments that expose the shim outside of a trusted n
 - Rerank fallback logging
 - Self-check unit tests
 
+### Privacy Controls 🔐
+- `RAG_LOG_INCLUDE_ANSWER` (default `1`): set to `0`, `false`, or `no` to redact raw answers from `rag_queries.jsonl` logs.
+- `RAG_LOG_ANSWER_PLACEHOLDER` (optional): customize the placeholder text written when answers are redacted. Leave unset to use `[REDACTED]`; set to an empty string to omit the field entirely.
+
 ## Configuration Examples
 
 ### Conservative (High Precision)
