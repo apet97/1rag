@@ -133,7 +133,8 @@ def _release_lock_if_owner():
             if data.get("pid") == os.getpid():
                 os.remove(BUILD_LOCK)
                 logger.debug("Cleaned up build lock")
-    except:
+    except (OSError, FileNotFoundError, json.JSONDecodeError, KeyError):
+        # Cleanup failed - not critical, can ignore
         pass
 
 atexit.register(_release_lock_if_owner)
@@ -351,8 +352,10 @@ def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int = No
 
             if token_count >= target:
                 break
-        except:
-            pass
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            # Skip chunks with invalid data or missing indices
+            logger.debug(f"Skipping chunk {cid}: {e}")
+            continue
 
     return snippets, token_count, False
 
