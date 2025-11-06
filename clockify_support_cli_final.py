@@ -23,9 +23,28 @@ DESIGN
 - No external APIs or web calls
 """
 
-import os, re, sys, json, math, uuid, time, argparse, pathlib, unicodedata, subprocess, logging, hashlib, atexit, tempfile, errno, platform
-from collections import Counter, defaultdict
+# Standard library imports (Rank 26: Formatted per PEP 8)
+import argparse
+import atexit
+import errno
+import hashlib
+import json
+import logging
+import math
+import os
+import pathlib
+import platform
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import unicodedata
+import uuid
+from collections import Counter, defaultdict, deque
 from contextlib import contextmanager
+
+# Third-party imports
 import numpy as np
 import requests
 
@@ -45,6 +64,10 @@ class IndexError(Exception):
     """Index loading or validation failed"""
     pass
 
+class BuildError(Exception):
+    """Knowledge base build failed"""
+    pass
+
 # ====== CONFIG ======
 # These are module-level defaults, overridable via main()
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
@@ -57,6 +80,12 @@ DEFAULT_TOP_K = 12
 DEFAULT_PACK_TOP = 6
 DEFAULT_THRESHOLD = 0.30
 DEFAULT_SEED = 42
+
+# BM25 parameters (tuned for technical documentation)
+# Lower k1 (1.2→1.0): Reduces term frequency saturation for repeated technical terms
+# Lower b (0.75→0.65): Reduces length normalization penalty for longer docs
+BM25_K1 = float(os.environ.get("BM25_K1", "1.0"))
+BM25_B = float(os.environ.get("BM25_B", "0.65"))
 DEFAULT_NUM_CTX = 8192
 DEFAULT_NUM_PREDICT = 512
 DEFAULT_RETRIES = 0
@@ -65,7 +94,13 @@ CTX_TOKEN_BUDGET = int(os.environ.get("CTX_BUDGET", "2800"))  # ~11,200 chars, o
 
 # ====== EMBEDDINGS BACKEND (v4.1) ======
 EMB_BACKEND = os.environ.get("EMB_BACKEND", "local")  # "local" or "ollama"
-EMB_DIM = 384  # all-MiniLM-L6-v2 dimension
+
+# Embedding dimensions:
+# - local (SentenceTransformer all-MiniLM-L6-v2): 384-dim
+# - ollama (nomic-embed-text): 768-dim
+EMB_DIM_LOCAL = 384
+EMB_DIM_OLLAMA = 768
+EMB_DIM = EMB_DIM_LOCAL if EMB_BACKEND == "local" else EMB_DIM_OLLAMA
 
 # ====== ANN (Approximate Nearest Neighbors) (v4.1) ======
 USE_ANN = os.environ.get("ANN", "faiss")  # "faiss" or "none"
@@ -93,6 +128,9 @@ RERANK_READ_T = float(os.environ.get("RERANK_READ_TIMEOUT", "180"))
 # Exact refusal string (ASCII quotes only)
 REFUSAL_STR = "I don't know based on the MD."
 
+# Query logging configuration
+QUERY_LOG_FILE = os.environ.get("RAG_LOG_FILE", "rag_queries.jsonl")
+
 FILES = {
     "chunks": "chunks.jsonl",
     "emb": "vecs_n.npy",  # Pre-normalized embeddings (float32)
@@ -118,7 +156,8 @@ def _release_lock_if_owner():
             if data.get("pid") == os.getpid():
                 os.remove(BUILD_LOCK)
                 logger.debug("Cleaned up build lock")
-    except:
+    except (OSError, FileNotFoundError, json.JSONDecodeError, KeyError):
+        # Cleanup failed - not critical, can ignore
         pass
 
 atexit.register(_release_lock_if_owner)
@@ -270,7 +309,7 @@ def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") ->
     logger.debug(f"Built FAISS index: nlist={nlist}, nprobe={ANN_NPROBE}, vectors={len(vecs)}, platform={'arm64' if is_macos_arm64 else 'standard'}")
     return index
 
-def save_faiss_index(index, path: str = None):
+def save_faiss_index(index, path: str | None = None):
     """Save FAISS index to disk."""
     if index is None or path is None:
         return
@@ -279,7 +318,7 @@ def save_faiss_index(index, path: str = None):
         faiss.write_index(index, path)
         logger.debug(f"Saved FAISS index to {path}")
 
-def load_faiss_index(path: str = None) -> object:
+def load_faiss_index(path: str | None = None) -> object | None:
     """Load FAISS index from disk."""
     if path is None or not os.path.exists(path):
         return None
@@ -306,14 +345,14 @@ def hybrid_score(bm25_score: float, dense_score: float, alpha: float = 0.5) -> f
     return alpha * bm25_score + (1 - alpha) * dense_score
 
 # ====== DYNAMIC PACKING (v4.1 - Section 5) ======
-def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int = None, target_util: float = 0.75) -> tuple:
+def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int | None = None, target_util: float = 0.75) -> tuple:
     """Pack snippets with dynamic targeting. Returns (snippets, used_tokens, was_truncated)."""
     if budget_tokens is None:
         budget_tokens = CTX_TOKEN_BUDGET
     if not chunk_ids:
         return [], 0, False
 
-    snippets = []
+    snippets: list[str] = []
     token_count = 0
     target = int(budget_tokens * target_util)
 
@@ -336,8 +375,10 @@ def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int = No
 
             if token_count >= target:
                 break
-        except:
-            pass
+        except (KeyError, IndexError, AttributeError, TypeError) as e:
+            # Skip chunks with invalid data or missing indices
+            logger.debug(f"Skipping chunk {cid}: {e}")
+            continue
 
     return snippets, token_count, False
 
@@ -600,7 +641,7 @@ def _log_config_summary(use_rerank=False, pack_top=DEFAULT_PACK_TOP, seed=DEFAUL
     # Task I: Print refusal string once for sanity
     logger.info(f'REFUSAL_STR="{REFUSAL_STR}"')
 
-# ====== SYSTEM PROMPT ======
+# ====== SYSTEM PROMPT (Rank 25: Few-shot examples added) ======
 SYSTEM_PROMPT = f"""You are CAKE.com Internal Support for Clockify.
 Closed-book. Only use SNIPPETS. If info is missing, reply exactly:
 "{REFUSAL_STR}"
@@ -612,7 +653,28 @@ Rules:
   2) Steps
   3) Notes by role/plan/region if relevant
   4) Citations: list the snippet IDs you used, like [id1, id2], and include URLs in-line if present.
-- If SNIPPETS disagree, state the conflict and offer safest interpretation."""
+- If SNIPPETS disagree, state the conflict and offer safest interpretation.
+
+EXAMPLES:
+
+Q: How do I track time?
+SNIPPETS: [id_1] Click the timer button in the top right corner to start tracking time. You can also manually enter time entries.
+A: To track time, click the timer button in the top right corner. You can also manually enter time entries afterward. [id_1]
+
+Q: What is the universe?
+SNIPPETS: [id_2] Clockify is a time tracking tool for teams.
+A: {REFUSAL_STR}
+
+Q: What are the pricing tiers?
+SNIPPETS: [id_3] Free plan includes unlimited users. Basic is $3.99/user/month. Standard is $5.49/user/month. Pro is $7.99/user/month.
+A: Clockify offers four pricing tiers:
+- Free: Unlimited users, basic features
+- Basic: $3.99/user/month
+- Standard: $5.49/user/month
+- Pro: $7.99/user/month
+[id_3]
+
+Now answer the user's question:"""
 
 USER_WRAPPER = """SNIPPETS:
 {snips}
@@ -881,6 +943,55 @@ def validate_ollama_embeddings(sample_text: str = "test") -> tuple:
         logger.error(f"❌ Ollama validation failed: {e}")
         return 0, False
 
+# ====== EMBEDDING CACHE ======
+def load_embedding_cache():
+    """Load embedding cache from disk.
+
+    Returns:
+        dict: {content_hash: embedding_vector} mapping
+    """
+    cache = {}
+    cache_path = FILES["emb_cache"]
+    if os.path.exists(cache_path):
+        logger.info(f"[INFO] Loading embedding cache from {cache_path}")
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.strip():
+                        entry = json.loads(line)
+                        cache[entry["hash"]] = np.array(entry["embedding"], dtype=np.float32)
+            logger.info(f"[INFO] Cache contains {len(cache)} embeddings")
+        except Exception as e:
+            logger.warning(f"[WARN] Failed to load cache: {e}; starting fresh")
+            cache = {}
+    return cache
+
+def save_embedding_cache(cache):
+    """Save embedding cache to disk.
+
+    Args:
+        cache: dict of {content_hash: embedding_vector}
+    """
+    cache_path = FILES["emb_cache"]
+    logger.info(f"[INFO] Saving {len(cache)} embeddings to cache")
+    try:
+        # Atomic write with temp file
+        temp_path = cache_path + ".tmp"
+        with open(temp_path, "w", encoding="utf-8") as f:
+            for content_hash, embedding in cache.items():
+                entry = {
+                    "hash": content_hash,
+                    "embedding": embedding.tolist()
+                }
+                f.write(json.dumps(entry) + "\n")
+        # Ensure write hits disk before rename
+        with open(temp_path, "rb") as f:
+            os.fsync(f.fileno())
+        os.replace(temp_path, cache_path)  # Atomic on POSIX
+        logger.info(f"[INFO] Cache saved successfully")
+    except Exception as e:
+        logger.warning(f"[WARN] Failed to save cache: {e}")
+
 def embed_texts(texts, retries=0):
     """Embed texts using Ollama - Task G. Validates response format (v4.1.2)."""
     sess = get_session(retries=retries)
@@ -903,20 +1014,18 @@ def embed_texts(texts, retries=0):
             resp_json = r.json()
             emb = resp_json.get("embedding", [])
             if not emb or len(emb) == 0:
-                logger.error(f"Embedding chunk {i}: empty embedding returned (check Ollama API format)")
-                sys.exit(1)
+                raise EmbeddingError(f"Embedding chunk {i}: empty embedding returned (check Ollama API format)")
 
             vecs.append(emb)
         except (requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
-            logger.error(f"Embedding chunk {i} failed: {e} "
-                       f"[hint: check OLLAMA_URL or increase EMB timeouts]")
-            sys.exit(1)
+            raise EmbeddingError(f"Embedding chunk {i} failed: {e} [hint: check OLLAMA_URL or increase EMB timeouts]") from e
         except requests.exceptions.RequestException as e:
-            logger.error(f"Embedding chunk {i} request failed: {e}")
-            sys.exit(1)
+            raise EmbeddingError(f"Embedding chunk {i} request failed: {e}") from e
+        except EmbeddingError:
+            raise  # Re-raise EmbeddingError
         except Exception as e:
-            logger.error(f"Embedding chunk {i}: {e}")
-            sys.exit(1)
+            raise EmbeddingError(f"Embedding chunk {i}: {e}") from e
+
     return np.array(vecs, dtype="float32")
 
 # ====== BM25 ======
@@ -944,8 +1053,19 @@ def build_bm25(chunks):
         "doc_tfs": [{k: v for k, v in tf.items()} for tf in doc_tfs]
     }
 
-def bm25_scores(query: str, bm, k1=1.2, b=0.75):
-    """Compute BM25 scores."""
+def bm25_scores(query: str, bm, k1=None, b=None):
+    """Compute BM25 scores.
+
+    Args:
+        query: Query string
+        bm: BM25 index dict with idf, avgdl, doc_lens, doc_tfs
+        k1: Term frequency saturation parameter (default: BM25_K1)
+        b: Length normalization parameter (default: BM25_B)
+    """
+    if k1 is None:
+        k1 = BM25_K1
+    if b is None:
+        b = BM25_B
     q = tokenize(query)
     idf = bm["idf"]
     avgdl = bm["avgdl"]
@@ -976,6 +1096,78 @@ def normalize_scores_zscore(arr):
         return np.zeros_like(a)
     return (a - m) / s
 
+# ====== QUERY EXPANSION (Rank 13) ======
+# Domain-specific synonyms and acronyms for Clockify terminology
+QUERY_EXPANSION_DICT = {
+    # Time tracking actions
+    "track": ["log", "record", "enter", "add"],
+    "tracking": ["logging", "recording"],
+    "timer": ["stopwatch", "clock"],
+
+    # Time units
+    "time": ["hours", "duration"],
+    "hour": ["hr", "hours"],
+    "minute": ["min", "minutes"],
+
+    # Features
+    "report": ["summary", "analytics", "export"],
+    "reports": ["summaries", "analytics"],
+    "project": ["workspace", "client"],
+    "projects": ["workspaces", "clients"],
+    "task": ["activity", "assignment"],
+    "tasks": ["activities", "assignments"],
+    "tag": ["label", "category"],
+    "tags": ["labels", "categories"],
+    "invoice": ["bill", "billing"],
+    "timesheet": ["time sheet", "time log"],
+
+    # User management
+    "member": ["user", "teammate", "employee"],
+    "members": ["users", "teammates", "employees"],
+    "invite": ["add", "onboard"],
+
+    # Billing
+    "billable": ["chargeable", "invoiceable"],
+    "rate": ["price", "cost"],
+    "price": ["cost", "rate", "pricing"],
+    "pricing": ["plans", "cost", "subscription"],
+
+    # Acronyms
+    "sso": ["single sign-on", "single sign on"],
+    "api": ["application programming interface", "integration"],
+    "csv": ["comma separated values", "spreadsheet"],
+    "pdf": ["portable document format", "document"],
+
+    # Mobile
+    "mobile": ["phone", "smartphone", "app"],
+    "offline": ["no internet", "no connection"],
+}
+
+def expand_query(question: str) -> str:
+    """Expand query with domain-specific synonyms and acronyms.
+
+    Returns expanded query string with original + synonym terms.
+    Example: "How to track time?" → "How to track log record enter time hours duration?"
+    """
+    if not question:
+        return question
+
+    q_lower = question.lower()
+    expanded_terms = set()
+
+    # Find matching terms and add their synonyms
+    for term, synonyms in QUERY_EXPANSION_DICT.items():
+        # Check for whole word matches (avoid partial matches like "track" in "attraction")
+        if re.search(r'\b' + re.escape(term) + r'\b', q_lower):
+            expanded_terms.update(synonyms)
+
+    # Combine original question with expanded terms
+    if expanded_terms:
+        expansion = " ".join(expanded_terms)
+        return f"{question} {expansion}"
+
+    return question
+
 # ====== RETRIEVAL ======
 def embed_query(question: str, retries=0) -> np.ndarray:
     """Embed a query. Returns normalized query vector - Task G."""
@@ -994,23 +1186,26 @@ def embed_query(question: str, retries=0) -> np.ndarray:
         qv_norm = np.linalg.norm(qv)
         return qv / (qv_norm if qv_norm > 0 else 1.0)
     except (requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"Query embedding failed: {e} "
-                   f"[hint: check OLLAMA_URL or increase EMB timeouts]")
-        sys.exit(1)
+        raise EmbeddingError(f"Query embedding failed: {e} [hint: check OLLAMA_URL or increase EMB timeouts]") from e
     except requests.exceptions.RequestException as e:
-        logger.error(f"Query embedding request failed: {e}")
-        sys.exit(1)
+        raise EmbeddingError(f"Query embedding request failed: {e}") from e
     except Exception as e:
-        logger.error(f"Query embedding failed: {e}")
-        sys.exit(1)
+        raise EmbeddingError(f"Query embedding failed: {e}") from e
 
 def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
     """Hybrid retrieval: dense + BM25 + dedup. Optionally uses FAISS/HNSW for fast K-NN.
 
     Scoring: hybrid = ALPHA_HYBRID * normalize(BM25) + (1 - ALPHA_HYBRID) * normalize(dense)
+
+    Query expansion: Applies domain-specific synonym expansion for BM25 (keyword-based),
+    uses original query for dense retrieval (embeddings already capture semantics).
     """
     global _FAISS_INDEX
 
+    # Expand query for BM25 keyword matching (Rank 13)
+    expanded_question = expand_query(question)
+
+    # Use original question for embedding (semantic similarity already captured)
     qv_n = embed_query(question, retries=retries)
 
     # v4.1: Try to load FAISS index once on first call
@@ -1040,7 +1235,8 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0):
 
     # Compute full scores once for reuse (performance optimization)
     dense_scores_full = vecs_n.dot(qv_n)
-    bm_scores_full = bm25_scores(question, bm)
+    # Use expanded query for BM25 (keyword matching benefits from synonyms)
+    bm_scores_full = bm25_scores(expanded_question, bm)
 
     # Normalize once, then slice for candidates (avoids 4x redundant normalization)
     zs_dense_full = normalize_scores_zscore(dense_scores_full)
@@ -1283,15 +1479,11 @@ def ask_llm(question: str, snippets_block: str, seed=DEFAULT_SEED, num_ctx=DEFAU
             return msg
         return j.get("response", "")
     except (requests.exceptions.ConnectTimeout, requests.exceptions.ReadTimeout, requests.exceptions.ConnectionError) as e:
-        logger.error(f"LLM call failed: {e} "
-                   f"[hint: check OLLAMA_URL or increase CHAT timeouts]")
-        sys.exit(1)
+        raise LLMError(f"LLM call failed: {e} [hint: check OLLAMA_URL or increase CHAT timeouts]") from e
     except requests.exceptions.RequestException as e:
-        logger.error(f"LLM request failed: {e}")
-        sys.exit(1)
+        raise LLMError(f"LLM request failed: {e}") from e
     except Exception as e:
-        logger.error(f"Unexpected error in LLM call: {e}")
-        sys.exit(1)
+        raise LLMError(f"Unexpected error in LLM call: {e}") from e
 
 # ====== BUILD PIPELINE ======
 def build(md_path: str, retries=0):
@@ -1301,8 +1493,7 @@ def build(md_path: str, retries=0):
         logger.info("BUILDING KNOWLEDGE BASE")
         logger.info("=" * 70)
         if not os.path.exists(md_path):
-            logger.error(f"{md_path} not found")
-            sys.exit(1)
+            raise BuildError(f"{md_path} not found")
 
         logger.info("\n[1/4] Parsing and chunking...")
         chunks = build_chunks(md_path)
@@ -1311,13 +1502,65 @@ def build(md_path: str, retries=0):
         atomic_write_jsonl(FILES["chunks"], chunks)
 
         logger.info(f"\n[2/4] Embedding with {EMB_BACKEND}...")
-        if EMB_BACKEND == "local":
-            # v4.1: Use local SentenceTransformer embeddings
-            logger.info(f"  Using local embeddings (backend={EMB_BACKEND})...")
-            vecs = embed_local_batch([c["text"] for c in chunks], normalize=False)
-        else:
-            # Fallback to remote Ollama embeddings
-            vecs = embed_texts([c["text"] for c in chunks], retries=retries)
+
+        # Load embedding cache for incremental builds
+        emb_cache = load_embedding_cache()
+
+        # Compute content hashes and identify cache hits/misses
+        chunk_hashes = []
+        cache_hits = []
+        cache_misses = []
+        cache_miss_indices = []
+
+        for i, chunk in enumerate(chunks):
+            chunk_hash = hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest()
+            chunk_hashes.append(chunk_hash)
+
+            if chunk_hash in emb_cache:
+                cache_hits.append(emb_cache[chunk_hash])
+                cache_misses.append(None)
+            else:
+                cache_hits.append(None)
+                cache_misses.append(chunk["text"])
+                cache_miss_indices.append(i)
+
+        # Report cache statistics
+        hit_rate = (len(chunks) - len(cache_miss_indices)) / len(chunks) * 100 if chunks else 0
+        logger.info(f"  Cache: {len(chunks) - len(cache_miss_indices)}/{len(chunks)} hits ({hit_rate:.1f}%)")
+
+        # Embed only cache misses
+        new_embeddings = []
+        if cache_miss_indices:
+            texts_to_embed = [chunks[i]["text"] for i in cache_miss_indices]
+            logger.info(f"  Computing {len(texts_to_embed)} new embeddings...")
+
+            if EMB_BACKEND == "local":
+                # v4.1: Use local SentenceTransformer embeddings
+                logger.info(f"  Using local embeddings (backend={EMB_BACKEND})...")
+                new_embeddings = embed_local_batch(texts_to_embed, normalize=False)
+            else:
+                # Fallback to remote Ollama embeddings
+                new_embeddings = embed_texts(texts_to_embed, retries=retries)
+
+            # Update cache with new embeddings
+            for i, idx in enumerate(cache_miss_indices):
+                chunk_hash = chunk_hashes[idx]
+                emb_cache[chunk_hash] = new_embeddings[i].astype(np.float32)
+
+        # Reconstruct full embedding matrix in original chunk order
+        vecs = []
+        new_emb_idx = 0
+        for i in range(len(chunks)):
+            if cache_hits[i] is not None:
+                vecs.append(cache_hits[i])
+            else:
+                vecs.append(new_embeddings[new_emb_idx])
+                new_emb_idx += 1
+        vecs = np.array(vecs, dtype=np.float32)
+
+        # Save updated cache
+        if cache_miss_indices:  # Only save if there were new embeddings
+            save_embedding_cache(emb_cache)
 
         # Pre-normalize for efficient retrieval, Task H: ensure float32
         norms = np.linalg.norm(vecs, axis=1, keepdims=True)
@@ -1521,6 +1764,371 @@ def inject_policy_preamble(snippets_block: str, question: str) -> str:
         return policy + snippets_block
     return snippets_block
 
+# ====== INPUT SANITIZATION ======
+def sanitize_question(q: str, max_length: int = 2000) -> str:
+    """Validate and sanitize user question.
+
+    Args:
+        q: User question string
+        max_length: Maximum allowed question length (default: 2000)
+
+    Returns:
+        Sanitized question string
+
+    Raises:
+        ValueError: If question is invalid (empty, too long, invalid characters)
+    """
+    # Type check
+    if not isinstance(q, str):
+        raise ValueError("Question must be a string")
+
+    # Strip whitespace
+    q = q.strip()
+
+    # Check length
+    if len(q) == 0:
+        raise ValueError("Question cannot be empty")
+    if len(q) > max_length:
+        raise ValueError(f"Question too long (max {max_length} characters, got {len(q)})")
+
+    # Check for null bytes first (specific check)
+    if '\x00' in q:
+        raise ValueError("Question contains null bytes")
+
+    # Check for control characters (except newline, tab, carriage return)
+    if any(ord(c) < 32 and c not in '\n\r\t' for c in q):
+        raise ValueError("Question contains invalid control characters")
+
+    # Check for suspicious patterns (basic prompt injection detection)
+    suspicious_patterns = [
+        '<script',
+        'javascript:',
+        'eval(',
+        'exec(',
+        '__import__',
+        '<?php',
+    ]
+    q_lower = q.lower()
+    for pattern in suspicious_patterns:
+        if pattern in q_lower:
+            raise ValueError(f"Question contains suspicious pattern: {pattern}")
+
+    return q
+
+# ====== RATE LIMITING ======
+class RateLimiter:
+    """Token bucket rate limiter for DoS prevention."""
+
+    def __init__(self, max_requests=10, window_seconds=60):
+        """Initialize rate limiter.
+
+        Args:
+            max_requests: Maximum number of requests allowed in window
+            window_seconds: Time window in seconds
+        """
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self.requests: deque[float] = deque()
+
+    def allow_request(self) -> bool:
+        """Check if request is allowed under rate limit.
+
+        Returns:
+            True if request is allowed, False if rate limited
+        """
+        now = time.time()
+
+        # Remove old requests outside the window
+        while self.requests and self.requests[0] < now - self.window_seconds:
+            self.requests.popleft()
+
+        # Check if limit exceeded
+        if len(self.requests) >= self.max_requests:
+            return False
+
+        # Allow request and record timestamp
+        self.requests.append(now)
+        return True
+
+    def wait_time(self) -> float:
+        """Calculate seconds until next request allowed.
+
+        Returns:
+            Seconds to wait (0 if request would be allowed now)
+        """
+        if len(self.requests) < self.max_requests:
+            return 0.0
+
+        # Time until oldest request falls out of window
+        oldest = self.requests[0]
+        return max(0.0, self.window_seconds - (time.time() - oldest))
+
+# Global rate limiter (10 queries per minute by default)
+RATE_LIMITER = RateLimiter(
+    max_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "10")),
+    window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+)
+
+# ====== QUERY CACHING (Rank 14) ======
+class QueryCache:
+    """TTL-based cache for repeated queries to eliminate redundant computation."""
+
+    def __init__(self, maxsize=100, ttl_seconds=3600):
+        """Initialize query cache.
+
+        Args:
+            maxsize: Maximum number of cached queries (LRU eviction)
+            ttl_seconds: Time-to-live for cache entries in seconds
+        """
+        self.maxsize = maxsize
+        self.ttl_seconds = ttl_seconds
+        self.cache: dict[str, tuple[str, dict, float]] = {}  # {question_hash: (answer, metadata, timestamp)}
+        self.access_order: deque[str] = deque()  # For LRU eviction
+        self.hits = 0
+        self.misses = 0
+
+    def _hash_question(self, question: str) -> str:
+        """Generate cache key from question."""
+        return hashlib.md5(question.encode('utf-8')).hexdigest()
+
+    def get(self, question: str):
+        """Retrieve cached answer if available and not expired.
+
+        Returns:
+            (answer, metadata) tuple if cache hit, None if cache miss
+        """
+        key = self._hash_question(question)
+
+        if key not in self.cache:
+            self.misses += 1
+            return None
+
+        answer, metadata, timestamp = self.cache[key]
+        age = time.time() - timestamp
+
+        # Check if expired
+        if age > self.ttl_seconds:
+            del self.cache[key]
+            self.access_order.remove(key)
+            self.misses += 1
+            return None
+
+        # Cache hit - update access order
+        self.access_order.remove(key)
+        self.access_order.append(key)
+        self.hits += 1
+        logger.debug(f"[cache] HIT question_hash={key[:8]} age={age:.1f}s")
+        return answer, metadata
+
+    def put(self, question: str, answer: str, metadata: dict):
+        """Store answer in cache.
+
+        Args:
+            question: User question
+            answer: Generated answer
+            metadata: Answer metadata (selected chunks, scores, etc.)
+        """
+        key = self._hash_question(question)
+
+        # Evict oldest entry if cache full
+        if len(self.cache) >= self.maxsize and key not in self.cache:
+            oldest = self.access_order.popleft()
+            del self.cache[oldest]
+            logger.debug(f"[cache] EVICT question_hash={oldest[:8]} (LRU)")
+
+        # Store entry with timestamp
+        self.cache[key] = (answer, metadata, time.time())
+
+        # Update access order
+        if key in self.access_order:
+            self.access_order.remove(key)
+        self.access_order.append(key)
+
+        logger.debug(f"[cache] PUT question_hash={key[:8]}")
+
+    def clear(self):
+        """Clear all cache entries."""
+        self.cache.clear()
+        self.access_order.clear()
+        self.hits = 0
+        self.misses = 0
+        logger.info("[cache] CLEAR")
+
+    def stats(self) -> dict:
+        """Get cache statistics.
+
+        Returns:
+            Dict with hits, misses, size, hit_rate
+        """
+        total = self.hits + self.misses
+        hit_rate = self.hits / total if total > 0 else 0.0
+        return {
+            "hits": self.hits,
+            "misses": self.misses,
+            "size": len(self.cache),
+            "maxsize": self.maxsize,
+            "hit_rate": hit_rate
+        }
+
+# Global query cache (100 entries, 1 hour TTL by default)
+QUERY_CACHE = QueryCache(
+    maxsize=int(os.environ.get("CACHE_MAXSIZE", "100")),
+    ttl_seconds=int(os.environ.get("CACHE_TTL", "3600"))
+)
+
+# ====== STRUCTURED LOGGING ======
+def log_query(query, answer, retrieved_chunks, latency_ms, refused=False, metadata=None):
+    """Log query with structured JSON format for monitoring and analytics.
+
+    Args:
+        query: User question string
+        answer: Generated answer text
+        retrieved_chunks: List of retrieved chunk dicts with scores
+        latency_ms: Total query latency in milliseconds
+        refused: Whether answer was refused (returned REFUSAL_STR)
+        metadata: Optional dict with additional metadata (debug, backend, etc.)
+    """
+    # Extract chunk IDs and scores
+    chunk_ids = [c["id"] if isinstance(c, dict) else c for c in retrieved_chunks]
+    chunk_scores = [c.get("score", 0.0) if isinstance(c, dict) else 0.0 for c in retrieved_chunks]
+
+    log_entry = {
+        "timestamp": time.time(),
+        "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "query": query,
+        "query_length": len(query),
+        "answer_length": len(answer),
+        "num_chunks_retrieved": len(chunk_ids),
+        "chunk_ids": chunk_ids,
+        "avg_chunk_score": float(np.mean(chunk_scores)) if chunk_scores else 0.0,
+        "max_chunk_score": float(np.max(chunk_scores)) if chunk_scores else 0.0,
+        "latency_ms": latency_ms,
+        "refused": refused,
+        "metadata": metadata or {}
+    }
+
+    try:
+        with open(QUERY_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_entry) + "\n")
+    except Exception as e:
+        logger.warning(f"Failed to write query log: {e}")
+
+# ====== ANSWER PIPELINE HELPERS ======
+def apply_mmr_diversification(selected, scores, vecs_n, pack_top):
+    """Apply Maximal Marginal Relevance diversification to selected chunks.
+
+    Args:
+        selected: List of selected chunk indices
+        scores: Dict with "dense" scores
+        vecs_n: Normalized embedding vectors
+        pack_top: Maximum number of chunks to select
+
+    Returns:
+        List of diversified chunk indices
+    """
+    mmr_selected = []
+    cand = list(selected)
+
+    # Always include the top dense score first for better recall
+    if cand:
+        top_dense_idx = max(cand, key=lambda j: scores["dense"][j])
+        mmr_selected.append(top_dense_idx)
+        cand.remove(top_dense_idx)
+
+    # Then diversify the rest using vectorized MMR
+    if cand and len(mmr_selected) < pack_top:
+        # Convert to numpy arrays for vectorized operations
+        cand_array = np.array(cand, dtype=np.int32)
+        relevance_scores = np.array([scores["dense"][j] for j in cand], dtype=np.float32)
+
+        # Get embedding vectors for candidates
+        cand_vecs = vecs_n[cand_array]  # [num_candidates, emb_dim]
+
+        # Iteratively select using MMR
+        remaining_mask = np.ones(len(cand_array), dtype=bool)
+
+        while np.any(remaining_mask) and len(mmr_selected) < pack_top:
+            # Compute MMR scores for remaining candidates
+            mmr_scores = MMR_LAMBDA * relevance_scores.copy()
+
+            if len(mmr_selected) > 1:  # More than just the first item
+                # Get vectors of already-selected items (excluding the first one we added manually)
+                selected_vecs = vecs_n[mmr_selected[1:]]  # [num_selected-1, emb_dim]
+
+                # Compute similarity matrix: [num_candidates, num_selected]
+                similarity_matrix = cand_vecs @ selected_vecs.T
+
+                # Get max similarity for each candidate
+                max_similarities = similarity_matrix.max(axis=1)
+
+                # Update MMR scores with diversity penalty
+                mmr_scores -= (1 - MMR_LAMBDA) * max_similarities
+
+            # Mask out already-selected candidates
+            mmr_scores[~remaining_mask] = -np.inf
+
+            # Select candidate with highest MMR score
+            best_idx = mmr_scores.argmax()
+            selected_chunk_idx = cand_array[best_idx]
+
+            mmr_selected.append(int(selected_chunk_idx))
+            remaining_mask[best_idx] = False
+
+    return mmr_selected
+
+
+def apply_reranking(question, chunks, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries):
+    """Apply optional LLM reranking to MMR-selected chunks.
+
+    Args:
+        question: User question
+        chunks: All chunks
+        mmr_selected: List of MMR-selected chunk indices
+        scores: Dict with relevance scores
+        use_rerank: Whether to apply reranking
+        seed, num_ctx, num_predict, retries: LLM parameters
+
+    Returns:
+        Tuple of (reranked_chunks, rerank_scores, rerank_applied, rerank_reason, timing)
+    """
+    rerank_scores = {}
+    rerank_applied = False
+    rerank_reason = "disabled"
+    timing = 0.0
+
+    if use_rerank:
+        logger.debug(json.dumps({"event": "rerank_start", "candidates": len(mmr_selected)}))
+        t0 = time.time()
+        mmr_selected, rerank_scores, rerank_applied, rerank_reason = rerank_with_llm(
+            question, chunks, mmr_selected, scores, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+        )
+        timing = time.time() - t0
+        logger.debug(json.dumps({"event": "rerank_done", "selected": len(mmr_selected), "scored": len(rerank_scores)}))
+
+        # Add greppable rerank fallback log
+        if not rerank_applied:
+            logger.debug("info: rerank=fallback reason=%s", rerank_reason)
+
+    return mmr_selected, rerank_scores, rerank_applied, rerank_reason, timing
+
+
+def generate_llm_answer(question, context_block, seed, num_ctx, num_predict, retries):
+    """Generate answer from LLM given question and context.
+
+    Args:
+        question: User question
+        context_block: Packed context snippets
+        seed, num_ctx, num_predict, retries: LLM parameters
+
+    Returns:
+        Tuple of (answer_text, timing)
+    """
+    t0 = time.time()
+    answer = ask_llm(question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries).strip()
+    timing = time.time() - t0
+    return answer, timing
+
+
 # ====== ANSWER (STATELESS) ======
 def answer_once(
     question: str,
@@ -1539,6 +2147,30 @@ def answer_once(
     retries=0
 ):
     """Answer a single question. Stateless. Returns (answer_text, metadata) - Task B, C, F."""
+    # Sanitize question input
+    try:
+        question = sanitize_question(question)
+    except ValueError as e:
+        logger.warning(f"Invalid question: {e}")
+        return f"Invalid question: {e}", {"selected": [], "scores": [], "timings": {}, "refused": False}
+
+    # Check rate limit
+    if not RATE_LIMITER.allow_request():
+        wait_seconds = RATE_LIMITER.wait_time()
+        logger.warning(f"Rate limit exceeded, wait {wait_seconds:.0f}s")
+        return f"Rate limit exceeded. Please wait {wait_seconds:.0f} seconds before next query.", {
+            "selected": [], "scores": [], "timings": {}, "refused": False, "rate_limited": True
+        }
+
+    # Check query cache (Rank 14: 100% speedup on repeated queries)
+    cached_result = QUERY_CACHE.get(question)
+    if cached_result is not None:
+        answer, metadata = cached_result
+        # Add cache indicator to metadata
+        metadata["cached"] = True
+        metadata["cache_hit"] = True
+        return answer, metadata
+
     turn_start = time.time()
     timings = {}
     try:
@@ -1547,45 +2179,14 @@ def answer_once(
         selected, scores = retrieve(question, chunks, vecs_n, bm, top_k=top_k, hnsw=hnsw, retries=retries)
         timings["retrieve"] = time.time() - t0
 
-        # Step 2: MMR diversification on deduped candidates (inline)
-        mmr_selected = []
-        cand = list(selected)
+        # Step 2: MMR diversification
+        mmr_selected = apply_mmr_diversification(selected, scores, vecs_n, pack_top)
 
-        # Always include the top dense score first for better recall
-        if cand:
-            top_dense_idx = max(cand, key=lambda j: scores["dense"][j])
-            mmr_selected.append(top_dense_idx)
-            cand.remove(top_dense_idx)
-
-        # Then diversify the rest using actual passage cosine similarity
-        while cand and len(mmr_selected) < pack_top:
-            def mmr_gain(j):
-                rel = scores["dense"][j]
-                # Compute max cosine similarity with already-selected passages
-                div = 0.0
-                if mmr_selected:
-                    div = max(float(vecs_n[j].dot(vecs_n[k])) for k in mmr_selected)
-                return MMR_LAMBDA * rel - (1 - MMR_LAMBDA) * div
-            i = max(cand, key=mmr_gain)
-            mmr_selected.append(i)
-            cand.remove(i)
-
-        # Step 3: Optional LLM reranking on MMR order (Task B)
-        rerank_scores = {}
-        rerank_applied = False
-        rerank_reason = "disabled"
-        if use_rerank:
-            logger.debug(json.dumps({"event": "rerank_start", "candidates": len(mmr_selected)}))
-            t0 = time.time()
-            mmr_selected, rerank_scores, rerank_applied, rerank_reason = rerank_with_llm(
-                question, chunks, mmr_selected, scores, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
-            )
-            timings["rerank"] = time.time() - t0
-            logger.debug(json.dumps({"event": "rerank_done", "selected": len(mmr_selected), "scored": len(rerank_scores)}))
-
-            # Patch 6: Add greppable rerank fallback log
-            if not rerank_applied:
-                logger.debug("info: rerank=fallback reason=%s", rerank_reason)
+        # Step 3: Optional LLM reranking
+        mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_timing = apply_reranking(
+            question, chunks, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries
+        )
+        timings["rerank"] = rerank_timing
 
         # Step 4: Coverage check
         coverage_pass = coverage_ok(mmr_selected, scores["dense"], threshold)
@@ -1593,7 +2194,23 @@ def answer_once(
             if debug:
                 print(f"\n[DEBUG] Coverage failed: {len(mmr_selected)} selected, need ≥2 @ {threshold}")
             logger.debug(f"[coverage_gate] REJECTED: seed={seed} model={GEN_MODEL} selected={len(mmr_selected)} threshold={threshold}")
-            return REFUSAL_STR, {"selected": []}
+
+            # Log refusal
+            latency_ms = int((time.time() - turn_start) * 1000)
+            log_query(
+                query=question,
+                answer=REFUSAL_STR,
+                retrieved_chunks=mmr_selected,
+                latency_ms=latency_ms,
+                refused=True,
+                metadata={"debug": debug, "backend": EMB_BACKEND, "coverage_pass": False}
+            )
+
+            # Cache refusal (Rank 14)
+            refusal_metadata = {"selected": [], "refused": True, "cached": False, "cache_hit": False}
+            QUERY_CACHE.put(question, REFUSAL_STR, refusal_metadata)
+
+            return REFUSAL_STR, refusal_metadata
 
         # Step 5: Pack with token budget and snippet cap (Task C)
         block, ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, budget_tokens=CTX_TOKEN_BUDGET, num_ctx=num_ctx)
@@ -1601,10 +2218,9 @@ def answer_once(
         # Apply policy preamble for sensitive queries
         block = inject_policy_preamble(block, question)
 
-        # Step 6: Call LLM
-        t0 = time.time()
-        ans = ask_llm(question, block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries).strip()
-        timings["ask_llm"] = time.time() - t0
+        # Step 6: Generate answer from LLM
+        ans, llm_timing = generate_llm_answer(question, block, seed, num_ctx, num_predict, retries)
+        timings["ask_llm"] = llm_timing
         timings["total"] = time.time() - turn_start
 
         # Step 7: Optional debug output with all metrics (Task B, F)
@@ -1648,10 +2264,37 @@ def answer_once(
             f"selected={len(mmr_selected)} packed={len(ids)} used_tokens={used_tokens}"
         )
 
-        return ans, {"selected": ids}
+        # Log successful query
+        latency_ms = int(timings['total'] * 1000)
+        log_query(
+            query=question,
+            answer=ans,
+            retrieved_chunks=[{"id": cid, "score": scores["dense"].get(cid, 0.0)} for cid in ids],
+            latency_ms=latency_ms,
+            refused=False,
+            metadata={
+                "debug": debug,
+                "backend": EMB_BACKEND,
+                "coverage_pass": True,
+                "rerank_applied": rerank_applied,
+                "num_selected": len(mmr_selected),
+                "num_packed": len(ids),
+                "used_tokens": used_tokens,
+                "timings": timings
+            }
+        )
+
+        # Cache successful answer (Rank 14)
+        result_metadata = {"selected": ids, "cached": False, "cache_hit": False}
+        QUERY_CACHE.put(question, ans, result_metadata)
+
+        return ans, result_metadata
+    except (EmbeddingError, LLMError, BuildError):
+        # Re-raise specific exceptions
+        raise
     except Exception as e:
-        logger.error(f"{e}")
-        sys.exit(1)
+        # Wrap unexpected exceptions with context
+        raise RuntimeError(f"Unexpected error in answer_once: {e}") from e
 
 # ====== TASK J: SELF-TESTS (7 Tests) ======
 def test_mmr_behavior_ok():
