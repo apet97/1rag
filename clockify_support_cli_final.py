@@ -2599,6 +2599,9 @@ def answer_once(
         # Cache successful answer (Rank 14) with confidence (Rank 28)
         result_metadata = {
             "selected": ids,
+            "used_tokens": int(used_tokens),
+            "timings": timings,
+            "rerank_applied": bool(rerank_applied),
             "cached": False,
             "cache_hit": False,
             "confidence": confidence
@@ -2820,7 +2823,16 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
         )
         # v4.1: JSON output support
         if use_json:
-            output = answer_to_json(ans, meta.get("selected", []), len(meta.get("selected", [])), top_k, pack_top)
+            used_tokens = meta.get("used_tokens")
+            if used_tokens is None:
+                used_tokens = len(meta.get("selected", []))
+            output = answer_to_json(
+                ans,
+                meta.get("selected", []),
+                used_tokens,
+                top_k,
+                pack_top
+            )
             print(json.dumps(output, ensure_ascii=False, indent=2))
         else:
             print(ans)
