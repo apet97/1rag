@@ -43,12 +43,14 @@ import threading
 import time
 import unicodedata
 import uuid
-from collections import Counter, defaultdict, deque
+from collections import Counter, defaultdict
 from contextlib import contextmanager
 
 # Third-party imports
 import numpy as np
 import requests
+
+from clockify_rag.caching import QueryCache, RateLimiter
 
 # Rank 23: NLTK for sentence-aware chunking
 try:
