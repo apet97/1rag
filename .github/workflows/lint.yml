@@ -1,0 +1,61 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  lint:
+    name: Lint with ruff and mypy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run ruff linter
+      run: |
+        python -m ruff check clockify_support_cli_final.py --config pyproject.toml
+      continue-on-error: true
+
+    - name: Run mypy type checker
+      run: |
+        python -m mypy clockify_support_cli_final.py --config-file pyproject.toml
+      continue-on-error: true
+
+  format-check:
+    name: Check code formatting
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install black
+      run: |
+        python -m pip install --upgrade pip
+        pip install black==24.1.1
+
+    - name: Check formatting with black
+      run: |
+        python -m black --check --diff clockify_support_cli_final.py --config pyproject.toml
+      continue-on-error: true
