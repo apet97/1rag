@@ -14,10 +14,16 @@ def restore_config():
         "EMB_MODEL": config.EMB_MODEL,
         "CTX_TOKEN_BUDGET": config.CTX_TOKEN_BUDGET,
         "EMB_BACKEND": config.EMB_BACKEND,
+        "REFUSAL_STR": getattr(config, "REFUSAL_STR", None),
     }
     yield
     for key, value in original.items():
-        setattr(config, key, value)
+        if value is None:
+            # Some configs (like REFUSAL_STR) may not exist in older setups
+            if hasattr(config, key):
+                delattr(config, key)
+        else:
+            setattr(config, key, value)
 
 
 def test_pack_snippets_respects_runtime_budget():
@@ -98,3 +104,24 @@ def test_embed_query_uses_runtime_config(monkeypatch):
     assert pytest.approx(np.linalg.norm(vec), rel=1e-6) == 1.0
     assert calls["urls"] == [f"{new_url}/api/embeddings"]
     assert calls["models"] == [new_emb_model]
+
+
+def test_system_prompt_reflects_runtime_refusal():
+    original_refusal = getattr(config, "REFUSAL_STR", "")
+    new_refusal = "PLEASE CONTACT SUPPORT"
+
+    config.REFUSAL_STR = new_refusal
+
+    prompt_from_function = retrieval.get_system_prompt()
+    prompt_from_attr = retrieval.SYSTEM_PROMPT
+
+    assert new_refusal in prompt_from_function
+    assert new_refusal in prompt_from_attr
+
+    # USER_WRAPPER should also embed the runtime refusal when formatted
+    formatted_user = retrieval.USER_WRAPPER.format(
+        snips="Snippet", q="Question?", refusal=config.REFUSAL_STR
+    )
+    assert new_refusal in formatted_user
+
+    config.REFUSAL_STR = original_refusal
