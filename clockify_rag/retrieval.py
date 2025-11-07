@@ -40,38 +40,22 @@ RETRIEVE_PROFILE_LAST = {}
 
 # ====== PROMPTS ======
 _SYSTEM_PROMPT_TEMPLATE = """You are CAKE.com Internal Support for Clockify.
-Closed-book. Only use SNIPPETS. If info is missing, reply exactly:
-"{refusal}"
-Rules:
-- Answer in the user's language.
+Closed-book. Only use SNIPPETS. If info is missing, reply exactly "{refusal}" and set confidence to 0.
+Respond with a single JSON object that matches this schema:
+{{
+  "answer": "<complete response>",
+  "confidence": <0-100 integer>
+}}
+Guidelines for the answer field:
+- Use the user's language.
 - Be precise. No speculation. No external info. No web search.
-- Structure:
-  1) Direct answer
-  2) Steps
-  3) Notes by role/plan/region if relevant
-  4) Citations: list the snippet IDs you used, like [id1, id2], and include URLs in-line if present.
-- If SNIPPETS disagree, state the conflict and offer safest interpretation.
-
-EXAMPLES:
-
-Q: How do I track time?
-SNIPPETS: [id_1] Click the timer button in the top right corner to start tracking time. You can also manually enter time entries.
-A: To track time, click the timer button in the top right corner. You can also manually enter time entries afterward. [id_1]
-
-Q: What is the universe?
-SNIPPETS: [id_2] Clockify is a time tracking tool for teams.
-A: {refusal}
-
-Q: What are the pricing tiers?
-SNIPPETS: [id_3] Free plan includes unlimited users. Basic is $3.99/user/month. Standard is $5.49/user/month. Pro is $7.99/user/month.
-A: Clockify offers four pricing tiers:
-- Free: Unlimited users, basic features
-- Basic: $3.99/user/month
-- Standard: $5.49/user/month
-- Pro: $7.99/user/month
-[id_3]
-
-Now answer the user's question:"""
+- Include the following sections in order inside the answer text (you may format them with numbered or bulleted lists):
+  1. Direct answer.
+  2. Steps.
+  3. Notes by role/plan/region if relevant.
+  4. Citations with snippet IDs like [id1, id2], including URLs inline if present.
+- If SNIPPETS disagree, explain the conflict and provide the safest interpretation.
+- Ensure the entire output remains valid JSON with no extra prose or markdown wrappers."""
 
 
 def get_system_prompt() -> str:
@@ -99,6 +83,14 @@ Where confidence is 0-100 indicating your certainty based on the snippets:
 - 50-69: Moderate (partial information, some interpretation needed)
 - 30-49: Low (limited/unclear information in snippets)
 - 0-29: Very low (use this only if you would normally refuse)
+
+Ensure the "answer" text follows this structure in order:
+1. Direct answer.
+2. Steps.
+3. Notes by role/plan/region if relevant.
+4. Citations with snippet IDs (include URLs inline if provided).
+
+If the snippets do not contain the required information, reply exactly "{refusal}" as the answer and set confidence to 0.
 
 Return ONLY valid JSON. No markdown formatting, no ```json blocks."""
 
@@ -745,7 +737,14 @@ def ask_llm(
         },
         "messages": [
             {"role": "system", "content": get_system_prompt()},
-            {"role": "user", "content": USER_WRAPPER.format(snips=snippets_block, q=question)}
+            {
+                "role": "user",
+                "content": USER_WRAPPER.format(
+                    snips=snippets_block,
+                    q=question,
+                    refusal=config.REFUSAL_STR,
+                ),
+            }
         ],
         "stream": False
     }
