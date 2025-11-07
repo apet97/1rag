@@ -771,6 +771,12 @@ def ask_llm(
         raise LLMError(f"Unexpected error in LLM call: {e}") from e
 
 
+def __getattr__(name: str):
+    if name == "SYSTEM_PROMPT":
+        return get_system_prompt()
+    raise AttributeError(name)
+
+
 __all__ = [
     "expand_query",
     "embed_query",
@@ -786,6 +792,7 @@ __all__ = [
     "truncate_to_token_budget",
     "RETRIEVE_PROFILE_LAST",
     "get_system_prompt",
+    "SYSTEM_PROMPT",
     "USER_WRAPPER",
     "RERANK_PROMPT",
 ]
