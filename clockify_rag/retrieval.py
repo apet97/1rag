@@ -23,32 +23,7 @@ from typing import Any, Optional, Dict, List, Tuple
 import numpy as np
 import requests
 
-# Import from package modules
-from .config import (
-    OLLAMA_URL,
-    GEN_MODEL,
-    EMB_MODEL,
-    BM25_K1,
-    BM25_B,
-    ALPHA_HYBRID,
-    MMR_LAMBDA,
-    CTX_TOKEN_BUDGET,
-    DEFAULT_NUM_CTX,
-    DEFAULT_NUM_PREDICT,
-    DEFAULT_SEED,
-    EMB_CONNECT_T,
-    EMB_READ_T,
-    CHAT_CONNECT_T,
-    CHAT_READ_T,
-    RERANK_READ_T,
-    REFUSAL_STR,
-    COVERAGE_MIN_CHUNKS,
-    RERANK_SNIPPET_MAX_CHARS,
-    FAISS_CANDIDATE_MULTIPLIER,
-    ANN_CANDIDATE_MIN,
-    ANN_NPROBE,
-    USE_ANN,
-)
+import clockify_rag.config as config
 from .embedding import embed_query as _embedding_embed_query
 from .exceptions import EmbeddingError, LLMError
 from .http_utils import get_session
@@ -64,9 +39,9 @@ _FAISS_INDEX_LOCK = __import__('threading').RLock()
 RETRIEVE_PROFILE_LAST = {}
 
 # ====== PROMPTS ======
-SYSTEM_PROMPT = f"""You are CAKE.com Internal Support for Clockify.
+_SYSTEM_PROMPT_TEMPLATE = """You are CAKE.com Internal Support for Clockify.
 Closed-book. Only use SNIPPETS. If info is missing, reply exactly:
-"{REFUSAL_STR}"
+"{refusal}"
 Rules:
 - Answer in the user's language.
 - Be precise. No speculation. No external info. No web search.
@@ -85,7 +60,7 @@ A: To track time, click the timer button in the top right corner. You can also m
 
 Q: What is the universe?
 SNIPPETS: [id_2] Clockify is a time tracking tool for teams.
-A: {REFUSAL_STR}
+A: {refusal}
 
 Q: What are the pricing tiers?
 SNIPPETS: [id_3] Free plan includes unlimited users. Basic is $3.99/user/month. Standard is $5.49/user/month. Pro is $7.99/user/month.
@@ -97,6 +72,12 @@ A: Clockify offers four pricing tiers:
 [id_3]
 
 Now answer the user's question:"""
+
+
+def get_system_prompt() -> str:
+    """Return the system prompt with the current refusal string."""
+
+    return _SYSTEM_PROMPT_TEMPLATE.format(refusal=config.REFUSAL_STR)
 
 USER_WRAPPER = """SNIPPETS:
 {snips}
@@ -380,7 +361,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
              faiss_index_path=None) -> Tuple[List[int], Dict[str, Any]]:
     """Hybrid retrieval: dense + BM25 + dedup. Optionally uses FAISS/HNSW for fast K-NN.
 
-    Scoring: hybrid = ALPHA_HYBRID * normalize(BM25) + (1 - ALPHA_HYBRID) * normalize(dense)
+    Scoring: hybrid = config.ALPHA_HYBRID * normalize(BM25) + (1 - config.ALPHA_HYBRID) * normalize(dense)
 
     Query expansion: Applies domain-specific synonym expansion for BM25 (keyword-based),
     uses original query for dense retrieval (embeddings already capture semantics).
@@ -398,13 +379,13 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
     qv_n = embed_query(question, retries=retries)
 
     # Try to load FAISS index once on first call
-    if USE_ANN == "faiss" and _FAISS_INDEX is None:
+    if config.USE_ANN == "faiss" and _FAISS_INDEX is None:
         with _FAISS_INDEX_LOCK:
             if _FAISS_INDEX is None and faiss_index_path:
                 _FAISS_INDEX = load_faiss_index(faiss_index_path)
                 if _FAISS_INDEX:
-                    _FAISS_INDEX.nprobe = ANN_NPROBE
-                    logger.info("info: ann=faiss status=loaded nprobe=%d", ANN_NPROBE)
+                    _FAISS_INDEX.nprobe = config.ANN_NPROBE
+                    logger.info("info: ann=faiss status=loaded nprobe=%d", config.ANN_NPROBE)
                 else:
                     logger.info("info: ann=fallback reason=missing-index")
 
@@ -418,7 +399,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
         # Only score FAISS candidates, don't compute full corpus
         D, I = _FAISS_INDEX.search(
             qv_n.reshape(1, -1).astype("float32"),
-            max(ANN_CANDIDATE_MIN, top_k * FAISS_CANDIDATE_MULTIPLIER),
+            max(config.ANN_CANDIDATE_MIN, top_k * config.FAISS_CANDIDATE_MULTIPLIER),
         )
         candidate_idx = [int(i) for i in I[0] if 0 <= i < n_chunks]
         dense_from_ann = np.array([float(d) for d in D[0][: len(candidate_idx)]], dtype=np.float32)
@@ -428,7 +409,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
         dense_computed = len(candidate_idx)
         dot_elapsed = 0.0
     elif hnsw:
-        _, cand = hnsw.knn_query(qv_n, k=max(ANN_CANDIDATE_MIN, top_k * FAISS_CANDIDATE_MULTIPLIER))
+        _, cand = hnsw.knn_query(qv_n, k=max(config.ANN_CANDIDATE_MIN, top_k * config.FAISS_CANDIDATE_MULTIPLIER))
         candidate_idx = cand[0].tolist()
         dot_start = time.perf_counter()
         dense_scores_full = vecs_n.dot(qv_n)
@@ -444,7 +425,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
 
     if not candidate_idx:
         dense_scores_full = vecs_n.dot(qv_n)
-        max_candidates = max(ANN_CANDIDATE_MIN, top_k * FAISS_CANDIDATE_MULTIPLIER)
+        max_candidates = max(config.ANN_CANDIDATE_MIN, top_k * config.FAISS_CANDIDATE_MULTIPLIER)
         if len(chunks) > max_candidates:
             top_indices = np.argsort(dense_scores_full)[::-1][:max_candidates]
             candidate_idx = top_indices.tolist()
@@ -470,7 +451,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
     zs_bm = zs_bm_full[candidate_idx_array] if candidate_idx_array.size else np.array([], dtype="float32")
 
     # Hybrid scoring
-    hybrid = ALPHA_HYBRID * zs_bm + (1 - ALPHA_HYBRID) * zs_dense
+    hybrid = config.ALPHA_HYBRID * zs_bm + (1 - config.ALPHA_HYBRID) * zs_dense
     if hybrid.size:
         top_positions = np.argsort(hybrid)[::-1][:top_k]
         top_idx = candidate_idx_array[top_positions]
@@ -489,7 +470,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
 
     # Reuse cached normalized scores for full hybrid
     if zs_dense_full is not None:
-        hybrid_full = ALPHA_HYBRID * zs_bm_full + (1 - ALPHA_HYBRID) * zs_dense_full
+        hybrid_full = config.ALPHA_HYBRID * zs_bm_full + (1 - config.ALPHA_HYBRID) * zs_dense_full
     else:
         hybrid_full = np.zeros(len(chunks), dtype="float32")
         for idx, score in zip(candidate_idx, hybrid):
@@ -536,9 +517,16 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
     }
 
 
-def rerank_with_llm(question: str, chunks, selected, scores, seed=DEFAULT_SEED,
-                    num_ctx=DEFAULT_NUM_CTX, num_predict=DEFAULT_NUM_PREDICT,
-                    retries=0) -> Tuple:
+def rerank_with_llm(
+    question: str,
+    chunks,
+    selected,
+    scores,
+    seed: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    num_predict: Optional[int] = None,
+    retries: Optional[int] = None,
+) -> Tuple:
     """Optional: rerank MMR-selected passages with LLM.
 
     Returns: (order, scores, rerank_applied, rerank_reason)
@@ -548,11 +536,20 @@ def rerank_with_llm(question: str, chunks, selected, scores, seed=DEFAULT_SEED,
 
     # Build passage list
     passages_text = "\n\n".join([
-        f"[id={chunks[i]['id']}]\n{chunks[i]['text'][:RERANK_SNIPPET_MAX_CHARS]}"
+        f"[id={chunks[i]['id']}]\n{chunks[i]['text'][:config.RERANK_SNIPPET_MAX_CHARS]}"
         for i in selected
     ])
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
+
     payload = {
-        "model": GEN_MODEL,
+        "model": config.GEN_MODEL,
         "options": {
             "temperature": 0,
             "seed": seed,
@@ -572,9 +569,9 @@ def rerank_with_llm(question: str, chunks, selected, scores, seed=DEFAULT_SEED,
     sess = get_session(retries=retries)
     try:
         r = sess.post(
-            f"{OLLAMA_URL}/api/chat",
+            f"{config.OLLAMA_URL}/api/chat",
             json=payload,
-            timeout=(CHAT_CONNECT_T, RERANK_READ_T),
+            timeout=(config.CHAT_CONNECT_T, config.RERANK_READ_T),
             allow_redirects=False
         )
         r.raise_for_status()
@@ -636,14 +633,27 @@ def _fmt_snippet_header(chunk):
     return hdr
 
 
-def pack_snippets(chunks, order, pack_top=6, budget_tokens=CTX_TOKEN_BUDGET, num_ctx=DEFAULT_NUM_CTX):
+def pack_snippets(
+    chunks,
+    order,
+    pack_top: Optional[int] = None,
+    budget_tokens: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+):
     """Pack snippets respecting strict token budget and hard snippet cap.
 
     Guarantees:
-    - Never exceeds CTX_TOKEN_BUDGET (headers + separators included)
+    - Never exceeds config.CTX_TOKEN_BUDGET (headers + separators included)
     - First item always included (truncate body if needed; mark [TRUNCATED])
     - Returns (block, ids, used_tokens)
     """
+    if pack_top is None:
+        pack_top = config.DEFAULT_PACK_TOP
+    if budget_tokens is None:
+        budget_tokens = config.CTX_TOKEN_BUDGET
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+
     out = []
     ids = []
     used = 0
@@ -698,17 +708,32 @@ def pack_snippets(chunks, order, pack_top=6, budget_tokens=CTX_TOKEN_BUDGET, num
 
 def coverage_ok(selected, dense_scores, threshold):
     """Check coverage."""
-    if len(selected) < COVERAGE_MIN_CHUNKS:
+    if len(selected) < config.COVERAGE_MIN_CHUNKS:
         return False
     highs = sum(1 for i in selected if dense_scores[i] >= threshold)
     return highs >= 2
 
 
-def ask_llm(question: str, snippets_block: str, seed=DEFAULT_SEED, num_ctx=DEFAULT_NUM_CTX,
-            num_predict=DEFAULT_NUM_PREDICT, retries=0) -> str:
+def ask_llm(
+    question: str,
+    snippets_block: str,
+    seed: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    num_predict: Optional[int] = None,
+    retries: Optional[int] = None,
+) -> str:
     """Call Ollama chat with Qwen best-practice options."""
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
+
     payload = {
-        "model": GEN_MODEL,
+        "model": config.GEN_MODEL,
         "options": {
             "temperature": 0,
             "seed": seed,
@@ -719,7 +744,7 @@ def ask_llm(question: str, snippets_block: str, seed=DEFAULT_SEED, num_ctx=DEFAU
             "repeat_penalty": 1.05
         },
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": get_system_prompt()},
             {"role": "user", "content": USER_WRAPPER.format(snips=snippets_block, q=question)}
         ],
         "stream": False
@@ -728,9 +753,9 @@ def ask_llm(question: str, snippets_block: str, seed=DEFAULT_SEED, num_ctx=DEFAU
 
     try:
         r = sess.post(
-            f"{OLLAMA_URL}/api/chat",
+            f"{config.OLLAMA_URL}/api/chat",
             json=payload,
-            timeout=(CHAT_CONNECT_T, CHAT_READ_T),
+            timeout=(config.CHAT_CONNECT_T, config.CHAT_READ_T),
             allow_redirects=False
         )
         r.raise_for_status()
@@ -761,7 +786,7 @@ __all__ = [
     "count_tokens",
     "truncate_to_token_budget",
     "RETRIEVE_PROFILE_LAST",
-    "SYSTEM_PROMPT",
+    "get_system_prompt",
     "USER_WRAPPER",
     "RERANK_PROMPT",
 ]

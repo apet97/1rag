@@ -17,18 +17,7 @@ from typing import Dict, List, Tuple, Optional, Any
 
 import numpy as np
 
-from .config import (
-    DEFAULT_TOP_K,
-    DEFAULT_PACK_TOP,
-    DEFAULT_THRESHOLD,
-    DEFAULT_SEED,
-    DEFAULT_NUM_CTX,
-    DEFAULT_NUM_PREDICT,
-    DEFAULT_RETRIES,
-    MMR_LAMBDA,
-    REFUSAL_STR,
-    STRICT_CITATIONS,
-)
+import clockify_rag.config as config
 from .retrieval import (
     retrieve,
     rerank_with_llm,
@@ -60,6 +49,7 @@ def apply_mmr_diversification(
     """
     mmr_selected = []
     cand = list(selected)
+    lambda_val = config.MMR_LAMBDA
 
     # Always include the top dense score first for better recall
     if cand:
@@ -81,7 +71,7 @@ def apply_mmr_diversification(
 
         while np.any(remaining_mask) and len(mmr_selected) < pack_top:
             # Compute MMR scores for remaining candidates
-            mmr_scores = MMR_LAMBDA * relevance_scores.copy()
+            mmr_scores = lambda_val * relevance_scores.copy()
 
             if len(mmr_selected) > 0:  # Only apply diversity when we have prior selections
                 # Get vectors of all already-selected items
@@ -94,7 +84,7 @@ def apply_mmr_diversification(
                 max_similarities = similarity_matrix.max(axis=1)
 
                 # Update MMR scores with diversity penalty
-                mmr_scores -= (1 - MMR_LAMBDA) * max_similarities
+                mmr_scores -= (1 - lambda_val) * max_similarities
 
             # Mask out already-selected candidates
             mmr_scores[~remaining_mask] = -np.inf
@@ -115,10 +105,10 @@ def apply_reranking(
     mmr_selected: List[int],
     scores: Dict[str, Any],
     use_rerank: bool,
-    seed: int = DEFAULT_SEED,
-    num_ctx: int = DEFAULT_NUM_CTX,
-    num_predict: int = DEFAULT_NUM_PREDICT,
-    retries: int = DEFAULT_RETRIES
+    seed: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    num_predict: Optional[int] = None,
+    retries: Optional[int] = None
 ) -> Tuple[List[int], Dict, bool, str, float]:
     """Apply optional LLM reranking to MMR-selected chunks.
 
@@ -137,6 +127,15 @@ def apply_reranking(
     rerank_applied = False
     rerank_reason = "disabled"
     timing = 0.0
+
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
 
     if use_rerank:
         logger.debug(json.dumps({"event": "rerank_start", "candidates": len(mmr_selected)}))
@@ -190,10 +189,10 @@ def validate_citations(answer: str, valid_chunk_ids: List) -> Tuple[bool, List[s
 def generate_llm_answer(
     question: str,
     context_block: str,
-    seed: int = DEFAULT_SEED,
-    num_ctx: int = DEFAULT_NUM_CTX,
-    num_predict: int = DEFAULT_NUM_PREDICT,
-    retries: int = DEFAULT_RETRIES,
+    seed: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    num_predict: Optional[int] = None,
+    retries: Optional[int] = None,
     packed_ids: Optional[List] = None
 ) -> Tuple[str, float, Optional[int]]:
     """Generate answer from LLM given question and context with confidence scoring and citation validation.
@@ -210,8 +209,24 @@ def generate_llm_answer(
         - timing: Time taken for LLM call
         - confidence: 0-100 score, or None if not provided/parsable
     """
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
+
     t0 = time.time()
-    raw_response = ask_llm(question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries).strip()
+    raw_response = ask_llm(
+        question,
+        context_block,
+        seed=seed,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
+        retries=retries,
+    ).strip()
     timing = time.time() - t0
 
     # Parse JSON response with confidence
@@ -259,22 +274,25 @@ def generate_llm_answer(
     if packed_ids:
         has_citations = bool(extract_citations(answer))
 
-        if not has_citations and answer != REFUSAL_STR:
-            if STRICT_CITATIONS:
+        refusal_str = config.REFUSAL_STR
+        strict_citations = config.STRICT_CITATIONS
+
+        if not has_citations and answer != refusal_str:
+            if strict_citations:
                 logger.warning("Answer lacks citations in strict mode, refusing answer")
-                answer = REFUSAL_STR
+                answer = refusal_str
                 confidence = None
             else:
                 logger.warning("Answer lacks citations (expected format: [id_123, id_456])")
 
         # Validate citations reference actual chunks (only if not already refused)
-        if answer != REFUSAL_STR:
+        if answer != refusal_str:
             is_valid, valid_cites, invalid_cites = validate_citations(answer, packed_ids)
 
             if invalid_cites:
-                if STRICT_CITATIONS:
+                if strict_citations:
                     logger.warning(f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer")
-                    answer = REFUSAL_STR
+                    answer = refusal_str
                     confidence = None
                 else:
                     logger.warning(f"Answer contains invalid citations: {invalid_cites}")
@@ -288,14 +306,14 @@ def answer_once(
     vecs_n: np.ndarray,
     bm: Dict,
     hnsw=None,
-    top_k: int = DEFAULT_TOP_K,
-    pack_top: int = DEFAULT_PACK_TOP,
-    threshold: float = DEFAULT_THRESHOLD,
+    top_k: Optional[int] = None,
+    pack_top: Optional[int] = None,
+    threshold: Optional[float] = None,
     use_rerank: bool = False,
-    seed: int = DEFAULT_SEED,
-    num_ctx: int = DEFAULT_NUM_CTX,
-    num_predict: int = DEFAULT_NUM_PREDICT,
-    retries: int = DEFAULT_RETRIES,
+    seed: Optional[int] = None,
+    num_ctx: Optional[int] = None,
+    num_predict: Optional[int] = None,
+    retries: Optional[int] = None,
     faiss_index_path: Optional[str] = None
 ) -> Dict[str, Any]:
     """Complete answer generation pipeline.
@@ -316,6 +334,21 @@ def answer_once(
     Returns:
         Dict with answer and metadata
     """
+    if top_k is None:
+        top_k = config.DEFAULT_TOP_K
+    if pack_top is None:
+        pack_top = config.DEFAULT_PACK_TOP
+    if threshold is None:
+        threshold = config.DEFAULT_THRESHOLD
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
+
     t_start = time.time()
 
     # Retrieve
@@ -330,7 +363,7 @@ def answer_once(
     # Check coverage
     if not coverage_ok(selected, scores["dense"], threshold):
         return {
-            "answer": REFUSAL_STR,
+            "answer": config.REFUSAL_STR,
             "refused": True,
             "confidence": None,
             "selected_chunks": [],
@@ -376,7 +409,7 @@ def answer_once(
 
     return {
         "answer": answer,
-        "refused": (answer == REFUSAL_STR),
+        "refused": (answer == config.REFUSAL_STR),
         "confidence": confidence,
         "selected_chunks": selected,
         "packed_chunks": mmr_selected,
