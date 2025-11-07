@@ -771,7 +771,9 @@ def ask_llm(
         raise LLMError(f"Unexpected error in LLM call: {e}") from e
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> str:
+    """Dynamically resolve derived attributes such as ``SYSTEM_PROMPT``."""
+
     if name == "SYSTEM_PROMPT":
         return get_system_prompt()
     raise AttributeError(name)
