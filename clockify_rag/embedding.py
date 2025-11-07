@@ -1,10 +1,9 @@
 """Embedding generation using local SentenceTransformer or Ollama API."""
 
-import hashlib
 import json
 import logging
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed, wait, FIRST_COMPLETED
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import Optional
 
 import numpy as np
