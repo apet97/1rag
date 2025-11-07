@@ -25,7 +25,7 @@ import requests
 
 import clockify_rag.config as config
 from .embedding import embed_query as _embedding_embed_query
-from .exceptions import EmbeddingError, LLMError
+from .exceptions import LLMError
 from .http_utils import get_session
 from .indexing import bm25_scores, load_faiss_index
 

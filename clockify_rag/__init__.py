@@ -81,6 +81,7 @@ from .retrieval import (
     tokenize,
     count_tokens,
     truncate_to_token_budget,
+    get_system_prompt,
 )
 
 # Metrics
@@ -130,6 +131,7 @@ __all__ = [
     "DenseScoreStore", "retrieve", "rerank_with_llm",
     "pack_snippets", "coverage_ok", "ask_llm",
     "tokenize", "count_tokens", "truncate_to_token_budget",
+    "get_system_prompt",
     # Metrics
     "MetricsCollector", "MetricSnapshot", "AggregatedMetrics",
     "get_metrics", "increment_counter", "set_gauge",
