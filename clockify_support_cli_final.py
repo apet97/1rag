@@ -85,6 +85,14 @@ from clockify_rag.utils import (
     norm_ws,
     strip_noise
 )
+from clockify_rag.answer import (
+    apply_mmr_diversification,
+    apply_reranking,
+    extract_citations,
+    validate_citations,
+    generate_llm_answer,
+    answer_once
+)
 
 # Re-export config constants for backward compatibility with tests
 # Tests import these directly from this module
@@ -286,15 +294,6 @@ def _load_st_encoder():
         logger.debug("Loaded SentenceTransformer: all-MiniLM-L6-v2 (384-dim)")
     return _ST_ENCODER
 
-def embed_local_batch(texts: list, normalize: bool = True) -> np.ndarray:
-    """Encode texts locally using SentenceTransformer in batches."""
-    model = _load_st_encoder()
-    vecs = []
-    for i in range(0, len(texts), _ST_BATCH_SIZE):
-        batch = texts[i:i+_ST_BATCH_SIZE]
-        batch_vecs = model.encode(batch, normalize_embeddings=normalize, convert_to_numpy=True)
-        vecs.append(batch_vecs.astype("float32"))
-    return np.vstack(vecs) if vecs else np.zeros((0, EMB_DIM), dtype="float32")
 
 # ====== FAISS ANN INDEX (v4.1 - Section 3) ======
 _FAISS_INDEX = None
@@ -311,94 +310,7 @@ def _try_load_faiss():
         logger.info("info: ann=fallback reason=missing-faiss")
         return None
 
-def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") -> object:
-    """Build FAISS IVFFlat index (inner product for cosine on normalized vectors).
 
-    Rank 22 optimization: macOS arm64 attempts IVFFlat with nlist=32 (small subset training)
-    before falling back to FlatIP. This provides 10-50x speedup over linear search.
-    Other platforms use IVFFlat with standard nlist (default 256, reduced to 64 for stability).
-    """
-    faiss = _try_load_faiss()
-    if faiss is None:
-        return None
-
-    dim = vecs.shape[1]
-    vecs_f32 = np.ascontiguousarray(vecs.astype("float32"))
-
-    # Detect macOS arm64 and optimize for M1/M2/M3 chips
-    # Note: platform.machine() is more reliable than platform.processor() on M1 Macs
-    is_macos_arm64 = platform.system() == "Darwin" and platform.machine() == "arm64"
-
-    if is_macos_arm64:
-        # Rank 22: Try IVFFlat with smaller nlist=32 for M1 Macs
-        # Reduces segfault risk while maintaining performance benefits
-        m1_nlist = 32  # Much smaller than default 256 to avoid segfault
-        m1_train_size = min(1000, len(vecs))  # Small training set for stability
-
-        logger.info(f"macOS arm64 detected: attempting IVFFlat with nlist={m1_nlist}, train_size={m1_train_size}")
-
-        try:
-            # Attempt IVFFlat with reduced parameters
-            quantizer = faiss.IndexFlatIP(dim)
-            index = faiss.IndexIVFFlat(quantizer, dim, m1_nlist, faiss.METRIC_INNER_PRODUCT)
-
-            # Seed FAISS k-means for deterministic training (Priority #4)
-            # FAISS has internal randomness in k-means clustering that needs explicit seeding
-            faiss.seed(config.DEFAULT_SEED)
-
-            # Train on small subset to minimize segfault risk
-            rng = np.random.default_rng(config.DEFAULT_SEED)
-            if len(vecs) >= m1_train_size:
-                train_indices = rng.choice(len(vecs), m1_train_size, replace=False)
-                train_vecs = vecs_f32[train_indices]
-            else:
-                train_vecs = vecs_f32
-
-            index.train(train_vecs)
-            index.add(vecs_f32)
-
-            logger.info(f"✓ Successfully built IVFFlat index on M1 (nlist={m1_nlist}, vectors={len(vecs)})")
-            logger.info(f"  Expected speedup: 10-50x over linear search for similarity queries")
-
-        except (RuntimeError, SystemError, OSError) as e:
-            # Catch training/segfault errors and fallback to FlatIP
-            logger.warning(f"IVFFlat training failed on M1: {type(e).__name__}: {str(e)[:100]}")
-            logger.info(f"Falling back to IndexFlatIP (linear search) for stability")
-            index = faiss.IndexFlatIP(dim)
-            index.add(vecs_f32)
-    else:
-        # Other platforms: use IVFFlat with standard nlist (default=256, or reduced to 64 from env)
-        quantizer = faiss.IndexFlatIP(dim)
-        index = faiss.IndexIVFFlat(quantizer, dim, nlist, faiss.METRIC_INNER_PRODUCT)
-
-        # Seed FAISS k-means for deterministic training (Priority #4)
-        # FAISS has internal randomness in k-means clustering that needs explicit seeding
-        faiss.seed(config.DEFAULT_SEED)
-
-        # Train on sample to build centroids
-        rng = np.random.default_rng(config.DEFAULT_SEED)
-        train_size = min(20000, len(vecs))
-        train_indices = rng.choice(len(vecs), train_size, replace=False)
-        train_vecs = vecs_f32[train_indices]
-        index.train(train_vecs)
-        index.add(vecs_f32)
-
-    # Only set nprobe for IVF indexes (not flat indexes)
-    if hasattr(index, 'nprobe'):
-        index.nprobe = ANN_NPROBE
-
-    index_type = "IVFFlat" if hasattr(index, 'nlist') else "FlatIP"
-    logger.debug(f"Built FAISS index: type={index_type}, nlist={nlist if not is_macos_arm64 else 32}, nprobe={ANN_NPROBE}, vectors={len(vecs)}, platform={'arm64' if is_macos_arm64 else 'standard'}")
-    return index
-
-def save_faiss_index(index, path: str | None = None):
-    """Save FAISS index to disk."""
-    if index is None or path is None:
-        return
-    faiss = _try_load_faiss()
-    if faiss:
-        faiss.write_index(index, path)
-        logger.debug(f"Saved FAISS index to {path}")
 
 def load_faiss_index(path: str | None = None) -> object | None:
     """Load FAISS index from disk with thread-safe lazy loading."""
@@ -567,121 +479,8 @@ def _pid_alive(pid: int) -> bool:
         return False
 
 @contextmanager
-def build_lock():
-    """Exclusive build lock with atomic create (O_EXCL) and stale-lock recovery - Task D.
-
-    Uses atomic file creation to prevent partial writes. Detects stale locks via
-    PID liveness check and TTL expiration.
-    """
-    pid = os.getpid()
-    hostname = platform.node() or "unknown"
-    deadline = time.time() + 10.0  # 10s max wait
-
-    while True:
-        try:
-            # Atomic create: fails if file exists (O_EXCL)
-            fd = os.open(BUILD_LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            try:
-                with os.fdopen(fd, "w") as f:
-                    started_at = time.time()
-                    lock_data = {
-                        "pid": pid,
-                        "host": hostname,
-                        "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
-                        "started_at_epoch": started_at,
-                        "ttl_sec": BUILD_LOCK_TTL_SEC
-                    }
-                    f.write(json.dumps(lock_data))
-                break  # Successfully acquired lock
-            except Exception:
-                try:
-                    os.close(fd)
-                except Exception:
-                    pass
-                raise
-        except FileExistsError:
-            # Lock file exists; check if it's stale (Task D)
-            try:
-                with open(BUILD_LOCK, "r") as f:
-                    lock_data = json.loads(f.read())
-                stale_pid = lock_data.get("pid", 0)
-                started_at_epoch = lock_data.get("started_at_epoch", 0)
-                ttl_sec = lock_data.get("ttl_sec", BUILD_LOCK_TTL_SEC)
-
-                # Check TTL expiration
-                age = time.time() - started_at_epoch
-                is_expired = age > ttl_sec
-                pid_alive = _pid_alive(stale_pid)
-
-                # If expired or dead owner, try to remove and retry
-                if is_expired or not pid_alive:
-                    reason = f"expired (age={age:.1f}s > ttl={ttl_sec}s)" if is_expired else f"dead PID {stale_pid}"
-                    logger.warning(f"[build_lock] Recovering: {reason}")
-                    try:
-                        os.remove(BUILD_LOCK)
-                        continue  # Retry atomic create
-                    except Exception:
-                        pass
-            except FileNotFoundError:
-                # Lock removed by another process between check and read, retry
-                logger.debug("[build_lock] Lock removed during check, retrying...")
-                continue
-            except (json.JSONDecodeError, ValueError) as e:
-                # Corrupt lock file, try to remove and retry
-                logger.warning(f"[build_lock] Corrupt lock file: {e}")
-                try:
-                    os.remove(BUILD_LOCK)
-                except Exception:
-                    pass
-                continue
-            except Exception as e:
-                logger.warning(f"[build_lock] Unexpected error reading lock: {e}")
-                # Fall through to timeout logic
-
-            # Still held by live process; wait and retry with 250 ms polling
-            if time.time() > deadline:
-                raise RuntimeError("Build already in progress; timed out waiting for lock release")
-            while time.time() < deadline:  # Use deadline directly
-                time.sleep(0.25)
-                if not os.path.exists(BUILD_LOCK):
-                    break
-                if time.time() > deadline:  # Check deadline in loop
-                    raise RuntimeError("Build already in progress; timed out waiting for lock release")
-            continue
-
-    try:
-        yield
-    finally:
-        # Only remove lock if we still own it
-        try:
-            with open(BUILD_LOCK, "r") as f:
-                lock_data = json.loads(f.read())
-            if lock_data.get("pid") == os.getpid():
-                os.remove(BUILD_LOCK)
-        except Exception:
-            pass
 
 # ====== CONFIG VALIDATION ======
-def validate_ollama_url(url: str) -> str:
-    """Validate and normalize Ollama URL. Returns validated URL."""
-    from urllib.parse import urlparse
-    try:
-        parsed = urlparse(url)
-        if not parsed.scheme:
-            # Assume http if no scheme
-            url = "http://" + url
-            parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"Invalid scheme: {parsed.scheme}. Must be http or https.")
-        if not parsed.netloc:
-            raise ValueError(f"Invalid URL: {url}. Must include host.")
-        # Normalize: ensure no trailing slash
-        url = f"{parsed.scheme}://{parsed.netloc}"
-        if parsed.path and parsed.path != "/":
-            url += parsed.path
-        return url
-    except Exception as e:
-        raise ValueError(f"Invalid Ollama URL '{url}': {e}")
 
 def validate_and_set_config(ollama_url=None, gen_model=None, emb_model=None, ctx_budget=None):
     """Validate and set global config from CLI args.
@@ -796,17 +595,6 @@ PASSAGES:
 {passages}"""
 
 # ====== UTILITIES ======
-def _fsync_dir(path: str) -> None:
-    """Sync directory to ensure durability (best-effort, platform-dependent)."""
-    d = os.path.dirname(os.path.abspath(path)) or "."
-    try:
-        fd = os.open(d, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-    except Exception:
-        pass  # Best-effort on platforms/filesystems without dir fsync
 
 def atomic_write_bytes(path: str, data: bytes) -> None:
     """Atomically write bytes with fsync durability - Task E."""
@@ -831,44 +619,8 @@ def atomic_write_text(path: str, text: str) -> None:
     """Atomically write text file with fsync durability - Task E."""
     atomic_write_bytes(path, text.encode("utf-8"))
 
-def atomic_write_json(path: str, obj) -> None:
-    """Atomically write JSON file - Task E."""
-    atomic_write_text(path, json.dumps(obj, ensure_ascii=False))
 
-def atomic_write_jsonl(path: str, rows_list) -> None:
-    """Atomically write JSONL file (list of dicts) - Task E."""
-    # Task E: build rows in memory as list of JSON strings
-    lines = []
-    for row in rows_list:
-        if isinstance(row, dict):
-            lines.append(json.dumps(row, ensure_ascii=False))
-        else:
-            lines.append(str(row))
-    content = "\n".join(lines)
-    if content and not content.endswith("\n"):
-        content += "\n"
-    atomic_write_text(path, content)
 
-def atomic_save_npy(arr: np.ndarray, path: str) -> None:
-    """Atomically save numpy array with fsync durability - Task E, H."""
-    # Task H: enforce float32
-    arr = arr.astype("float32")
-    d = os.path.dirname(os.path.abspath(path)) or "."
-    tmp = None
-    try:
-        with tempfile.NamedTemporaryFile(prefix=".tmp.", dir=d, delete=False) as f:
-            tmp = f.name
-            np.save(f, arr)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-        _fsync_dir(path)
-    finally:
-        if tmp and os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
 
 def log_event(event: str, **fields):
     """Log a structured JSON event. Fallback to plain format if JSON serialization fails."""
@@ -879,9 +631,6 @@ def log_event(event: str, **fields):
         # Fallback to plain string if JSON encoding fails
         logger.info(f"{event} {fields}")
 
-def norm_ws(s: str) -> str:
-    """Normalize whitespace."""
-    return re.sub(r"[ \t]+", " ", s.strip())
 
 def is_rtf(text: str) -> bool:
     """Check if text is RTF format."""
@@ -895,19 +644,6 @@ def is_rtf(text: str) -> bool:
     rtf_commands = re.findall(r"\\(?:cf\d+|u[+-]?\d+\?|f\d+|pard)\b", head_4k)
     return len(rtf_commands) > 20
 
-def strip_noise(text: str) -> str:
-    """Drop scrape artifacts and normalize encoding."""
-    # Guard: only apply RTF stripping if content is likely RTF
-    if is_rtf(text):
-        # Strip RTF escapes only for RTF content (more precise patterns)
-        text = re.sub(r"\\cf\d+", "", text)  # \cfN (color)
-        text = re.sub(r"\\u[+-]?\d+\?", "", text)  # \u1234? (unicode)
-        text = re.sub(r"\\f\d+", "", text)  # \fN (font)
-        text = re.sub(r"\{\\\*[^}]*\}", "", text)  # {\* ... } (special)
-        text = re.sub(r"\\pard\b[^\n]*", "", text)  # \pard (paragraph)
-    # Always remove chunk markers
-    text = re.sub(r"^## +Chunk +\d+\s*$", "", text, flags=re.M)
-    return text
 
 # ====== REMOVED REDUNDANT IMPLEMENTATIONS (2025-11-08) ======
 # The following functions were removed as they duplicate library imports:
@@ -917,55 +653,7 @@ def strip_noise(text: str) -> str:
 # parallel processing, and dimension validation.
 # ============================================================
 
-def extract_citations(text: str) -> list[str]:
-    """Extract citation IDs from answer text (Rank 9: citation validation).
 
-    Supports formats:
-    - Single: [id_123], [123], [abc123-def]
-    - Comma-separated: [id_a, id_b], [123, 456]
-    - Mixed: [id_123, 456, abc-def]
-
-    Args:
-        text: Answer text containing citations
-
-    Returns:
-        List of chunk IDs (strings) referenced in text
-    """
-    import re
-    # Match brackets containing citation IDs (single or comma-separated)
-    # First, find all bracketed content: [...]
-    bracket_pattern = r'\[([^\]]+)\]'
-    bracket_matches = re.findall(bracket_pattern, text)
-
-    citations = []
-    for match in bracket_matches:
-        # Split by comma and extract individual IDs
-        # Match alphanumeric IDs with underscores and hyphens
-        id_pattern = r'([a-zA-Z0-9_-]+)'
-        ids = re.findall(id_pattern, match)
-        citations.extend([id.strip() for id in ids if id.strip()])
-
-    return list(set(citations))  # Remove duplicates
-
-def validate_citations(answer: str, valid_chunk_ids: list[str]) -> tuple[bool, list[str], list[str]]:
-    """Validate that answer citations match packed chunks (Rank 9).
-
-    Args:
-        answer: LLM-generated answer with citations
-        valid_chunk_ids: List of chunk IDs (strings) actually included in context
-
-    Returns:
-        Tuple of (is_valid, valid_citations, invalid_citations)
-    """
-    extracted = extract_citations(answer)
-    # Normalize to strings for comparison
-    valid_set = set(str(cid) for cid in valid_chunk_ids)
-
-    valid_citations = [cid for cid in extracted if cid in valid_set]
-    invalid_citations = [cid for cid in extracted if cid not in valid_set]
-
-    is_valid = len(invalid_citations) == 0
-    return is_valid, valid_citations, invalid_citations
 
 def truncate_to_token_budget(text: str, budget: int) -> str:
     """Truncate text to fit token budget, append ellipsis - Task C.
@@ -1312,504 +1000,13 @@ def log_query(query, answer, retrieved_chunks, latency_ms, refused=False, metada
         logger.warning(f"Failed to write query log: {e}")
 
 # ====== ANSWER PIPELINE HELPERS ======
-def apply_mmr_diversification(selected, scores, vecs_n, pack_top):
-    """Apply Maximal Marginal Relevance diversification to selected chunks.
-
-    Args:
-        selected: List of selected chunk indices
-        scores: Dict with "dense" scores
-        vecs_n: Normalized embedding vectors
-        pack_top: Maximum number of chunks to select
-
-    Returns:
-        List of diversified chunk indices
-    """
-    mmr_selected = []
-    cand = list(selected)
-
-    # Always include the top dense score first for better recall
-    if cand:
-        top_dense_idx = max(cand, key=lambda j: scores["dense"][j])
-        mmr_selected.append(top_dense_idx)
-        cand.remove(top_dense_idx)
-
-    # Then diversify the rest using vectorized MMR
-    if cand and len(mmr_selected) < pack_top:
-        # Convert to numpy arrays for vectorized operations
-        cand_array = np.array(cand, dtype=np.int32)
-        relevance_scores = np.array([scores["dense"][j] for j in cand], dtype=np.float32)
-
-        # Get embedding vectors for candidates
-        cand_vecs = vecs_n[cand_array]  # [num_candidates, emb_dim]
-
-        # Iteratively select using MMR
-        remaining_mask = np.ones(len(cand_array), dtype=bool)
-
-        while np.any(remaining_mask) and len(mmr_selected) < pack_top:
-            # Compute MMR scores for remaining candidates
-            mmr_scores = config.MMR_LAMBDA * relevance_scores.copy()
-
-            if len(mmr_selected) > 0:  # Only apply diversity when we have prior selections
-                # Get vectors of all already-selected items
-                selected_vecs = vecs_n[mmr_selected]  # [num_selected, emb_dim]
-
-                # Compute similarity matrix: [num_candidates, num_selected]
-                similarity_matrix = cand_vecs @ selected_vecs.T
-
-                # Get max similarity for each candidate
-                max_similarities = similarity_matrix.max(axis=1)
-
-                # Update MMR scores with diversity penalty
-                mmr_scores -= (1 - config.MMR_LAMBDA) * max_similarities
-
-            # Mask out already-selected candidates
-            mmr_scores[~remaining_mask] = -np.inf
-
-            # Select candidate with highest MMR score
-            best_idx = mmr_scores.argmax()
-            selected_chunk_idx = cand_array[best_idx]
-
-            mmr_selected.append(int(selected_chunk_idx))
-            remaining_mask[best_idx] = False
-
-    return mmr_selected
 
 
-def apply_reranking(question, chunks, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries):
-    """Apply optional LLM reranking to MMR-selected chunks.
-
-    Args:
-        question: User question
-        chunks: All chunks
-        mmr_selected: List of MMR-selected chunk indices
-        scores: Dict with relevance scores
-        use_rerank: Whether to apply reranking
-        seed, num_ctx, num_predict, retries: LLM parameters
-
-    Returns:
-        Tuple of (reranked_chunks, rerank_scores, rerank_applied, rerank_reason, timing)
-    """
-    rerank_scores = {}
-    rerank_applied = False
-    rerank_reason = "disabled"
-    timing = 0.0
-
-    if use_rerank:
-        logger.debug(json.dumps({"event": "rerank_start", "candidates": len(mmr_selected)}))
-        t0 = time.time()
-        mmr_selected, rerank_scores, rerank_applied, rerank_reason = rerank_with_llm(
-            question, chunks, mmr_selected, scores, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
-        )
-        timing = time.time() - t0
-        logger.debug(json.dumps({"event": "rerank_done", "selected": len(mmr_selected), "scored": len(rerank_scores)}))
-
-        # Add greppable rerank fallback log
-        if not rerank_applied:
-            logger.debug("info: rerank=fallback reason=%s", rerank_reason)
-
-    return mmr_selected, rerank_scores, rerank_applied, rerank_reason, timing
 
 
-def generate_llm_answer(question, context_block, seed, num_ctx, num_predict, retries, packed_ids=None):
-    """Generate answer from LLM given question and context with confidence scoring and citation validation (Rank 28, Rank 9).
-
-    Args:
-        question: User question
-        context_block: Packed context snippets
-        seed, num_ctx, num_predict, retries: LLM parameters
-        packed_ids: List of chunk IDs included in context (for citation validation)
-
-    Returns:
-        Tuple of (answer_text, timing, confidence)
-        - answer_text: The LLM's response
-        - timing: Time taken for LLM call
-        - confidence: 0-100 score, or None if not provided/parsable
-    """
-    t0 = time.time()
-    raw_response = ask_llm(question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries).strip()
-    timing = time.time() - t0
-
-    # Rank 28: Parse JSON response with confidence
-    confidence = None
-    answer = raw_response  # Default to raw response if parsing fails
-
-    try:
-        # Try to parse as JSON
-        # Handle markdown code blocks (```json ... ```)
-        cleaned = raw_response.strip()
-        if cleaned.startswith("```"):
-            # Extract content between ``` markers
-            lines = cleaned.split("\n")
-            # Remove first line (```json or ```) and last line (```)
-            if len(lines) >= 3 and lines[-1].strip() == "```":
-                cleaned = "\n".join(lines[1:-1]).strip()
-            elif len(lines) >= 2:
-                # Sometimes the closing ``` is on same line
-                cleaned = "\n".join(lines[1:]).replace("```", "").strip()
-
-        parsed = json.loads(cleaned)
-
-        # Extract answer and confidence
-        if isinstance(parsed, dict):
-            if "answer" in parsed:
-                answer = parsed["answer"]
-            if "confidence" in parsed:
-                conf_val = parsed["confidence"]
-                # Validate confidence is 0-100
-                if isinstance(conf_val, (int, float)) and 0 <= conf_val <= 100:
-                    confidence = int(conf_val)
-                    logger.debug(f"LLM confidence: {confidence}/100")
-                else:
-                    logger.warning(f"Invalid confidence value: {conf_val}, ignoring")
-
-    except json.JSONDecodeError as e:
-        # JSON parsing failed, use raw response as answer
-        logger.debug(f"LLM response not JSON (expected for backwards compatibility): {str(e)[:50]}")
-    except Exception as e:
-        # Unexpected error in parsing
-        logger.warning(f"Error parsing LLM confidence: {e}")
-
-    # Rank 18: Improve fallback handling for non-JSON responses
-    # Check if raw response lacks citations and might be policy-violating
-    if answer == raw_response:  # JSON parsing failed, using raw response
-        # Check if answer contains citation markers
-        if packed_ids is not None and len(packed_ids) > 0:
-            has_citations = bool(extract_citations(answer))
-            if not has_citations and answer != config.REFUSAL_STR:
-                if STRICT_CITATIONS:
-                    logger.warning(f"[llm_fallback] Raw response lacks citations in strict mode, refusing answer")
-                    answer = config.REFUSAL_STR
-                    confidence = None
-                else:
-                    # No citations found in non-JSON response - potential policy violation
-                    logger.warning(f"[llm_fallback] Raw response lacks citations, may violate policy")
-
-    # Rank 9: Validate citations match packed chunks (only if not already refused)
-    if packed_ids is not None and answer != config.REFUSAL_STR:
-        is_valid, valid_cits, invalid_cits = validate_citations(answer, packed_ids)
-        if not is_valid and invalid_cits:
-            if STRICT_CITATIONS:
-                logger.warning(f"[citation_validation] Invalid citations in strict mode: {invalid_cits}, refusing answer")
-                answer = config.REFUSAL_STR
-                confidence = None
-            else:
-                logger.warning(f"[citation_validation] Invalid citations: {invalid_cits} (valid: {packed_ids[:10]}...)")
-                # Log warning but don't fail - some models may use different citation formats
-
-    return answer, timing, confidence
 
 
 # ====== ANSWER (STATELESS) ======
-def answer_once(
-    question: str,
-    chunks,
-    vecs_n,
-    bm,
-    top_k=12,
-    pack_top=6,
-    threshold=0.30,
-    use_rerank=False,
-    debug=False,
-    hnsw=None,
-    seed=config.DEFAULT_SEED,
-    num_ctx=config.DEFAULT_NUM_CTX,
-    num_predict=config.DEFAULT_NUM_PREDICT,
-    retries=0
-) -> tuple[str, dict]:
-    """Answer a single question. Stateless. Returns (answer_text, metadata) - Task B, C, F.
-
-    Returns:
-        Tuple of (answer_text, metadata) where answer_text is the generated answer string
-        and metadata is a dict containing selected chunks, scores, timings, etc.
-    """
-    # Sanitize question input
-    try:
-        question = sanitize_question(question)
-    except ValueError as e:
-        logger.warning(f"Invalid question: {e}")
-        return f"Invalid question: {e}", {"selected": [], "scores": [], "timings": {}, "refused": False, "used_tokens": 0}
-
-    # Check rate limit
-    if not RATE_LIMITER.allow_request():
-        wait_seconds = RATE_LIMITER.wait_time()
-        logger.warning(f"Rate limit exceeded, wait {wait_seconds:.0f}s")
-        return f"Rate limit exceeded. Please wait {wait_seconds:.0f} seconds before next query.", {
-            "selected": [], "scores": [], "timings": {}, "refused": False, "rate_limited": True, "used_tokens": 0
-        }
-
-    # Check query cache (Rank 14: 100% speedup on repeated queries)
-    # Include retrieval parameters in cache key to prevent stale answers (Rank 3)
-    cache_params = {
-        "top_k": top_k,
-        "pack_top": pack_top,
-        "threshold": threshold,
-        "use_rerank": use_rerank
-    }
-    cached_result = QUERY_CACHE.get(question, params=cache_params)
-    if cached_result is not None:
-        answer, cached_metadata = cached_result
-        # Work on a copy so cached metadata (including timestamp) remains intact
-        metadata = dict(cached_metadata) if cached_metadata is not None else {}
-        metadata.setdefault("used_tokens", 0)
-        metadata["cached"] = True
-        metadata["cache_hit"] = True
-        # Quick Win #9: Add cache hit logging
-        timestamp = metadata.get("timestamp")
-        if timestamp is None:
-            timestamp = time.time()
-            metadata["timestamp"] = timestamp
-        cache_age = time.time() - timestamp
-        logger.info(f"[cache] HIT question_len={len(question)} cache_age={cache_age:.1f}s")
-
-        # Priority #8: Log cached queries with answer redaction honored
-        # Reconstruct retrieved_chunks from cached metadata for logging
-        selected_ids = metadata.get("selected", [])
-        cached_log_chunks = []
-        for chunk_id in selected_ids:
-            cached_log_chunks.append({
-                "id": chunk_id,
-                "dense": 0.0,  # Scores not preserved in cache metadata
-                "bm25": 0.0,
-                "hybrid": 0.0,
-            })
-
-        # Compute cache hit latency (minimal)
-        cache_hit_latency = (time.time() - timestamp) * 1000  # ms
-
-        # Log with answer redaction respected
-        log_query(
-            query=question,
-            answer=answer,
-            retrieved_chunks=cached_log_chunks,
-            latency_ms=cache_hit_latency,
-            refused=metadata.get("refused", False),
-            metadata={
-                "debug": debug,
-                "backend": config.EMB_BACKEND,
-                "cached": True,
-                "cache_age_seconds": cache_age,
-            }
-        )
-
-        return answer, metadata
-
-    turn_start = time.time()
-    timings = {}
-    try:
-        # Step 1: Hybrid retrieval
-        t0 = time.time()
-        selected, scores = retrieve(question, chunks, vecs_n, bm, top_k=top_k, hnsw=hnsw, retries=retries)
-        timings["retrieve"] = time.time() - t0
-
-        # Step 2: MMR diversification
-        mmr_selected = apply_mmr_diversification(selected, scores, vecs_n, pack_top)
-
-        # Step 3: Optional LLM reranking
-        mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_timing = apply_reranking(
-            question, chunks, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries
-        )
-        timings["rerank"] = rerank_timing
-
-        dense_scores_all = scores["dense"]
-        bm25_scores_all = scores["bm25"]
-        hybrid_scores_all = scores["hybrid"]
-        chunk_id_to_index = {chunk["id"]: idx for idx, chunk in enumerate(chunks)}
-        chunk_scores_by_id = {}
-        for cid, idx in chunk_id_to_index.items():
-            chunk_scores_by_id[cid] = {
-                "index": idx,
-                "dense": float(dense_scores_all[idx]),
-                "bm25": float(bm25_scores_all[idx]),
-                "hybrid": float(hybrid_scores_all[idx]),
-            }
-        mmr_rank_by_id = {chunks[idx]["id"]: rank for rank, idx in enumerate(mmr_selected)}
-
-        # Step 4: Coverage check (Rank 8: removed duplicate check)
-        coverage_pass = coverage_ok(mmr_selected, scores["dense"], threshold)
-        if not coverage_pass:
-            if debug:
-                print(f"\n[DEBUG] Coverage failed: {len(mmr_selected)} selected, need ≥2 @ {threshold}")
-            logger.debug(f"[coverage_gate] REJECTED: seed={seed} model={config.GEN_MODEL} selected={len(mmr_selected)} threshold={threshold}")
-
-            # Log refusal
-            latency_ms = int((time.time() - turn_start) * 1000)
-            refusal_chunks = []
-            for rank, idx in enumerate(mmr_selected):
-                chunk_id = chunks[idx]["id"]
-                info = chunk_scores_by_id.get(chunk_id)
-                if info is None:
-                    continue
-                entry = {
-                    "id": chunk_id,
-                    "mmr_rank": rank,
-                    "dense": info["dense"],
-                    "bm25": info["bm25"],
-                    "hybrid": info["hybrid"],
-                }
-                rerank_score = rerank_scores.get(info["index"])
-                if rerank_score is not None:
-                    entry["rerank_score"] = float(rerank_score)
-                refusal_chunks.append(entry)
-            dense_scores = scores.get("dense", np.zeros(len(chunks), dtype=np.float32))
-            retrieved_chunks = []
-            for idx in mmr_selected:
-                if not isinstance(idx, (int, np.integer)):
-                    continue
-                if idx < 0 or idx >= len(chunks) or idx >= len(dense_scores):
-                    continue
-                chunk = chunks[idx]
-                if not isinstance(chunk, dict):
-                    continue
-                chunk_id = chunk.get("id")
-                if chunk_id is None:
-                    continue
-                entry = {
-                    "id": chunk_id,
-                    "score": float(dense_scores[idx]),
-                }
-                if LOG_QUERY_INCLUDE_CHUNKS:
-                    entry["chunk"] = chunk
-                retrieved_chunks.append(entry)
-
-            log_query(
-                query=question,
-                answer=config.REFUSAL_STR,
-                retrieved_chunks=refusal_chunks,
-                latency_ms=latency_ms,
-                refused=True,
-                metadata={"debug": debug, "backend": config.EMB_BACKEND, "coverage_pass": False}
-            )
-
-            # Cache refusal (Rank 14)
-            refusal_metadata = {"selected": [], "refused": True, "cached": False, "cache_hit": False, "used_tokens": 0}
-            refusal_metadata["timestamp"] = time.time()
-            QUERY_CACHE.put(question, config.REFUSAL_STR, refusal_metadata, params=cache_params)
-
-            return config.REFUSAL_STR, refusal_metadata
-
-        # Step 5: Pack with token budget and snippet cap (Task C)
-        block, ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, budget_tokens=config.CTX_TOKEN_BUDGET, num_ctx=num_ctx)
-
-        # Apply policy preamble for sensitive queries
-        block = inject_policy_preamble(block, question)
-
-        # Step 6: Generate answer from LLM (Rank 28: with confidence, Rank 9: with citation validation)
-        ans, llm_timing, confidence = generate_llm_answer(question, block, seed, num_ctx, num_predict, retries, packed_ids=ids)
-        timings["ask_llm"] = llm_timing
-        timings["total"] = time.time() - turn_start
-
-        # Step 7: Optional debug output with all metrics (Task B, F)
-        if debug:
-            diag = []
-            for rank, i in enumerate(mmr_selected):
-                entry = {
-                    "id": chunks[i]["id"],
-                    "title": chunks[i]["title"],
-                    "section": chunks[i]["section"],
-                    "url": chunks[i]["url"],
-                    "dense": float(scores["dense"][i]),
-                    "bm25": float(scores["bm25"][i]),
-                    "hybrid": float(scores["hybrid"][i]),
-                    "mmr_rank": rank,
-                    "rerank_applied": bool(rerank_applied),
-                    "rerank_reason": rerank_reason or ""
-                }
-                if i in rerank_scores:
-                    entry["rerank_score"] = float(rerank_scores[i])
-                diag.append(entry)
-
-            # Patch 7: wrap global fields under `meta` (Rank 28: include confidence)
-            debug_info = {
-                "meta": {
-                    "rerank_applied": bool(rerank_applied),
-                    "rerank_reason": rerank_reason or "",
-                    "selected_count": len(mmr_selected),
-                    "pack_ids_count": len(ids),
-                    "used_tokens": int(used_tokens),
-                    "confidence": confidence  # Rank 28
-                },
-                "pack_ids_preview": ids[:10],
-                "snippets": diag
-            }
-            ans += "\n\n[DEBUG]\n" + json.dumps(debug_info, ensure_ascii=False, indent=2)
-
-        # Task F: info log with only counts (Rank 28: include confidence)
-        conf_str = f" confidence={confidence}" if confidence is not None else ""
-        logger.info(
-            f"info: retrieve={timings.get('retrieve', 0):.3f} rerank={timings.get('rerank', 0):.3f} "
-            f"ask={timings['ask_llm']:.3f} total={timings['total']:.3f} "
-            f"selected={len(mmr_selected)} packed={len(ids)} used_tokens={used_tokens}{conf_str}"
-        )
-
-        # Log successful query (Rank 6: consolidated retrieved_chunks building)
-        latency_ms = int(timings['total'] * 1000)
-        retrieved_chunks = []
-        for pack_rank, chunk_id in enumerate(ids):
-            info = chunk_scores_by_id.get(chunk_id)
-            if info is None:
-                continue
-            idx = info["index"]
-            chunk = chunks[idx]
-            if not isinstance(chunk, dict):
-                continue
-            entry = {
-                "id": chunk_id,
-                "pack_rank": pack_rank,
-                "dense": info["dense"],
-                "bm25": info["bm25"],
-                "hybrid": info["hybrid"],
-            }
-            if LOG_QUERY_INCLUDE_CHUNKS:
-                entry["chunk"] = chunk
-            mmr_rank = mmr_rank_by_id.get(chunk_id)
-            if mmr_rank is not None:
-                entry["mmr_rank"] = mmr_rank
-            rerank_score = rerank_scores.get(idx)
-            if rerank_score is not None:
-                entry["rerank_score"] = float(rerank_score)
-            retrieved_chunks.append(entry)
-
-        log_query(
-            query=question,
-            answer=ans,
-            retrieved_chunks=retrieved_chunks,
-            latency_ms=latency_ms,
-            refused=False,
-            metadata={
-                "debug": debug,
-                "backend": config.EMB_BACKEND,
-                "coverage_pass": True,
-                "rerank_applied": rerank_applied,
-                "rerank_reason": rerank_reason,  # Why rerank was/wasn't applied
-                "rerank_candidates": len(mmr_selected) if use_rerank else 0,  # Candidates sent to reranker
-                "num_selected": len(mmr_selected),
-                "num_packed": len(ids),
-                "used_tokens": used_tokens,
-                "timings": timings,
-                "confidence": confidence  # Rank 28
-            }
-        )
-
-        # Cache successful answer (Rank 14) with confidence (Rank 28)
-        result_metadata = {
-            "selected": ids,
-            "used_tokens": int(used_tokens),
-            "timings": timings,
-            "rerank_applied": bool(rerank_applied),
-            "cached": False,
-            "cache_hit": False,
-            "confidence": confidence
-        }
-        result_metadata["timestamp"] = time.time()
-        QUERY_CACHE.put(question, ans, result_metadata, params=cache_params)
-
-        return ans, result_metadata
-    except (EmbeddingError, LLMError, BuildError):
-        # Re-raise specific exceptions
-        raise
-    except Exception as e:
-        # Wrap unexpected exceptions with context
-        raise RuntimeError(f"Unexpected error in answer_once: {e}") from e
 
 # ====== TASK J: SELF-TESTS (7 Tests) ======
 def test_mmr_behavior_ok():
