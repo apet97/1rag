@@ -2139,12 +2139,22 @@ def ensure_index_ready(retries=0):
 # ====== REPL ======
 
 def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=False, seed=config.DEFAULT_SEED, num_ctx=config.DEFAULT_NUM_CTX, num_predict=config.DEFAULT_NUM_PREDICT, retries=0, use_json=False):
-    """Stateless REPL loop - Task I. v4.1: JSON output support."""
+    """Stateless REPL loop - Task I. v4.1: JSON output support.
+
+    OPTIMIZATION: Loads query cache from disk on startup and saves on exit for persistence.
+    """
     # Task I: log config summary at startup
     _log_config_summary(use_rerank=use_rerank, pack_top=pack_top, seed=seed, threshold=threshold, top_k=top_k, num_ctx=num_ctx, num_predict=num_predict, retries=retries)
 
     # Lazy build and startup sanity check
     chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=retries)
+
+    # OPTIMIZATION: Load query cache from disk for instant cache hits on repeated queries
+    cache = get_query_cache()
+    cache_path = os.environ.get("RAG_CACHE_FILE", "query_cache.json")
+    loaded_entries = cache.load(cache_path)
+    if loaded_entries > 0:
+        logger.info(f"Loaded {loaded_entries} cached queries from {cache_path}")
 
     print("\n" + "=" * 70)
     print("CLOCKIFY SUPPORT – Local, Stateless, Closed-Book")
@@ -2152,6 +2162,8 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
     print(f"Using Ollama at: {config.OLLAMA_URL}")
     print(f"Generation model: {config.GEN_MODEL}")
     print(f"Embedding backend: {config.EMB_BACKEND}")
+    if loaded_entries > 0:
+        print(f"Query cache: {loaded_entries} entries loaded")
     print("Type a question. Commands: :exit, :debug")
 
     # v4.1: Warm-up on startup to reduce first-token latency
@@ -2159,54 +2171,63 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
     print("=" * 70 + "\n")
 
     dbg = debug
-    while True:
-        try:
-            q = input("> ").strip()
-        except EOFError:
-            break
-        if not q:
-            continue
-        if q == ":exit":
-            break
-        if q == ":debug":
-            dbg = not dbg
-            print(f"[debug={'ON' if dbg else 'OFF'}]")
-            continue
+    try:
+        while True:
+            try:
+                q = input("> ").strip()
+            except EOFError:
+                break
+            if not q:
+                continue
+            if q == ":exit":
+                break
+            if q == ":debug":
+                dbg = not dbg
+                print(f"[debug={'ON' if dbg else 'OFF'}]")
+                continue
 
-        ans, meta = answer_once(
-            q,
-            chunks,
-            vecs_n,
-            bm,
-            top_k=top_k,
-            pack_top=pack_top,
-            threshold=threshold,
-            use_rerank=use_rerank,
-            debug=dbg,
-            hnsw=hnsw,
-            seed=seed,
-            num_ctx=num_ctx,
-            num_predict=num_predict,
-            retries=retries
-        )
-        # v4.1: JSON output support
-        if use_json:
-            output = answer_to_json(
-                ans,
-                meta.get("selected", []),
-                meta.get("used_tokens"),
-                top_k,
-                pack_top,
-                meta.get("confidence")
+            ans, meta = answer_once(
+                q,
+                chunks,
+                vecs_n,
+                bm,
+                top_k=top_k,
+                pack_top=pack_top,
+                threshold=threshold,
+                use_rerank=use_rerank,
+                debug=dbg,
+                hnsw=hnsw,
+                seed=seed,
+                num_ctx=num_ctx,
+                num_predict=num_predict,
+                retries=retries
             )
-            print(json.dumps(output, ensure_ascii=False, indent=2))
-        else:
-            print(ans)
-            print()
+            # v4.1: JSON output support
+            if use_json:
+                output = answer_to_json(
+                    ans,
+                    meta.get("selected", []),
+                    meta.get("used_tokens"),
+                    top_k,
+                    pack_top,
+                    meta.get("confidence")
+                )
+                print(json.dumps(output, ensure_ascii=False, indent=2))
+            else:
+                print(ans)
+                print()
+    finally:
+        # OPTIMIZATION: Save query cache to disk on exit for persistence across sessions
+        cache.save(cache_path)
+        stats = cache.stats()
+        logger.info(f"Saved query cache: {stats['size']} entries, hit_rate={stats['hit_rate']:.1%}")
 
 # ====== WARM-UP (v4.1 - Section 6) ======
 def warmup_on_startup():
-    """Warm-up embeddings and LLM on startup (reduces first-token latency)."""
+    """Warm-up embeddings, LLM, and FAISS on startup (reduces first-token latency).
+
+    OPTIMIZATION: Preloads FAISS index to eliminate 50-200ms penalty on first query.
+    """
     warmup_enabled = os.environ.get("WARMUP", "1").lower() in ("1", "true", "yes")
     if not warmup_enabled:
         logger.debug("Warm-up disabled via WARMUP=0")
@@ -2214,6 +2235,18 @@ def warmup_on_startup():
 
     try:
         logger.info("info: warmup=start")
+
+        # OPTIMIZATION: Preload FAISS index to avoid first-query latency penalty
+        from clockify_rag.indexing import get_faiss_index
+        faiss_path = config.FILES.get("faiss_index", "faiss.index")
+        if os.path.exists(faiss_path):
+            logger.info("  Preloading FAISS index...")
+            faiss_index = get_faiss_index(faiss_path)
+            if faiss_index is not None:
+                logger.info(f"  ✓ FAISS index preloaded ({faiss_index.ntotal} vectors)")
+            else:
+                logger.debug("  FAISS index unavailable (will use full-scan)")
+
         # Warm-up embedding model with trivial query
         embed_query("warmup", retries=1)
         # Warm-up LLM with trivial prompt
