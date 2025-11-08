@@ -72,6 +72,8 @@ from clockify_rag.retrieval import (
     load_query_expansion_dict,
     reset_query_expansion_cache,
     set_query_expansion_path,
+    hybrid_score,
+    pack_snippets_dynamic,
 )
 from clockify_rag.metrics import get_metrics, time_operation
 from clockify_rag.utils import (
@@ -94,7 +96,13 @@ from clockify_rag.utils import (
     log_event,
     atomic_write_bytes,
     atomic_write_text,
-    is_rtf
+    is_rtf,
+    _ensure_nltk,
+    _load_st_encoder,
+    _try_load_faiss,
+    looks_sensitive,
+    inject_policy_preamble,
+    sanitize_question
 )
 from clockify_rag.answer import (
     apply_mmr_diversification,
@@ -102,7 +110,8 @@ from clockify_rag.answer import (
     extract_citations,
     validate_citations,
     generate_llm_answer,
-    answer_once
+    answer_once,
+    answer_to_json
 )
 from clockify_rag.http_utils import (
     get_session,
@@ -141,53 +150,6 @@ EMB_READ_T = config.EMB_READ_T
 CHAT_CONNECT_T = config.CHAT_CONNECT_T
 CHAT_READ_T = config.CHAT_READ_T
 
-# Rank 23: NLTK for sentence-aware chunking (with optional download control)
-_NLTK_AVAILABLE = False
-_NLTK_DOWNLOAD_ATTEMPTED = False
-
-def _ensure_nltk(auto_download=None):
-    """Ensure NLTK is available, with optional download control for offline environments."""
-    global _NLTK_AVAILABLE, _NLTK_DOWNLOAD_ATTEMPTED
-
-    if _NLTK_AVAILABLE:
-        return True
-
-    try:
-        import nltk
-    except ImportError:
-        logger.warning("NLTK not installed. Chunking will use simpler fallback.")
-        return False
-
-    # Check if we already have punkt
-    try:
-        nltk.data.find('tokenizers/punkt')
-        _NLTK_AVAILABLE = True
-        return True
-    except LookupError:
-        pass
-
-    # Determine if we should download
-    if auto_download is None:
-        # Check environment variable (default: allow download unless explicitly disabled)
-        auto_download = os.environ.get("NLTK_AUTO_DOWNLOAD", "1").lower() not in {"0", "false", "no", "off"}
-
-    if auto_download and not _NLTK_DOWNLOAD_ATTEMPTED:
-        _NLTK_DOWNLOAD_ATTEMPTED = True
-        logger.info("Downloading NLTK punkt tokenizer (one-time setup)...")
-        try:
-            nltk.download('punkt', quiet=True)
-            nltk.download('punkt_tab', quiet=True)  # For newer NLTK versions
-            _NLTK_AVAILABLE = True
-            logger.info("NLTK punkt downloaded successfully.")
-            return True
-        except Exception as e:
-            logger.warning(f"NLTK download failed ({e}). Using simpler chunking fallback.")
-            return False
-    else:
-        if not auto_download:
-            logger.warning("NLTK auto-download disabled (NLTK_AUTO_DOWNLOAD=0). Using simpler chunking fallback.")
-        return False
-
 # ====== MODULE LOGGER ======
 logger = logging.getLogger(__name__)
 
@@ -218,124 +180,16 @@ REQUESTS_SESSION_RETRIES = 0
 # v4.1: HTTP POST helper with retry logic
 
 
-# ====== LOCAL EMBEDDINGS (v4.1 - Section 2) ======
-_ST_ENCODER = None
-_ST_BATCH_SIZE = 96
-
-def _load_st_encoder():
-    """Lazy-load SentenceTransformer model once."""
-    global _ST_ENCODER
-    if _ST_ENCODER is None:
-        from sentence_transformers import SentenceTransformer
-        _ST_ENCODER = SentenceTransformer("all-MiniLM-L6-v2")
-        logger.debug("Loaded SentenceTransformer: all-MiniLM-L6-v2 (384-dim)")
-    return _ST_ENCODER
-
-
 # ====== FAISS ANN INDEX (v4.1 - Section 3) ======
 _FAISS_INDEX = None
 _FAISS_LOCK = threading.Lock()
 # Stores profiling data from the most recent `retrieve` invocation.
 RETRIEVE_PROFILE_LAST = {}
 
-def _try_load_faiss():
-    """Try importing FAISS; returns None if not available."""
-    try:
-        import faiss
-        return faiss
-    except ImportError:
-        logger.info("info: ann=fallback reason=missing-faiss")
-        return None
 
 
-
-
-# ====== HYBRID SCORING (v4.1 - Section 4) ======
-
-def hybrid_score(bm25_score: float, dense_score: float, alpha: float = 0.5) -> float:
-    """Blend BM25 and dense scores: alpha * bm25_norm + (1 - alpha) * dense_norm."""
-    return alpha * bm25_score + (1 - alpha) * dense_score
-
-# ====== DYNAMIC PACKING (v4.1 - Section 5) ======
-def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int | None = None, target_util: float = 0.75) -> tuple:
-    """Pack snippets with dynamic targeting. Returns (snippets, used_tokens, was_truncated)."""
-    if budget_tokens is None:
-        budget_tokens = config.CTX_TOKEN_BUDGET
-    if not chunk_ids:
-        return [], 0, False
-
-    snippets: list[str] = []
-    token_count = 0
-    target = int(budget_tokens * target_util)
-
-    for cid in chunk_ids:
-        try:
-            chunk = chunks[cid]
-            snippet_tokens = max(1, len(chunk.get("text", "")) // 4)
-            separator_tokens = 16
-            new_total = token_count + snippet_tokens + separator_tokens
-
-            if new_total > budget_tokens:
-                if snippets:
-                    return snippets + [{"id": "[TRUNCATED]", "text": "..."}], token_count, True
-                else:
-                    snippets.append(chunk)
-                    return snippets, token_count + snippet_tokens, True
-
-            snippets.append(chunk)
-            token_count = new_total
-
-            if token_count >= target:
-                break
-        except (KeyError, IndexError, AttributeError, TypeError) as e:
-            # Skip chunks with invalid data or missing indices
-            logger.debug(f"Skipping chunk {cid}: {e}")
-            continue
-
-    return snippets, token_count, False
 
 # ====== KPI LOGGING (v4.1 - Section 6) ======
-
-# ====== JSON OUTPUT (v4.1 - Section 9) ======
-def answer_to_json(answer: str, citations: list, used_tokens: int | None, topk: int, packed: int, confidence: int | None = None) -> dict:
-    """Convert answer and metadata to JSON structure.
-
-    Args:
-        answer: Generated answer text.
-        citations: Sequence of citation identifiers (chunk IDs).
-        used_tokens: Actual token budget consumed when packing context.
-        topk: Retrieval depth requested.
-        packed: Maximum number of snippets packed.
-        confidence: LLM confidence score (0-100), if available.
-    """
-    budget_tokens = 0 if used_tokens is None else int(used_tokens)
-    result = {
-        "answer": answer,
-        "citations": citations,
-        "debug": {
-            "meta": {
-                "used_tokens": budget_tokens,
-                "topk": topk,
-                "packed": packed,
-                "emb_backend": config.EMB_BACKEND,
-                "ann": config.USE_ANN,
-                "alpha": config.ALPHA_HYBRID
-            },
-            "timing": {
-                "retrieve_ms": KPI.retrieve_ms,
-                "ann_ms": KPI.ann_ms,
-                "rerank_ms": KPI.rerank_ms,
-                "ask_ms": KPI.ask_ms,
-                "total_ms": KPI.retrieve_ms + KPI.rerank_ms + KPI.ask_ms
-            }
-        }
-    }
-
-    # Include confidence if available
-    if confidence is not None:
-        result["confidence"] = confidence
-
-    return result
 
 # ====== SELF-TEST INTEGRATION CHECKS (v4.1 - Section 8) ======
 # Note: Detailed unit tests are in test_* functions below.
@@ -450,84 +304,6 @@ PASSAGES:
 #
 # All functionality now uses the optimized library versions.
 # ============================================================
-
-# ====== POLICY GUARDRAILS ======
-def looks_sensitive(question: str) -> bool:
-    """Check if question involves sensitive intent (account/billing/PII)."""
-    sensitive_keywords = {
-        # Financial
-        "invoice", "billing", "credit card", "payment", "salary", "account balance",
-        # Authentication & Secrets
-        "password", "token", "api key", "secret", "private key",
-        # PII
-        "ssn", "social security", "iban", "swift", "routing number", "account number",
-        "phone number", "email address", "home address", "date of birth",
-        # Compliance
-        "gdpr", "pii", "personally identifiable", "personal data"
-    }
-    q_lower = question.lower()
-    return any(kw in q_lower for kw in sensitive_keywords)
-
-def inject_policy_preamble(snippets_block: str, question: str) -> str:
-    """Optionally prepend policy reminder for sensitive queries."""
-    if looks_sensitive(question):
-        policy = "[INTERNAL POLICY]\nDo not reveal PII, account secrets, or payment details. For account changes, redirect to secure internal admin panel.\n\n"
-        return policy + snippets_block
-    return snippets_block
-
-# ====== INPUT SANITIZATION ======
-def sanitize_question(q: str, max_length: int = 2000) -> str:
-    """Validate and sanitize user question.
-
-    Args:
-        q: User question string
-        max_length: Maximum allowed question length (default: 2000)
-
-    Returns:
-        Sanitized question string
-
-    Raises:
-        ValueError: If question is invalid (empty, too long, invalid characters)
-    """
-    # Type check
-    if not isinstance(q, str):
-        raise ValueError(f"Question must be a string, got {type(q).__name__}")
-
-    # Strip whitespace
-    q = q.strip()
-
-    # Check length
-    if len(q) == 0:
-        raise ValueError("Question cannot be empty. Hint: Provide a meaningful question about Clockify.")
-    if len(q) > max_length:
-        raise ValueError(
-            f"Question too long (max {max_length} characters, got {len(q)}).\n"
-            f"Hint: Break your question into smaller, focused queries."
-        )
-
-    # Check for null bytes first (specific check)
-    if '\x00' in q:
-        raise ValueError("Question contains control characters")
-
-    # Check for control characters (except newline, tab, carriage return)
-    if any(ord(c) < 32 and c not in '\n\r\t' for c in q):
-        raise ValueError("Question contains invalid control characters")
-
-    # Check for suspicious patterns (basic prompt injection detection)
-    suspicious_patterns = [
-        '<script',
-        'javascript:',
-        'eval(',
-        'exec(',
-        '__import__',
-        '<?php',
-    ]
-    q_lower = q.lower()
-    for pattern in suspicious_patterns:
-        if pattern in q_lower:
-            raise ValueError(f"Question contains suspicious pattern: {pattern}")
-
-    return q
 
 # ====== RATE LIMITING & QUERY CACHING ======
 # Priority #2: Reuse package implementations instead of duplicate definitions (ROI 9/10)
