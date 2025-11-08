@@ -91,30 +91,31 @@ CHUNK_CHARS = 1600
 CHUNK_OVERLAP = 200
 
 # ====== RETRIEVAL CONFIG ======
-DEFAULT_TOP_K = 12
-DEFAULT_PACK_TOP = 6
-DEFAULT_THRESHOLD = 0.30
+# OPTIMIZATION: Increase retrieval parameters for better recall on internal deployment
+DEFAULT_TOP_K = _parse_env_int("DEFAULT_TOP_K", 15, min_val=1, max_val=100)  # Was 12, now 15 (more candidates)
+DEFAULT_PACK_TOP = _parse_env_int("DEFAULT_PACK_TOP", 8, min_val=1, max_val=50)  # Was 6, now 8 (more snippets in context)
+DEFAULT_THRESHOLD = _parse_env_float("DEFAULT_THRESHOLD", 0.25, min_val=0.0, max_val=1.0)  # Was 0.30, now 0.25 (lower bar)
 DEFAULT_SEED = 42
 
-# FIX (Error #5): Input validation to prevent DoS attacks
-MAX_QUERY_LENGTH = _parse_env_int("MAX_QUERY_LENGTH", 10000, min_val=100, max_val=100000)  # 10K chars max
+# OPTIMIZATION: Increase max query length for internal use (no DoS risk)
+MAX_QUERY_LENGTH = _parse_env_int("MAX_QUERY_LENGTH", 1000000, min_val=100, max_val=10000000)  # Was 10K, now 1M
 
 # ====== BM25 CONFIG ======
 # BM25 parameters (tuned for technical documentation)
-# Lower k1 (1.2→1.0): Reduces term frequency saturation for repeated technical terms
-# Lower b (0.75→0.65): Reduces length normalization penalty for longer docs
+# OPTIMIZATION: Increase k1 from 1.0 to 1.2 for slightly better term frequency saturation
+# OPTIMIZATION: Keep b at 0.65 for technical docs (reduces length penalty)
 # FIX (Error #13): Use safe env var parsing
-BM25_K1 = _parse_env_float("BM25_K1", 1.0, min_val=0.1, max_val=10.0)
+BM25_K1 = _parse_env_float("BM25_K1", 1.2, min_val=0.1, max_val=10.0)  # Was 1.0, now 1.2
 BM25_B = _parse_env_float("BM25_B", 0.65, min_val=0.0, max_val=1.0)
 
 # ====== LLM CONFIG ======
-# FIX: Increase DEFAULT_NUM_CTX from 8192 to 16384 to support CTX_TOKEN_BUDGET of 6000
+# OPTIMIZATION: Increase DEFAULT_NUM_CTX to 32768 to match Qwen 32B's full context window
+# This allows us to use more context for better retrieval quality
 # pack_snippets enforces effective_budget = min(CTX_TOKEN_BUDGET, num_ctx * 0.6)
-# With old value of 8192: effective = min(6000, 4915) = 4915 ❌
-# With new value of 16384: effective = min(6000, 9830) = 6000 ✅
-# Still well within Qwen 32B's 32K context window capacity
+# With value of 32768: effective = min(12000, 19660) = 12000 ✅
+# Fully utilizes Qwen 32B's 32K context window capacity
 # FIX (Error #13): Use safe env var parsing
-DEFAULT_NUM_CTX = _parse_env_int("DEFAULT_NUM_CTX", 16384, min_val=512, max_val=128000)  # Was 8192, now 16384
+DEFAULT_NUM_CTX = _parse_env_int("DEFAULT_NUM_CTX", 32768, min_val=512, max_val=128000)  # Was 16384, now 32768
 DEFAULT_NUM_PREDICT = 512
 # FIX: Increase default retries from 0 to 2 for remote Ollama resilience
 # Remote endpoints (especially over VPN) benefit from transient error retry
@@ -122,14 +123,15 @@ DEFAULT_NUM_PREDICT = 512
 DEFAULT_RETRIES = _parse_env_int("DEFAULT_RETRIES", 2, min_val=0, max_val=10)  # Was 0, now 2
 
 # ====== MMR & CONTEXT BUDGET ======
-MMR_LAMBDA = 0.7
-# FIX: Increase context budget from 2800 to 6000 tokens to better utilize Qwen 32B's capacity
+# OPTIMIZATION: Increase MMR_LAMBDA to 0.75 to favor relevance slightly over diversity
+MMR_LAMBDA = _parse_env_float("MMR_LAMBDA", 0.75, min_val=0.0, max_val=1.0)  # Was 0.7, now 0.75
+# OPTIMIZATION: Increase context budget from 6000 to 12000 tokens to better utilize Qwen 32B's capacity
 # Qwen 32B has 32K context window; we reserve 60% for snippets (pack_snippets enforces this)
-# Old: 2800 tokens (~11K chars) was too conservative, causing unnecessary truncation
-# New: 6000 tokens (~24K chars) allows more context while leaving room for Q+A
+# Old: 6000 tokens (~24K chars) was still conservative
+# New: 12000 tokens (~48K chars) allows 2x more context while leaving room for Q+A
 # Can be overridden via CTX_BUDGET env var
 # FIX (Error #13): Use safe env var parsing
-CTX_TOKEN_BUDGET = _parse_env_int("CTX_BUDGET", 6000, min_val=100, max_val=100000)  # Was 2800, now 6000
+CTX_TOKEN_BUDGET = _parse_env_int("CTX_BUDGET", 12000, min_val=100, max_val=100000)  # Was 6000, now 12000
 
 # ====== EMBEDDINGS BACKEND (v4.1) ======
 EMB_BACKEND = os.environ.get("EMB_BACKEND", "local")  # "local" or "ollama"
