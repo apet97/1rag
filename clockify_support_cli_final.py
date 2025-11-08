@@ -2080,7 +2080,12 @@ def run_selftest():
 
 # ====== ARTIFACT MANAGEMENT ======
 def ensure_index_ready(retries=0):
-    """Ensure retrieval artifacts are present and return loaded index components."""
+    """Ensure retrieval artifacts are present and return loaded index components.
+
+    Returns:
+        Tuple of (chunks, vecs_n, bm, hnsw) for backward compatibility with CLI code.
+        The library's load_index() returns a dict, which we unpack here.
+    """
 
     artifacts_ok = True
     for fname in [config.FILES["chunks"], config.FILES["emb"], config.FILES["meta"], config.FILES["bm25"], config.FILES["index_meta"]]:
@@ -2110,7 +2115,13 @@ def ensure_index_ready(retries=0):
         logger.error("Failed to load artifacts after rebuild")
         sys.exit(1)
 
-    return result
+    # Unpack dictionary result from library's load_index() into tuple for backward compatibility
+    chunks = result["chunks"]
+    vecs_n = result["vecs_n"]
+    bm = result["bm"]
+    hnsw = result.get("faiss_index")  # Note: was "hnsw" in old code, but library returns "faiss_index"
+
+    return chunks, vecs_n, bm, hnsw
 
 # ====== REPL ======
 
