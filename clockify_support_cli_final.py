@@ -83,7 +83,18 @@ from clockify_rag.utils import (
     atomic_save_npy,
     _fsync_dir,
     norm_ws,
-    strip_noise
+    strip_noise,
+    _release_lock_if_owner,
+    _pid_alive,
+    validate_and_set_config,
+    validate_chunk_config,
+    check_pytorch_mps,
+    _log_config_summary,
+    log_kpi,
+    log_event,
+    atomic_write_bytes,
+    atomic_write_text,
+    is_rtf
 )
 from clockify_rag.answer import (
     apply_mmr_diversification,
@@ -92,6 +103,11 @@ from clockify_rag.answer import (
     validate_citations,
     generate_llm_answer,
     answer_once
+)
+from clockify_rag.http_utils import (
+    get_session,
+    http_post_with_retries,
+    _mount_retries
 )
 
 # Re-export config constants for backward compatibility with tests
@@ -183,18 +199,6 @@ QUERY_LOG_DISABLED = False  # Can be set to True via --no-log flag
 # Note: Query expansion now handled by clockify_rag.retrieval.expand_query()
 
 # ====== CLEANUP HANDLERS ======
-def _release_lock_if_owner():
-    """Release build lock on exit if held by this process - Task D."""
-    try:
-        if os.path.exists(BUILD_LOCK):
-            with open(BUILD_LOCK) as f:
-                data = json.loads(f.read())
-            if data.get("pid") == os.getpid():
-                os.remove(BUILD_LOCK)
-                logger.debug("Cleaned up build lock")
-    except (OSError, FileNotFoundError, json.JSONDecodeError, KeyError):
-        # Cleanup failed - not critical, can ignore
-        pass
 
 atexit.register(_release_lock_if_owner)
 
@@ -202,83 +206,9 @@ atexit.register(_release_lock_if_owner)
 REQUESTS_SESSION = None
 REQUESTS_SESSION_RETRIES = 0
 
-def _mount_retries(sess, retries: int):
-    """Mount or update HTTP retry adapters with connection pooling (Rank 27).
 
-    Rank 27: Explicitly set pool_connections=10 and pool_maxsize=20 for better
-    concurrency and reduced latency on concurrent queries (10-20% improvement).
-    """
-    from requests.adapters import HTTPAdapter
-    try:
-        from urllib3.util.retry import Retry  # urllib3 v2
-        retry_cls = Retry
-        kwargs = dict(
-            total=retries, connect=retries, read=retries, status=retries,
-            backoff_factor=0.5, raise_on_status=False,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=frozenset({"GET", "POST"}),
-            respect_retry_after_header=True,
-        )
-        retry_strategy = retry_cls(**kwargs)
-    except Exception:
-        # older urllib3
-        from urllib3.util import Retry as RetryOld
-        retry_cls = RetryOld
-        kwargs = dict(
-            total=retries, connect=retries, read=retries, status=retries,
-            backoff_factor=0.5, raise_on_status=False,
-            status_forcelist=[429, 500, 502, 503, 504],
-            method_whitelist=frozenset({"GET", "POST"}),
-        )
-        retry_strategy = retry_cls(**kwargs)
-
-    # Rank 27: Explicit connection pooling parameters
-    # pool_connections: number of connection pools to cache (1 per host)
-    # pool_maxsize: max connections per pool (allows concurrent requests)
-    adapter = HTTPAdapter(
-        max_retries=retry_strategy,
-        pool_connections=10,  # Support up to 10 different hosts
-        pool_maxsize=20       # Allow 20 concurrent connections per host
-    )
-    sess.mount("http://", adapter)
-    sess.mount("https://", adapter)
-
-def get_session(retries=0):
-    """Get or create global requests session with optional retry logic - Task G."""
-    global REQUESTS_SESSION, REQUESTS_SESSION_RETRIES
-    if REQUESTS_SESSION is None:
-        REQUESTS_SESSION = requests.Session()
-        # Task G: Set trust_env based on ALLOW_PROXIES env var
-        REQUESTS_SESSION.trust_env = (os.getenv("ALLOW_PROXIES") == "1")
-        if retries > 0:
-            _mount_retries(REQUESTS_SESSION, retries)
-        REQUESTS_SESSION_RETRIES = retries
-    elif retries > REQUESTS_SESSION_RETRIES:
-        # Upgrade retries if higher count requested
-        _mount_retries(REQUESTS_SESSION, retries)
-        REQUESTS_SESSION_RETRIES = retries
-    return REQUESTS_SESSION
 
 # v4.1: HTTP POST helper with retry logic
-def http_post_with_retries(url, json_payload, retries=3, backoff=0.5, timeout=None):
-    """POST with exponential backoff retry."""
-    if timeout is None:
-        timeout = (config.EMB_CONNECT_T, config.EMB_READ_T)
-    s = get_session()
-    last_error = None
-    for attempt in range(retries):
-        try:
-            r = s.post(url, json=json_payload, timeout=timeout, allow_redirects=False)
-            if r.status_code == 200:
-                return r
-            last_error = f"HTTP {r.status_code}"
-        except Exception as e:
-            last_error = str(e)
-            logger.warning(f"retry post url={url} attempt={attempt+1}")
-        if attempt < retries - 1:
-            import time
-            time.sleep(backoff * (2 ** attempt))
-    raise RuntimeError(f"POST failed after {retries} attempts to {url}: {last_error}")
 
 
 # ====== LOCAL EMBEDDINGS (v4.1 - Section 2) ======
@@ -390,19 +320,6 @@ def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int | No
     return snippets, token_count, False
 
 # ====== KPI LOGGING (v4.1 - Section 6) ======
-def log_kpi(topk: int, packed: int, used_tokens: int, rerank_applied: bool, rerank_reason: str = ""):
-    """Log KPI metrics in greppable format."""
-    kpi_line = (
-        f"retrieve={KPI.retrieve_ms:.1f}ms "
-        f"ann={KPI.ann_ms:.1f}ms "
-        f"rerank={KPI.rerank_ms:.1f}ms "
-        f"ask={KPI.ask_ms:.1f}ms "
-        f"total={KPI.retrieve_ms + KPI.rerank_ms + KPI.ask_ms:.1f}ms "
-        f"topk={topk} packed={packed} used_tokens={used_tokens} "
-        f"emb_backend={config.EMB_BACKEND} ann={config.USE_ANN} "
-        f"alpha={config.ALPHA_HYBRID} rerank_applied={rerank_applied}"
-    )
-    logger.info(f"kpi {kpi_line}")
 
 # ====== JSON OUTPUT (v4.1 - Section 9) ======
 def answer_to_json(answer: str, citations: list, used_tokens: int | None, topk: int, packed: int, confidence: int | None = None) -> dict:
@@ -450,109 +367,12 @@ def answer_to_json(answer: str, citations: list, used_tokens: int | None, topk: 
 # These are integration/smoke tests that verify key components.
 
 
-def _pid_alive(pid: int) -> bool:
-    """Check if a process is alive. Cross-platform - Task D."""
-    if pid <= 0:
-        return False
-    system = platform.system().lower()
-    try:
-        if system != "windows":
-            # POSIX: use signal 0 check
-            os.kill(pid, 0)
-            return True
-        else:
-            # Windows: best-effort with optional psutil
-            try:
-                import psutil
-                return psutil.pid_exists(pid)
-            except Exception:
-                # Fallback: treat as alive; bounded wait handles stale locks
-                # Hint once for better DX
-                try:
-                    if not getattr(_pid_alive, "_hinted_psutil", False):
-                        logger.debug("[build_lock] psutil not available on Windows; install 'psutil' for precise PID checks")
-                        _pid_alive._hinted_psutil = True
-                except Exception:
-                    pass
-                return True
-    except OSError:
-        return False
-
-@contextmanager
 
 # ====== CONFIG VALIDATION ======
 
-def validate_and_set_config(ollama_url=None, gen_model=None, emb_model=None, ctx_budget=None):
-    """Validate and set global config from CLI args.
 
-    Note: No 'global' declaration needed since we're modifying the imported
-    config module's attributes directly (config.OLLAMA_URL, etc.)
-    """
-    if ollama_url:
-        config.OLLAMA_URL = validate_ollama_url(ollama_url)
-        logger.info(f"Ollama endpoint: {config.OLLAMA_URL}")
 
-    if gen_model:
-        config.GEN_MODEL = gen_model
-        logger.info(f"Generation model: {config.GEN_MODEL}")
 
-    if emb_model:
-        config.EMB_MODEL = emb_model
-        logger.info(f"Embedding model: {config.EMB_MODEL}")
-
-    if ctx_budget:
-        try:
-            config.CTX_TOKEN_BUDGET = int(ctx_budget)
-            if config.CTX_TOKEN_BUDGET < 256:
-                raise ValueError("Context budget must be >= 256")
-            logger.info(f"Context token budget: {config.CTX_TOKEN_BUDGET}")
-        except ValueError as e:
-            raise ValueError(f"Invalid context budget: {e}")
-
-def validate_chunk_config():
-    """Validate chunk parameters at startup."""
-    if config.CHUNK_OVERLAP >= config.CHUNK_CHARS:
-        raise ValueError(f"config.CHUNK_OVERLAP ({config.CHUNK_OVERLAP}) must be < config.CHUNK_CHARS ({config.CHUNK_CHARS})")
-    logger.debug(f"Chunk config: size={config.CHUNK_CHARS}, overlap={config.CHUNK_OVERLAP}")
-
-def check_pytorch_mps():
-    """Check PyTorch MPS availability on M1 Macs and log warnings (v4.1.2)."""
-    is_macos_arm64 = platform.system() == "Darwin" and platform.machine() == "arm64"
-
-    if not is_macos_arm64:
-        return  # Only relevant for M1/M2/M3 Macs
-
-    try:
-        import torch
-        mps_available = torch.backends.mps.is_available()
-
-        if mps_available:
-            logger.info("info: pytorch_mps=available platform=arm64 (GPU acceleration enabled)")
-        else:
-            logger.warning(
-                "warning: pytorch_mps=unavailable platform=arm64 "
-                "hint='Embeddings will use CPU (slower). Ensure macOS 12.3+ and PyTorch 1.12+'"
-            )
-            logger.warning("  To fix: pip install --upgrade torch or conda install -c pytorch pytorch")
-    except ImportError:
-        logger.debug("info: pytorch not imported, skipping MPS check")
-    except Exception as e:
-        logger.debug(f"info: pytorch_mps check failed: {e}")
-
-def _log_config_summary(use_rerank=False, pack_top=config.DEFAULT_PACK_TOP, seed=config.DEFAULT_SEED, threshold=config.DEFAULT_THRESHOLD, top_k=config.DEFAULT_TOP_K, num_ctx=config.DEFAULT_NUM_CTX, num_predict=config.DEFAULT_NUM_PREDICT, retries=config.DEFAULT_RETRIES):
-    """Log configuration summary at startup - Task I."""
-    proxy_trust = 1 if os.getenv("ALLOW_PROXIES") == "1" else 0
-    log_target = "off" if config.LOG_QUERY_INCLUDE_ANSWER is False else pathlib.Path(config.QUERY_LOG_FILE).resolve()
-    # Task I: Single-line CONFIG banner
-    logger.info(
-        f"CONFIG model={config.GEN_MODEL} emb={config.EMB_MODEL} topk={top_k} pack={pack_top} thr={threshold} "
-        f"seed={seed} ctx={num_ctx} pred={num_predict} retries={retries} "
-        f"timeouts=(3,{int(config.EMB_READ_T)}/{int(config.CHAT_READ_T)}/{int(config.RERANK_READ_T)}) "
-        f"log={log_target} "
-        f"trust_env={proxy_trust} rerank={1 if use_rerank else 0}"
-    )
-    # Task I: Print refusal string once for sanity
-    logger.info(f'config.REFUSAL_STR="{config.REFUSAL_STR}"')
 
 # ====== SYSTEM PROMPT (Rank 25: Few-shot examples added) ======
 SYSTEM_PROMPT = f"""You are CAKE.com Internal Support for Clockify.
@@ -596,53 +416,13 @@ PASSAGES:
 
 # ====== UTILITIES ======
 
-def atomic_write_bytes(path: str, data: bytes) -> None:
-    """Atomically write bytes with fsync durability - Task E."""
-    tmp = None
-    try:
-        d = os.path.dirname(os.path.abspath(path)) or "."
-        with tempfile.NamedTemporaryFile(prefix=".tmp.", dir=d, delete=False) as f:
-            tmp = f.name
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-        _fsync_dir(path)
-    finally:
-        if tmp and os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except Exception:
-                pass
-
-def atomic_write_text(path: str, text: str) -> None:
-    """Atomically write text file with fsync durability - Task E."""
-    atomic_write_bytes(path, text.encode("utf-8"))
 
 
 
 
-def log_event(event: str, **fields):
-    """Log a structured JSON event. Fallback to plain format if JSON serialization fails."""
-    try:
-        record = {"event": event, **fields}
-        logger.info(json.dumps(record, ensure_ascii=False))
-    except Exception:
-        # Fallback to plain string if JSON encoding fails
-        logger.info(f"{event} {fields}")
 
 
-def is_rtf(text: str) -> bool:
-    """Check if text is RTF format."""
-    # Check first 128 chars for RTF signature
-    head_128 = text[:128]
-    if "{\\rtf" in head_128 or "\\rtf" in head_128:
-        return True
 
-    # Check first 4096 chars for RTF control words (stricter)
-    head_4k = text[:4096]
-    rtf_commands = re.findall(r"\\(?:cf\d+|u[+-]?\d+\?|f\d+|pard)\b", head_4k)
-    return len(rtf_commands) > 20
 
 
 # ====== REMOVED REDUNDANT IMPLEMENTATIONS (2025-11-08) ======
