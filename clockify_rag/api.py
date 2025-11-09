@@ -1,0 +1,355 @@
+"""FastAPI server for Clockify RAG system.
+
+Provides REST API endpoints:
+- GET /health: Health check
+- GET /v1/config: Current configuration
+- POST /v1/query: Submit a question
+- POST /v1/ingest: Trigger index build
+- GET /v1/metrics: System metrics
+"""
+
+import json
+import logging
+import os
+import platform
+import time
+from datetime import datetime
+from typing import Optional, Dict, Any
+
+import typer
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+
+from . import config
+from .answer import answer_once
+from .cli import ensure_index_ready
+from .indexing import build
+from .utils import validate_ollama_url
+
+logger = logging.getLogger(__name__)
+
+# ============================================================================
+# Pydantic Models
+# ============================================================================
+
+
+class QueryRequest(BaseModel):
+    """Request body for /v1/query endpoint."""
+
+    question: str = Field(..., min_length=1, max_length=10000, description="Question to answer")
+    top_k: Optional[int] = Field(15, ge=1, le=100, description="Number of chunks to retrieve")
+    pack_top: Optional[int] = Field(8, ge=1, le=50, description="Number of chunks in context")
+    threshold: Optional[float] = Field(0.25, ge=0.0, le=1.0, description="Minimum similarity")
+    debug: Optional[bool] = Field(False, description="Include debug information")
+
+
+class QueryResponse(BaseModel):
+    """Response body for /v1/query endpoint."""
+
+    question: str
+    answer: str
+    confidence: Optional[float] = None
+    sources: list[int] = Field(default_factory=list, description="Chunk IDs used")
+    timestamp: datetime
+    processing_time_ms: float
+
+
+class HealthResponse(BaseModel):
+    """Response body for /v1/health endpoint."""
+
+    status: str
+    timestamp: datetime
+    version: str
+    platform: str
+    index_ready: bool
+    ollama_connected: bool
+
+
+class ConfigResponse(BaseModel):
+    """Response body for /v1/config endpoint."""
+
+    ollama_url: str
+    gen_model: str
+    emb_model: str
+    chunk_size: int
+    top_k: int
+    pack_top: int
+    threshold: float
+
+
+class IngestRequest(BaseModel):
+    """Request body for /v1/ingest endpoint."""
+
+    input_file: Optional[str] = Field(None, description="Input markdown file")
+    force: Optional[bool] = Field(False, description="Force rebuild")
+
+
+class IngestResponse(BaseModel):
+    """Response body for /v1/ingest endpoint."""
+
+    status: str
+    message: str
+    timestamp: datetime
+    index_ready: bool
+
+
+# ============================================================================
+# FastAPI Application
+# ============================================================================
+
+
+def create_app() -> FastAPI:
+    """Create and configure FastAPI application."""
+    app = FastAPI(
+        title="Clockify RAG API",
+        description="Production-ready RAG system with hybrid retrieval",
+        version="5.9.1",
+    )
+
+    # Add CORS middleware if enabled
+    if config.ALPHA_HYBRID is not None:  # Placeholder check
+        origins = ["*"]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+    # Global state for index
+    app.state.chunks = None
+    app.state.vecs_n = None
+    app.state.bm = None
+    app.state.hnsw = None
+    app.state.index_ready = False
+
+    @app.on_event("startup")
+    async def startup_event():
+        """Load index on startup."""
+        try:
+            logger.info("Loading index on startup...")
+            result = ensure_index_ready(retries=2)
+            if result:
+                chunks, vecs_n, bm, hnsw = result
+                app.state.chunks = chunks
+                app.state.vecs_n = vecs_n
+                app.state.bm = bm
+                app.state.hnsw = hnsw
+                app.state.index_ready = True
+                logger.info(f"Index loaded: {len(chunks)} chunks")
+            else:
+                logger.warning("Index not ready at startup")
+        except Exception as e:
+            logger.error(f"Failed to load index at startup: {e}")
+
+    # ========================================================================
+    # Health Check Endpoint
+    # ========================================================================
+
+    @app.get("/health", response_model=HealthResponse)
+    async def health_check() -> HealthResponse:
+        """Health check endpoint.
+
+        Returns system status and connectivity.
+        """
+        # Check Ollama connectivity
+        ollama_ok = False
+        try:
+            validate_ollama_url(config.OLLAMA_URL, timeout=3)
+            ollama_ok = True
+        except Exception:
+            pass
+
+        return HealthResponse(
+            status="ok" if app.state.index_ready and ollama_ok else "degraded",
+            timestamp=datetime.now(),
+            version="5.9.1",
+            platform=f"{platform.system()} {platform.machine()}",
+            index_ready=app.state.index_ready,
+            ollama_connected=ollama_ok,
+        )
+
+    @app.get("/v1/health", response_model=HealthResponse)
+    async def health_check_v1() -> HealthResponse:
+        """Health check endpoint (v1 API)."""
+        return await health_check()
+
+    # ========================================================================
+    # Configuration Endpoint
+    # ========================================================================
+
+    @app.get("/v1/config", response_model=ConfigResponse)
+    async def get_config() -> ConfigResponse:
+        """Get current configuration."""
+        return ConfigResponse(
+            ollama_url=config.OLLAMA_URL,
+            gen_model=config.GEN_MODEL,
+            emb_model=config.EMB_MODEL,
+            chunk_size=config.CHUNK_CHARS,
+            top_k=config.DEFAULT_TOP_K,
+            pack_top=config.DEFAULT_PACK_TOP,
+            threshold=config.DEFAULT_THRESHOLD,
+        )
+
+    # ========================================================================
+    # Query Endpoint
+    # ========================================================================
+
+    @app.post("/v1/query", response_model=QueryResponse)
+    async def submit_query(request: QueryRequest) -> QueryResponse:
+        """Submit a question and get an answer.
+
+        This endpoint uses the RAG system to retrieve relevant context
+        and generate an answer using the LLM.
+
+        Args:
+            request: QueryRequest with question and parameters
+
+        Returns:
+            QueryResponse with answer, confidence, and sources
+
+        Raises:
+            HTTPException: If index not ready or query fails
+        """
+        if not app.state.index_ready:
+            raise HTTPException(
+                status_code=503, detail="Index not ready. Run /v1/ingest first or wait for startup."
+            )
+
+        try:
+            start_time = time.time()
+
+            answer, meta = answer_once(
+                request.question,
+                app.state.chunks,
+                app.state.vecs_n,
+                app.state.bm,
+                top_k=request.top_k,
+                pack_top=request.pack_top,
+                threshold=request.threshold,
+                hnsw=app.state.hnsw,
+                debug=request.debug,
+            )
+
+            elapsed_ms = (time.time() - start_time) * 1000
+
+            return QueryResponse(
+                question=request.question,
+                answer=answer,
+                confidence=meta.get("confidence"),
+                sources=meta.get("selected", [])[:5],  # Top 5 sources
+                timestamp=datetime.now(),
+                processing_time_ms=elapsed_ms,
+            )
+
+        except Exception as e:
+            logger.error(f"Query error: {e}", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+
+    # ========================================================================
+    # Ingest Endpoint
+    # ========================================================================
+
+    @app.post("/v1/ingest", response_model=IngestResponse)
+    async def trigger_ingest(
+        request: IngestRequest, background_tasks: BackgroundTasks
+    ) -> IngestResponse:
+        """Trigger index build/rebuild.
+
+        Starts a background task to build the index from the knowledge base.
+
+        Args:
+            request: IngestRequest with input file and options
+            background_tasks: FastAPI background tasks
+
+        Returns:
+            IngestResponse with status
+
+        Note:
+            Build happens asynchronously. Check /health to verify completion.
+        """
+        input_file = request.input_file or "knowledge_full.md"
+
+        if not os.path.exists(input_file):
+            raise HTTPException(status_code=404, detail=f"Input file not found: {input_file}")
+
+        def do_ingest():
+            """Background task to build index."""
+            try:
+                logger.info(f"Starting ingest from {input_file}")
+                build(input_file, retries=2)
+                app.state.index_ready = True
+                logger.info("Ingest completed successfully")
+            except Exception as e:
+                logger.error(f"Ingest failed: {e}", exc_info=True)
+                app.state.index_ready = False
+
+        background_tasks.add_task(do_ingest)
+
+        return IngestResponse(
+            status="processing",
+            message=f"Index build started in background from {input_file}",
+            timestamp=datetime.now(),
+            index_ready=app.state.index_ready,
+        )
+
+    # ========================================================================
+    # Metrics Endpoint (Placeholder)
+    # ========================================================================
+
+    @app.get("/v1/metrics")
+    async def get_metrics() -> Dict[str, Any]:
+        """Get system metrics (placeholder for Prometheus integration).
+
+        Returns:
+            Dictionary with metrics (JSON for easy parsing)
+        """
+        return {
+            "timestamp": datetime.now().isoformat(),
+            "index_ready": app.state.index_ready,
+            "chunks_loaded": len(app.state.chunks) if app.state.chunks else 0,
+        }
+
+    return app
+
+
+# ============================================================================
+# Standalone Server
+# ============================================================================
+
+
+app = create_app()
+
+
+def run_server(
+    host: str = "127.0.0.1",
+    port: int = 8000,
+    workers: int = 4,
+    log_level: str = "info",
+) -> None:
+    """Run the FastAPI server.
+
+    Args:
+        host: Host to bind to
+        port: Port to bind to
+        workers: Number of worker processes
+        log_level: Logging level
+    """
+    import uvicorn
+
+    uvicorn.run(
+        "clockify_rag.api:app",
+        host=host,
+        port=port,
+        workers=workers,
+        log_level=log_level,
+        reload=False,
+    )
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run(app, host="127.0.0.1", port=8000)
