@@ -500,11 +500,19 @@ RERANK_READ_TIMEOUT     # Rerank timeout (default: 180)
 ```bash
 RAG_LOG_FILE            # Log file path (default: rag_queries.jsonl)
 RAG_NO_LOG              # Disable logging: 1/0 (default: 0)
+QUERY_LOG_DISABLED      # Alternate master flag (set automatically by --no-log)
 RAG_LOG_INCLUDE_ANSWER  # Include answer text: 1/0 (default: 1)
 RAG_LOG_ANSWER_PLACEHOLDER  # Placeholder when answer redacted (default: [REDACTED])
 RAG_LOG_INCLUDE_CHUNKS  # Include chunk text: 1/0 (default: 0 for security)
 ```
 See [LOGGING_CONFIG.md](LOGGING_CONFIG.md) for comprehensive logging documentation.
+
+#### Query log location & format (SOC / compliance)
+
+* **Default path**: `${REPO_ROOT}/rag_queries.jsonl` (overridable via `RAG_LOG_FILE`).
+* **Format**: newline-delimited JSON; each entry includes sanitized question text, answer metadata, chunk IDs/scores, routing info, and millisecond timings.
+* **Privacy controls**: chunk text is redacted unless `RAG_LOG_INCLUDE_CHUNKS=1`; answers can be redacted via `RAG_LOG_INCLUDE_ANSWER=0` with the placeholder configured by `RAG_LOG_ANSWER_PLACEHOLDER`.
+* **Disabling logs**: pass `--no-log` to the legacy CLI or set `QUERY_LOG_DISABLED=1` / `RAG_NO_LOG=1` for both the CLI and API. The flag propagates to FastAPI via the shared `clockify_rag.config.QUERY_LOG_DISABLED` toggle.
 
 ### Caching & Rate Limiting
 ```bash

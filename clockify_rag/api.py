@@ -27,6 +27,7 @@ from . import config
 from .answer import answer_once
 from .cli import ensure_index_ready
 from .indexing import build
+from .query_logging import record_query_telemetry
 from .utils import check_ollama_connectivity
 
 logger = logging.getLogger(__name__)
@@ -414,6 +415,13 @@ def create_app() -> FastAPI:
             )
 
             elapsed_ms = (time.time() - start_time) * 1000
+
+            record_query_telemetry(
+                request.question,
+                result,
+                latency_ms=elapsed_ms,
+                source="api.v1.query",
+            )
 
             return QueryResponse(
                 question=request.question,

@@ -308,6 +308,9 @@ def get_query_cache():
     return _QUERY_CACHE
 
 
+_TEXT_FIELDS = {"chunk", "text", "content", "body"}
+
+
 def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float,
               refused: bool = False, metadata: dict = None):
     """Log query with structured JSON format for monitoring and analytics.
@@ -334,8 +337,8 @@ def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float
             normalized["hybrid"] = float(normalized.get("hybrid", normalized["dense"]))
             # Redact chunk text for security/privacy unless explicitly enabled
             if not LOG_QUERY_INCLUDE_CHUNKS:
-                normalized.pop("chunk", None)  # Remove full chunk text
-                normalized.pop("text", None)   # Remove text field if present
+                for key in _TEXT_FIELDS:
+                    normalized.pop(key, None)
         else:
             normalized = {
                 "id": chunk,
@@ -359,16 +362,17 @@ def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float
     sanitized_metadata = copy.deepcopy(metadata) if metadata else {}
     if not LOG_QUERY_INCLUDE_CHUNKS and isinstance(sanitized_metadata, dict):
         # Remove chunk text from any nested chunk dicts in metadata
-        for key in list(sanitized_metadata.keys()):
-            val = sanitized_metadata[key]
-            if isinstance(val, dict):
-                val.pop("text", None)
-                val.pop("chunk", None)
-            elif isinstance(val, list):
-                for item in val:
-                    if isinstance(item, dict):
-                        item.pop("text", None)
-                        item.pop("chunk", None)
+        def _scrub_text_fields(obj):
+            if isinstance(obj, dict):
+                for field in _TEXT_FIELDS:
+                    obj.pop(field, None)
+                for value in obj.values():
+                    _scrub_text_fields(value)
+            elif isinstance(obj, list):
+                for item in obj:
+                    _scrub_text_fields(item)
+
+        _scrub_text_fields(sanitized_metadata)
 
     # FIX (Error #6): Sanitize query and answer to prevent log injection
     log_entry = {

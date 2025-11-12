@@ -39,7 +39,8 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
                 "bm25": 0.7,
                 "hybrid": 0.75,
                 "chunk": "Sensitive chunk text that should be redacted",
-                "text": "More sensitive text"
+                "text": "More sensitive text",
+                "content": "Alias field that should also be redacted",
             }
         ]
 
@@ -62,6 +63,7 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
         assert chunk_logged["id"] == "test-123"
         assert "chunk" not in chunk_logged, "chunk field should be redacted when LOG_QUERY_INCLUDE_CHUNKS=False"
         assert "text" not in chunk_logged, "text field should be redacted when LOG_QUERY_INCLUDE_CHUNKS=False"
+        assert "content" not in chunk_logged, "content alias should also be redacted"
 
     finally:
         if os.path.exists(log_file):
@@ -96,7 +98,8 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
                 "bm25": 0.8,
                 "hybrid": 0.85,
                 "chunk": "This chunk text should be preserved",
-                "text": "This text should also be preserved"
+                "text": "This text should also be preserved",
+                "content": "Alias content should be preserved when enabled",
             }
         ]
 
@@ -119,6 +122,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
         assert chunk_logged["id"] == "test-456"
         assert "chunk" in chunk_logged, "chunk field should be present when LOG_QUERY_INCLUDE_CHUNKS=1"
         assert chunk_logged["chunk"] == "This chunk text should be preserved"
+        assert chunk_logged["content"] == "Alias content should be preserved when enabled"
 
     finally:
         if os.path.exists(log_file):
@@ -156,7 +160,8 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
                 "dense": 0.7,
                 "bm25": 0.6,
                 "hybrid": 0.65,
-                "chunk": "Chunk text should be included despite answer redaction"
+                "chunk": "Chunk text should be included despite answer redaction",
+                "body": "Body alias should follow the chunk flag",
             }
         ]
 
@@ -181,6 +186,7 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
         chunk_logged = log_entry["retrieved_chunks"][0]
         assert "chunk" in chunk_logged, "chunk field should be present when LOG_QUERY_INCLUDE_CHUNKS=1, regardless of answer flag"
         assert chunk_logged["chunk"] == "Chunk text should be included despite answer redaction"
+        assert chunk_logged["body"] == "Body alias should follow the chunk flag"
 
     finally:
         if os.path.exists(log_file):

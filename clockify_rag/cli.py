@@ -21,6 +21,7 @@ from .caching import get_query_cache
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
 from .http_utils import http_post_with_retries
 from .precomputed_cache import get_precomputed_cache
+from .query_logging import record_query_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -133,6 +134,7 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
         if faq_cache:
             faq_result = faq_cache.get(question, fuzzy=True)
 
+        ran_answer_once = False
         if faq_result:
             # FAQ cache hit - synthesize result compatible with answer_once output
             cached_chunks = faq_result.get("packed_chunks", [])
@@ -171,6 +173,7 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
                 num_predict=num_predict,
                 retries=retries
             )
+            ran_answer_once = True
 
         answer_text = result.get("answer", "")
         citations = result.get("selected_chunks", [])
@@ -198,6 +201,9 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
             print(f"\n[DEBUG] Retrieved: {len(citations)} chunks")
             if metadata:
                 print(f"[DEBUG] Metadata: {metadata}")
+
+        if ran_answer_once:
+            record_query_telemetry(question, result, source="cli.chat")
 
     # Save cache on exit
     query_cache.save()
@@ -350,7 +356,7 @@ def configure_logging_and_config(args):
         logger.error("CONFIG ERROR: %s", exc)
         sys.exit(1)
 
-    query_log_disabled = getattr(args, "no_log", False)
+    query_log_disabled = getattr(args, "no_log", False) or getattr(config, "QUERY_LOG_DISABLED", False)
 
     # Update globals from CLI args
     config.EMB_BACKEND = args.emb_backend
@@ -375,6 +381,7 @@ def configure_logging_and_config(args):
         logger.error(f"CONFIG ERROR: {e}")
         sys.exit(1)
 
+    config.QUERY_LOG_DISABLED = query_log_disabled
     return query_log_disabled
 
 
@@ -435,6 +442,8 @@ def handle_ask_command(args):
         print(f"[DEBUG] Retrieved: {len(citations)} chunks")
         if metadata:
             print(f"[DEBUG] Metadata: {metadata}")
+
+    record_query_telemetry(args.question, result, source="cli.ask")
 
 
 def handle_chat_command(args):

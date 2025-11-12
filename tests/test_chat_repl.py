@@ -8,6 +8,7 @@ def test_chat_repl_json_output(monkeypatch, capsys):
     """Ensure REPL surfaces new answer_once metadata in JSON mode."""
 
     # Stub expensive startup routines
+    monkeypatch.setattr(cli_module.config, "QUERY_LOG_DISABLED", True, raising=False)
     monkeypatch.setattr(cli_module, "_log_config_summary", lambda **_: None)
     monkeypatch.setattr(cli_module, "warmup_on_startup", lambda: None)
 

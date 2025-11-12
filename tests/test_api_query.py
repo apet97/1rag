@@ -6,6 +6,7 @@ import clockify_rag.api as api_module
 def test_api_query_returns_metadata(monkeypatch):
     """API should expose metadata from the new answer_once result schema."""
 
+    monkeypatch.setattr(api_module.config, "QUERY_LOG_DISABLED", True, raising=False)
     monkeypatch.setattr(api_module, "ensure_index_ready", lambda retries=2: ([], [], {}, None))
 
     result_payload = {

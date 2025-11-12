@@ -302,6 +302,24 @@ def _get_bool_env(var_name: str, default: str = "1") -> bool:
 
 
 # Query logging configuration
+def _is_query_logging_disabled() -> bool:
+    """Derive the master query logging flag from CLI/env settings."""
+
+    truthy = {"1", "true", "yes", "on"}
+    falsy = {"0", "false", "no", "off", ""}
+    for env_var in ("QUERY_LOG_DISABLED", "RAG_NO_LOG", "RAG_QUERY_LOG_DISABLED"):
+        value = os.environ.get(env_var)
+        if value is None:
+            continue
+        normalized = value.strip().lower()
+        if normalized in truthy:
+            return True
+        if normalized in falsy:
+            return False
+    return False
+
+
+QUERY_LOG_DISABLED = _is_query_logging_disabled()
 QUERY_LOG_FILE = os.environ.get("RAG_LOG_FILE", "rag_queries.jsonl")
 LOG_QUERY_INCLUDE_ANSWER = _get_bool_env("RAG_LOG_INCLUDE_ANSWER", "1")
 LOG_QUERY_ANSWER_PLACEHOLDER = os.environ.get("RAG_LOG_ANSWER_PLACEHOLDER", "[REDACTED]")

@@ -54,6 +54,11 @@ def pytest_configure(config):
         print(f"\nWARNING: Optional dependencies not installed: {', '.join(optional_missing)}")
         print("Some tests may be skipped. Install with: pip install -e '.[dev]'\n")
 
+    # Disable query logging during tests to avoid polluting working trees
+    import clockify_rag.config as rag_config
+
+    rag_config.QUERY_LOG_DISABLED = True
+
 
 from clockify_rag.indexing import build_bm25
 from clockify_rag.config import DEFAULT_TOP_K

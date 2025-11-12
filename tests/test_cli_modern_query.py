@@ -1,4 +1,5 @@
 import json
+import json
 
 import pytest
 from typer.testing import CliRunner
@@ -14,6 +15,7 @@ def cli_runner():
 def test_query_command_surfaces_metadata(monkeypatch, cli_runner):
     """Ensure Typer query command consumes new answer_once schema."""
 
+    monkeypatch.setattr(cli_modern.config, "QUERY_LOG_DISABLED", True, raising=False)
     monkeypatch.setattr(cli_modern, "ensure_index_ready", lambda retries=2: ([], [], {}, None))
 
     result_payload = {

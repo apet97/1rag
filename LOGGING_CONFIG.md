@@ -8,6 +8,7 @@ This document explains all logging-related environment variables for the Clockif
 |----------|---------|-------------|
 | `RAG_LOG_FILE` | `rag_queries.jsonl` | Path to query log file |
 | `RAG_NO_LOG` | `0` | Disable all query logging (`1` to disable) |
+| `QUERY_LOG_DISABLED` | `0` | Alias for the master disable switch (also set via `--no-log`) |
 | `RAG_LOG_INCLUDE_ANSWER` | `1` | Include answer text in logs (`0` to redact) |
 | `RAG_LOG_ANSWER_PLACEHOLDER` | `[REDACTED]` | Placeholder when answer is redacted |
 | `RAG_LOG_INCLUDE_CHUNKS` | `0` | Include full chunk text in logs (`1` to enable) |
@@ -32,12 +33,12 @@ export RAG_LOG_FILE="/var/log/rag/queries.jsonl"
 python3 clockify_support_cli_final.py chat
 ```
 
-### RAG_NO_LOG
+### RAG_NO_LOG / QUERY_LOG_DISABLED
 
 **Default**: `0` (logging enabled)
 **Values**: `0`, `1`, `false`, `true`, `yes`, `no`, `on`, `off`
 
-Master switch to disable all query logging. When set to `1` (or equivalent), no logs are written regardless of other flags.
+Master switch to disable all query logging. When set to `1` (or equivalent), no logs are written regardless of other flags. The environment variable can be provided as `RAG_NO_LOG` or `QUERY_LOG_DISABLED`; the legacy CLI `--no-log` flag also flips the same shared flag so downstream FastAPI instances stay in sync.
 
 **Use case**: Disable logging in development or when testing without creating log files.
 
@@ -45,6 +46,15 @@ Master switch to disable all query logging. When set to `1` (or equivalent), no 
 ```bash
 RAG_NO_LOG=1 python3 clockify_support_cli_final.py chat
 ```
+
+### SOC / Compliance quick facts
+
+- **Default path**: `${REPO_ROOT}/rag_queries.jsonl`. Override with `RAG_LOG_FILE` (e.g., `/var/log/rag/queries.jsonl`).
+- **Format**: One JSON object per line containing timestamps, sanitized question text, answer metadata, chunk IDs/scores, routing metadata, and timing information.
+- **Redaction controls**:
+  - `RAG_LOG_INCLUDE_ANSWER=0` replaces the answer with the value from `RAG_LOG_ANSWER_PLACEHOLDER`.
+  - `RAG_LOG_INCLUDE_CHUNKS=0` redacts `chunk`, `text`, `content`, and `body` fields from chunk payloads and metadata so KB text never leaks.
+- **Disabling**: Set `QUERY_LOG_DISABLED=1`, `RAG_NO_LOG=1`, or pass `--no-log` to the CLI. All variants update `clockify_rag.config.QUERY_LOG_DISABLED`, which the CLI and API both honor before emitting telemetry.
 
 ### RAG_LOG_INCLUDE_ANSWER
 
