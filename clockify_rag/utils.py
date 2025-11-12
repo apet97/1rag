@@ -21,6 +21,8 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+from .metrics import MetricNames, get_metrics
+
 _PROXY_TRUST_ENV_VARS = ("ALLOW_PROXIES", "USE_PROXY")
 
 
@@ -764,6 +766,73 @@ def log_query_metrics(
     }
 
     logger.info(json.dumps(log_entry))
+
+
+def record_query_telemetry(
+    question: str,
+    result: Dict[str, Any],
+    *,
+    source: str,
+    cache_hit: Optional[bool] = None,
+    extra_labels: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Update in-memory metrics and emit structured logs for a query result."""
+
+    if not result:
+        return
+
+    metadata = result.get("metadata") or {}
+    timing = result.get("timing") or {}
+    routing = result.get("routing")
+    answer = result.get("answer", "")
+    confidence = result.get("confidence")
+
+    try:
+        log_query_metrics(question, answer, confidence, timing, metadata, routing)
+    except Exception:  # pragma: no cover - logging failures should never break flow
+        logger.exception("Failed to emit structured query log")
+
+    try:
+        metrics = get_metrics()
+        labels: Dict[str, str] = {"interface": source}
+        if extra_labels:
+            for key, value in extra_labels.items():
+                if value is None:
+                    continue
+                labels[key] = str(value)
+
+        metrics.increment_counter(MetricNames.QUERIES_TOTAL, labels=labels)
+
+        if result.get("refused"):
+            metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels=labels)
+
+        cache_state = cache_hit
+        if cache_state is None:
+            cache_state = metadata.get("cache_hit")
+        if cache_state is None:
+            cache_state = False
+
+        if cache_state:
+            metrics.increment_counter(MetricNames.CACHE_HITS, labels=labels)
+        else:
+            metrics.increment_counter(MetricNames.CACHE_MISSES, labels=labels)
+
+        if metadata.get("rerank_applied"):
+            metrics.increment_counter(MetricNames.RERANK_REQUESTS, labels=labels)
+
+        latency_map = {
+            MetricNames.QUERY_LATENCY: "total_ms",
+            MetricNames.RETRIEVAL_LATENCY: "retrieve_ms",
+            MetricNames.RERANK_LATENCY: "rerank_ms",
+            MetricNames.LLM_LATENCY: "llm_ms",
+        }
+        for metric_name, timing_key in latency_map.items():
+            value = timing.get(timing_key)
+            if value is None:
+                continue
+            metrics.observe_histogram(metric_name, float(value), labels=labels)
+    except Exception:  # pragma: no cover - metrics should not break query flow
+        logger.exception("Failed to record query telemetry")
 
 
 def log_performance_metrics(

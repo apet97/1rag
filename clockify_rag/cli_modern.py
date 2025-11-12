@@ -27,7 +27,7 @@ from .caching import get_query_cache
 from .cli import ensure_index_ready, chat_repl
 from .embedding import _load_st_encoder
 from .indexing import build, load_index
-from .utils import check_ollama_connectivity, check_pytorch_mps
+from .utils import check_ollama_connectivity, check_pytorch_mps, record_query_telemetry
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -377,6 +377,13 @@ def query(
                 console.print(f"[dim]Sources: {selected_chunks[:3]}...[/dim]")
                 if metadata:
                     console.print(f"[dim]Metadata: {metadata}[/dim]")
+
+        record_query_telemetry(
+            question,
+            result,
+            source="cli_modern_query",
+            extra_labels={"output": "json" if json_output else "text"},
+        )
 
     except Exception as e:
         console.print(f"❌ Error: {e}")

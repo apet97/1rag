@@ -21,13 +21,15 @@ from typing import Optional, Dict, Any, List
 import typer
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, validator
 
 from . import config
 from .answer import answer_once
 from .cli import ensure_index_ready
 from .indexing import build
-from .utils import check_ollama_connectivity
+from .metrics import get_metrics
+from .utils import check_ollama_connectivity, record_query_telemetry
 
 logger = logging.getLogger(__name__)
 
@@ -415,6 +417,13 @@ def create_app() -> FastAPI:
 
             elapsed_ms = (time.time() - start_time) * 1000
 
+            record_query_telemetry(
+                request.question,
+                result,
+                source="api",
+                extra_labels={"endpoint": "v1/query"},
+            )
+
             return QueryResponse(
                 question=request.question,
                 answer=result.get("answer", ""),
@@ -494,23 +503,36 @@ def create_app() -> FastAPI:
         )
 
     # ========================================================================
-    # Metrics Endpoint (Placeholder)
+    # Metrics Endpoint
     # ========================================================================
 
     @app.get("/v1/metrics")
-    async def get_metrics(
+    async def get_metrics_endpoint(
+        format: str = "json",
         _: Dict[str, Any] = Depends(validate_request_credentials),
-    ) -> Dict[str, Any]:
-        """Get system metrics (placeholder for Prometheus integration).
+    ) -> Any:
+        """Expose aggregated metrics in JSON or Prometheus format."""
 
-        Returns:
-            Dictionary with metrics (JSON for easy parsing)
-        """
-        return {
+        fmt = (format or "json").lower()
+        collector = get_metrics()
+
+        if fmt == "prometheus":
+            return PlainTextResponse(
+                content=collector.export_prometheus() or "",
+                media_type="text/plain; version=0.0.4",
+            )
+
+        if fmt != "json":
+            raise HTTPException(status_code=400, detail="Unsupported metrics format")
+
+        payload = json.loads(collector.export_json(include_histograms=False))
+        payload["summary"] = collector.get_summary()
+        payload["app"] = {
             "timestamp": datetime.now().isoformat(),
             "index_ready": app.state.index_ready,
             "chunks_loaded": len(app.state.chunks) if app.state.chunks else 0,
         }
+        return payload
 
     return app
 

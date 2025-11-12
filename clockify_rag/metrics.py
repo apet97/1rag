@@ -326,7 +326,8 @@ class MetricsCollector:
                 "cache_misses",
                 "retrieval_latency_ms",
                 "llm_latency_ms",
-                "errors_total"
+                "errors_total",
+                "rerank_requests_total",
             ]
 
             for metric in key_metrics:
@@ -461,6 +462,7 @@ class MetricNames:
     CACHE_MISSES = "cache_misses"
     ERRORS_TOTAL = "errors_total"
     REFUSALS_TOTAL = "refusals_total"
+    RERANK_REQUESTS = "rerank_requests_total"
 
     # Histograms (latency in milliseconds)
     QUERY_LATENCY = "query_latency_ms"

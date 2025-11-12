@@ -15,7 +15,13 @@ from typing import Tuple, Optional, Any
 
 from . import config
 from .indexing import build, load_index
-from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
+from .utils import (
+    _log_config_summary,
+    validate_and_set_config,
+    validate_chunk_config,
+    check_pytorch_mps,
+    record_query_telemetry,
+)
 from .answer import answer_once, answer_to_json
 from .caching import get_query_cache
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
@@ -149,6 +155,7 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
                     "retrieval_count": len(cached_chunks),
                     "packed_count": len(cached_chunks),
                     "cache_type": "faq_precomputed",
+                    "cache_hit": True,
                 },
                 "routing": faq_result.get("routing"),
             }
@@ -198,6 +205,16 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
             print(f"\n[DEBUG] Retrieved: {len(citations)} chunks")
             if metadata:
                 print(f"[DEBUG] Metadata: {metadata}")
+
+        record_query_telemetry(
+            question,
+            result,
+            source="cli_chat",
+            extra_labels={
+                "cache": "faq" if faq_result else "live",
+                "output": "json" if use_json else "text",
+            },
+        )
 
     # Save cache on exit
     query_cache.save()
@@ -435,6 +452,13 @@ def handle_ask_command(args):
         print(f"[DEBUG] Retrieved: {len(citations)} chunks")
         if metadata:
             print(f"[DEBUG] Metadata: {metadata}")
+
+    record_query_telemetry(
+        args.question,
+        result,
+        source="cli_ask",
+        extra_labels={"output": "json" if getattr(args, "json", False) else "text"},
+    )
 
 
 def handle_chat_command(args):
