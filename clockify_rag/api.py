@@ -11,6 +11,7 @@ Provides REST API endpoints:
 import asyncio
 import json
 import logging
+import math
 import os
 import platform
 import signal
@@ -27,6 +28,7 @@ from . import config
 from .answer import answer_once
 from .cli import ensure_index_ready
 from .indexing import build
+from .caching import get_rate_limiter
 from .utils import check_ollama_connectivity
 
 logger = logging.getLogger(__name__)
@@ -163,6 +165,27 @@ def create_app() -> FastAPI:
     app.state.bm = None
     app.state.hnsw = None
     app.state.index_ready = False
+    app.state.rate_limiter = get_rate_limiter()
+
+    async def _acquire_rate_limit():
+        """Wait for a rate-limit slot or raise HTTP 429 on misconfiguration."""
+
+        limiter = app.state.rate_limiter
+        if limiter.allow_request():
+            return
+
+        wait_seconds = limiter.wait_time()
+        if math.isinf(wait_seconds):
+            raise HTTPException(
+                status_code=429,
+                detail="Rate limiter is configured to reject all traffic. Adjust RATE_LIMIT settings.",
+            )
+
+        wait_seconds = max(0.0, wait_seconds)
+        await asyncio.sleep(wait_seconds if wait_seconds > 0 else 0.01)
+
+        if not limiter.allow_request():
+            raise HTTPException(status_code=429, detail="Rate limit exceeded. Please retry later.")
 
     @app.on_event("startup")
     async def startup_event():
@@ -303,6 +326,8 @@ def create_app() -> FastAPI:
 
         try:
             start_time = time.time()
+
+            await _acquire_rate_limit()
 
             result = answer_once(
                 request.question,

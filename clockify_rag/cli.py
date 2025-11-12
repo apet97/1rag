@@ -8,8 +8,10 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import sys
+import time
 import numpy as np
 from typing import Tuple, Optional, Any
 
@@ -17,12 +19,42 @@ from . import config
 from .indexing import build, load_index
 from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
 from .answer import answer_once, answer_to_json
-from .caching import get_query_cache
+from .caching import get_query_cache, get_rate_limiter
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
 from .http_utils import http_post_with_retries
 from .precomputed_cache import get_precomputed_cache
 
 logger = logging.getLogger(__name__)
+
+
+def _wait_for_rate_limit(limiter, *, interactive: bool = False) -> None:
+    """Block until the shared rate limiter allows a new request."""
+
+    while True:
+        if limiter.allow_request():
+            return
+
+        wait_seconds = limiter.wait_time()
+
+        if math.isinf(wait_seconds):
+            message = (
+                "Rate limiter is configured to block all requests. "
+                "Check RATE_LIMIT_REQUESTS/RATE_LIMIT_WINDOW settings."
+            )
+            if interactive:
+                print(f"[rate-limit] {message}")
+            logger.error(message)
+            raise RuntimeError(message)
+
+        wait_seconds = max(0.0, wait_seconds)
+        sleep_duration = wait_seconds if wait_seconds > 0 else 0.01
+
+        if interactive:
+            print(f"[rate-limit] Cooling down for {sleep_duration:.2f}s...")
+        else:
+            logger.info("Rate limit exceeded. Sleeping for %.2fs", sleep_duration)
+
+        time.sleep(sleep_duration)
 
 
 def ensure_index_ready(retries=0) -> Tuple:
@@ -109,6 +141,7 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
     print("━" * 60)
 
     debug_enabled = debug  # Local toggle
+    rate_limiter = get_rate_limiter()
 
     while True:
         try:
@@ -127,6 +160,8 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
             debug_enabled = not debug_enabled
             print(f"Debug mode: {'ON' if debug_enabled else 'OFF'}")
             continue
+
+        _wait_for_rate_limit(rate_limiter, interactive=True)
 
         # OPTIMIZATION (Analysis Section 9.1 #3): Check FAQ cache first for instant responses
         faq_result = None
@@ -396,6 +431,8 @@ def handle_ask_command(args):
         retries=getattr(args, "retries", 0)
     )
     chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=getattr(args, "retries", 0))
+    limiter = get_rate_limiter()
+    _wait_for_rate_limit(limiter)
     result = answer_once(
         args.question,
         chunks,

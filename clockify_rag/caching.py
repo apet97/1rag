@@ -2,10 +2,12 @@
 
 import hashlib
 import logging
+import math
 import os
 import threading
 import time
 from collections import deque
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,37 +17,94 @@ _QUERY_CACHE = None
 
 
 class RateLimiter:
-    """Rate limiter DISABLED for internal deployment (no-op for backward compatibility).
+    """Thread-safe token bucket / leaky bucket rate limiter."""
 
-    OPTIMIZATION: For internal use, rate limiting adds unnecessary overhead (~5-10ms per query).
-    This class is kept for API compatibility but all methods return permissive values.
-    """
-
-    def __init__(self, max_requests=10, window_seconds=60):
-        """Initialize rate limiter (no-op for internal deployment).
+    def __init__(
+        self,
+        max_requests: int = 10,
+        window_seconds: float = 60.0,
+        burst_size: Optional[int] = None,
+        *,
+        time_func=None,
+    ) -> None:
+        """Create a rate limiter.
 
         Args:
-            max_requests: Ignored (kept for API compatibility)
-            window_seconds: Ignored (kept for API compatibility)
+            max_requests: Number of tokens refilled per ``window_seconds``.
+            window_seconds: Sliding window period controlling refill rate.
+            burst_size: Maximum burst capacity (defaults to ``max_requests``).
+            time_func: Injectable monotonic clock for testing (defaults to ``time.monotonic``).
         """
-        # No-op initialization - no state tracking for internal deployment
-        pass
+
+        if window_seconds < 0:
+            raise ValueError("window_seconds must be non-negative")
+        if max_requests < 0:
+            raise ValueError("max_requests must be non-negative")
+
+        self.max_requests = int(max_requests)
+        self.window_seconds = float(window_seconds)
+        self.burst_size = float(burst_size if burst_size is not None else max_requests)
+        if self.burst_size < 0:
+            raise ValueError("burst_size must be non-negative")
+
+        self._clock = time_func or time.monotonic
+        self._lock = threading.RLock()
+
+        if self.window_seconds == 0 or self.max_requests == 0:
+            self._fill_rate = 0.0
+        else:
+            self._fill_rate = self.max_requests / self.window_seconds
+
+        # Start with a full bucket so first burst can use the available quota.
+        self._capacity = float(self.burst_size)
+        self._tokens = float(self.burst_size)
+        self._last_refill = self._clock()
+
+    def _refill(self, now: float) -> None:
+        """Refill tokens based on elapsed time."""
+
+        if self._fill_rate <= 0:
+            # Either no requests allowed or no refill configured.
+            return
+
+        elapsed = max(0.0, now - self._last_refill)
+        if elapsed <= 0:
+            return
+
+        self._tokens = min(self._capacity, self._tokens + elapsed * self._fill_rate)
+        self._last_refill = now
 
     def allow_request(self) -> bool:
-        """Always allow requests for internal deployment.
+        """Attempt to consume a token."""
 
-        Returns:
-            Always True (no rate limiting for internal use)
-        """
-        return True  # Always allow for internal deployment
+        with self._lock:
+            now = self._clock()
+            self._refill(now)
+
+            if self._tokens >= 1.0:
+                self._tokens -= 1.0
+                if self._tokens < 0:
+                    self._tokens = 0.0
+                return True
+
+            return False
 
     def wait_time(self) -> float:
-        """Always return 0 for internal deployment.
+        """Return seconds until the next request would be allowed."""
 
-        Returns:
-            Always 0.0 (no waiting required)
-        """
-        return 0.0  # Never wait for internal deployment
+        with self._lock:
+            now = self._clock()
+            self._refill(now)
+
+            if self._tokens >= 1.0:
+                return 0.0
+
+            if self._fill_rate <= 0:
+                return math.inf
+
+            needed_tokens = 1.0 - self._tokens
+            wait_seconds = needed_tokens / self._fill_rate
+            return max(0.0, wait_seconds)
 
 
 # Global rate limiter (10 queries per minute by default)
@@ -56,9 +115,14 @@ def get_rate_limiter():
     """
     global _RATE_LIMITER
     if _RATE_LIMITER is None:
+        max_requests = int(os.environ.get("RATE_LIMIT_REQUESTS", "10"))
+        window_seconds = float(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+        burst_size = os.environ.get("RATE_LIMIT_BURST")
+        burst_value = int(burst_size) if burst_size is not None else None
         _RATE_LIMITER = RateLimiter(
-            max_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "10")),
-            window_seconds=int(os.environ.get("RATE_LIMIT_WINDOW", "60"))
+            max_requests=max_requests,
+            window_seconds=window_seconds,
+            burst_size=burst_value,
         )
     return _RATE_LIMITER
 

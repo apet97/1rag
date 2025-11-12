@@ -510,7 +510,12 @@ CACHE_MAXSIZE           # Query cache size (default: 100)
 CACHE_TTL               # Cache TTL in seconds (default: 3600)
 RATE_LIMIT_REQUESTS     # Max requests per window (default: 10)
 RATE_LIMIT_WINDOW       # Window in seconds (default: 60)
+RATE_LIMIT_BURST        # Optional burst capacity; defaults to RATE_LIMIT_REQUESTS
 ```
+
+Rate limiting now uses a token bucket. ``RATE_LIMIT_REQUESTS`` tokens are refilled every
+``RATE_LIMIT_WINDOW`` seconds and up to ``RATE_LIMIT_BURST`` tokens may accumulate for short
+bursts. Setting ``RATE_LIMIT_REQUESTS`` to ``0`` disables new traffic entirely.
 
 ### Query Expansion
 ```bash
