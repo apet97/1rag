@@ -257,6 +257,7 @@ def create_app() -> FastAPI:
     app.state.vecs_n = None
     app.state.bm = None
     app.state.hnsw = None
+    app.state.faiss_index_path = None
     app.state.index_ready = False
 
     @app.on_event("startup")
@@ -266,11 +267,12 @@ def create_app() -> FastAPI:
             logger.info("Loading index on startup...")
             result = ensure_index_ready(retries=2)
             if result:
-                chunks, vecs_n, bm, hnsw = result
+                chunks, vecs_n, bm, hnsw, faiss_index_path = result
                 app.state.chunks = chunks
                 app.state.vecs_n = vecs_n
                 app.state.bm = bm
                 app.state.hnsw = hnsw
+                app.state.faiss_index_path = faiss_index_path
                 app.state.index_ready = True
                 logger.info(f"Index loaded: {len(chunks)} chunks")
             else:
@@ -295,6 +297,7 @@ def create_app() -> FastAPI:
         app.state.vecs_n = None
         app.state.bm = None
         app.state.hnsw = None
+        app.state.faiss_index_path = None
         app.state.index_ready = False
 
         logger.info("Graceful shutdown complete")
@@ -411,6 +414,7 @@ def create_app() -> FastAPI:
                 pack_top=request.pack_top,
                 threshold=request.threshold,
                 hnsw=app.state.hnsw,
+                faiss_index_path=app.state.faiss_index_path,
             )
 
             elapsed_ms = (time.time() - start_time) * 1000
@@ -469,11 +473,12 @@ def create_app() -> FastAPI:
                 if not result:
                     raise RuntimeError("Index artifacts missing after build")
 
-                chunks, vecs_n, bm, hnsw = result
+                chunks, vecs_n, bm, hnsw, faiss_index_path = result
                 app.state.chunks = chunks
                 app.state.vecs_n = vecs_n
                 app.state.bm = bm
                 app.state.hnsw = hnsw
+                app.state.faiss_index_path = faiss_index_path
                 app.state.index_ready = True
                 logger.info("Ingest completed successfully")
             except Exception as e:
@@ -482,6 +487,7 @@ def create_app() -> FastAPI:
                 app.state.vecs_n = None
                 app.state.bm = None
                 app.state.hnsw = None
+                app.state.faiss_index_path = None
                 app.state.index_ready = False
 
         background_tasks.add_task(do_ingest)

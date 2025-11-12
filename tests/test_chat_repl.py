@@ -23,7 +23,7 @@ def test_chat_repl_json_output(monkeypatch, capsys):
 
     monkeypatch.setattr(cli_module, "get_query_cache", lambda: DummyCache())
     monkeypatch.setattr(cli_module, "get_precomputed_cache", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(cli_module, "ensure_index_ready", lambda **_: ([], [], {}, None))
+    monkeypatch.setattr(cli_module, "ensure_index_ready", lambda **_: ([], [], {}, None, None))
 
     expected_citations = [1, 2, 3]
     expected_tokens = 987

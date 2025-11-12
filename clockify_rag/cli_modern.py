@@ -342,7 +342,7 @@ def query(
     console.print(f"❓ Question: {question}")
 
     try:
-        chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=2)
+        chunks, vecs_n, bm, hnsw, faiss_index_path = ensure_index_ready(retries=2)
 
         result = answer_once(
             question,
@@ -353,6 +353,7 @@ def query(
             pack_top=pack_top,
             threshold=threshold,
             hnsw=hnsw,
+            faiss_index_path=faiss_index_path,
         )
 
         answer_text = result.get("answer", "")
@@ -478,7 +479,7 @@ def eval(
         os.makedirs(output_dir, exist_ok=True)
 
         # Load index
-        chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=2)
+        chunks, vecs_n, bm, hnsw, _faiss_index_path = ensure_index_ready(retries=2)
 
         console.print(f"📥 Loaded index with {len(chunks)} chunks")
         console.print(f"📊 Metrics: {metrics}")

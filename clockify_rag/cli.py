@@ -29,7 +29,7 @@ def ensure_index_ready(retries=0) -> Tuple:
     """Ensure retrieval artifacts are present and return loaded index components.
 
     Returns:
-        Tuple of (chunks, vecs_n, bm, hnsw) for backward compatibility with CLI code.
+        Tuple of (chunks, vecs_n, bm, hnsw, faiss_index_path) for backward compatibility with CLI code.
         The library's load_index() returns a dict, which we unpack here.
     """
 
@@ -62,19 +62,28 @@ def ensure_index_ready(retries=0) -> Tuple:
         sys.exit(1)
 
     # Handle both dict (from library) and tuple (from test mocks) for backward compatibility
+    default_faiss_path = config.FILES["faiss_index"] if os.path.exists(config.FILES["faiss_index"]) else None
+
     if isinstance(result, dict):
         # Library's load_index() returns a dictionary
         chunks = result["chunks"]
         vecs_n = result["vecs_n"]
         bm = result["bm"]
         hnsw = result.get("faiss_index")  # Note: was "hnsw" in old code, but library returns "faiss_index"
+        faiss_index_path = result.get("faiss_index_path", default_faiss_path)
     elif isinstance(result, tuple):
         # Test mocks return a tuple (chunks, vecs_n, bm, hnsw)
-        chunks, vecs_n, bm, hnsw = result
+        if len(result) == 5:
+            chunks, vecs_n, bm, hnsw, faiss_index_path = result
+        elif len(result) == 4:
+            chunks, vecs_n, bm, hnsw = result
+            faiss_index_path = default_faiss_path
+        else:
+            raise ValueError("ensure_index_ready() tuple must have 4 or 5 items")
     else:
         raise TypeError(f"load_index() must return dict or tuple, got {type(result)}")
 
-    return chunks, vecs_n, bm, hnsw
+    return chunks, vecs_n, bm, hnsw, faiss_index_path
 
 
 def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=False, seed=config.DEFAULT_SEED, num_ctx=config.DEFAULT_NUM_CTX, num_predict=config.DEFAULT_NUM_PREDICT, retries=0, use_json=False):
@@ -86,7 +95,7 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
     _log_config_summary(use_rerank=use_rerank, pack_top=pack_top, seed=seed, threshold=threshold, top_k=top_k, num_ctx=num_ctx, num_predict=num_predict, retries=retries)
 
     # Lazy build and startup sanity check
-    chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=retries)
+    chunks, vecs_n, bm, hnsw, faiss_index_path = ensure_index_ready(retries=retries)
 
     # Rank 22: Persist query cache across REPL sessions
     query_cache = get_query_cache()
@@ -169,7 +178,8 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
                 seed=seed,
                 num_ctx=num_ctx,
                 num_predict=num_predict,
-                retries=retries
+                retries=retries,
+                faiss_index_path=faiss_index_path,
             )
 
         answer_text = result.get("answer", "")
@@ -395,7 +405,7 @@ def handle_ask_command(args):
         num_predict=args.num_predict,
         retries=getattr(args, "retries", 0)
     )
-    chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=getattr(args, "retries", 0))
+    chunks, vecs_n, bm, hnsw, faiss_index_path = ensure_index_ready(retries=getattr(args, "retries", 0))
     result = answer_once(
         args.question,
         chunks,
@@ -409,7 +419,8 @@ def handle_ask_command(args):
         seed=args.seed,
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
-        retries=getattr(args, "retries", 0)
+        retries=getattr(args, "retries", 0),
+        faiss_index_path=faiss_index_path,
     )
     answer_text = result.get("answer", "")
     citations = result.get("selected_chunks", [])

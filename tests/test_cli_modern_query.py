@@ -14,7 +14,7 @@ def cli_runner():
 def test_query_command_surfaces_metadata(monkeypatch, cli_runner):
     """Ensure Typer query command consumes new answer_once schema."""
 
-    monkeypatch.setattr(cli_modern, "ensure_index_ready", lambda retries=2: ([], [], {}, None))
+    monkeypatch.setattr(cli_modern, "ensure_index_ready", lambda retries=2: ([], [], {}, None, None))
 
     result_payload = {
         "answer": "Mocked answer",

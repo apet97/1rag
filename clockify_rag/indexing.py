@@ -505,8 +505,12 @@ def load_index():
 
     # Optional FAISS
     faiss_index = None
-    if config.USE_ANN == "faiss" and os.path.exists(config.FILES["faiss_index"]):
-        faiss_index = load_faiss_index(config.FILES["faiss_index"])
+    faiss_index_path = None
+    if config.USE_ANN == "faiss":
+        candidate_path = config.FILES["faiss_index"]
+        if os.path.exists(candidate_path):
+            faiss_index = load_faiss_index(candidate_path)
+            faiss_index_path = candidate_path
 
     # Build chunk dict
     chunks_dict = {c["id"]: c for c in chunks}
@@ -519,5 +523,6 @@ def load_index():
         "vecs_n": vecs_n,
         "bm": bm,
         "faiss_index": faiss_index,
+        "faiss_index_path": faiss_index_path,
         "meta": meta
     }

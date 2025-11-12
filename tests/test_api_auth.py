@@ -9,7 +9,7 @@ def _prepare_app(monkeypatch):
     monkeypatch.setattr(
         api_module,
         "ensure_index_ready",
-        lambda retries=2: ([], [], {}, None),
+        lambda retries=2: ([], [], {}, None, None),
     )
 
     monkeypatch.setattr(

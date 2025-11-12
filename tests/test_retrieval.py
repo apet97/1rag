@@ -1,9 +1,11 @@
 """Tests for retrieval pipeline (hybrid BM25 + dense retrieval)."""
 
-import pytest
-import numpy as np
-import sys
+import logging
 import os
+import sys
+
+import numpy as np
+import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from clockify_rag.retrieval import retrieve, normalize_scores_zscore, DenseScoreStore
@@ -210,6 +212,61 @@ def test_retrieve_deduplication(sample_chunks, sample_embeddings, sample_bm25):
 
     # Check for duplicates
     assert len(selected) == len(set(selected)), "Should not return duplicate indices"
+
+
+def test_retrieve_logs_faiss_usage(monkeypatch, tmp_path, sample_chunks, sample_embeddings, sample_bm25, caplog):
+    """When FAISS artifacts exist, retrieval should log ann=faiss and skip full dot products."""
+
+    import clockify_rag.config as config
+    import clockify_rag.retrieval as retrieval
+
+    fake_index_path = tmp_path / "faiss.index"
+    fake_index_path.write_bytes(b"faiss")
+
+    monkeypatch.setattr(config, "USE_ANN", "faiss", raising=False)
+    monkeypatch.setattr(config, "ANN_CANDIDATE_MIN", 4, raising=False)
+    monkeypatch.setattr(config, "FAISS_CANDIDATE_MULTIPLIER", 1, raising=False)
+
+    query_vector = sample_embeddings[0].astype(np.float32)
+
+    def fake_embed_query(_question, retries=0):
+        return query_vector
+
+    class DummyFaissIndex:
+        def __init__(self):
+            self.nprobe = 0
+
+        def search(self, query, k):
+            assert query.shape[0] == 1
+            n = len(sample_chunks)
+            ids = np.array([i % n for i in range(k)], dtype=np.int64)
+            dists = np.linspace(1.0, 0.5, num=k).astype(np.float32)
+            return dists.reshape(1, -1), ids.reshape(1, -1)
+
+    dummy_index = DummyFaissIndex()
+
+    def fake_get_faiss_index(path):
+        assert path == str(fake_index_path)
+        return dummy_index
+
+    monkeypatch.setattr(retrieval, "get_faiss_index", fake_get_faiss_index)
+    monkeypatch.setattr(retrieval, "embed_query", fake_embed_query)
+
+    caplog.set_level(logging.INFO)
+
+    selected, scores = retrieval.retrieve(
+        "Do you use FAISS?",
+        sample_chunks,
+        sample_embeddings,
+        sample_bm25,
+        top_k=2,
+        faiss_index_path=str(fake_index_path),
+    )
+
+    assert selected, "Retrieval should return candidates when FAISS index responds"
+    assert any("ann=faiss" in record.getMessage() for record in caplog.records)
+    assert getattr(scores["dense"], "_full") is None, "Dense full-matrix scores should not be materialized"
+    assert retrieval.RETRIEVE_PROFILE_LAST.get("dense_dot_time_ms") == 0
 
 
 @requires_ollama
