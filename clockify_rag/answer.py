@@ -38,6 +38,7 @@ from .retrieval import (
 )
 from .exceptions import LLMError
 from .confidence_routing import get_routing_action
+from .metrics import increment_counter, observe_histogram, MetricNames
 
 logger = logging.getLogger(__name__)
 
@@ -330,92 +331,112 @@ def answer_once(
     Returns:
         Dict with answer and metadata
     """
+    increment_counter(MetricNames.QUERIES_TOTAL)
+    query_start = time.perf_counter()
     t_start = time.time()
 
-    # Retrieve
-    t0 = time.time()
-    selected, scores = retrieve(
-        question, chunks, vecs_n, bm,
-        top_k=top_k, hnsw=hnsw, retries=retries,
-        faiss_index_path=faiss_index_path
-    )
-    retrieve_time = time.time() - t0
+    try:
+        # Retrieve
+        t0 = time.time()
+        selected, scores = retrieve(
+            question, chunks, vecs_n, bm,
+            top_k=top_k, hnsw=hnsw, retries=retries,
+            faiss_index_path=faiss_index_path
+        )
+        retrieve_time = time.time() - t0
 
-    # Check coverage
-    if not coverage_ok(selected, scores["dense"], threshold):
+        # Check coverage
+        if not coverage_ok(selected, scores["dense"], threshold):
+            increment_counter(MetricNames.REFUSALS_TOTAL)
+            return {
+                "answer": REFUSAL_STR,
+                "refused": True,
+                "confidence": None,
+                "selected_chunks": [],
+                "packed_chunks": [],
+                "context_block": "",
+                "timing": {
+                    "total_ms": (time.time() - t_start) * 1000,
+                    "retrieve_ms": retrieve_time * 1000,
+                    "mmr_ms": 0,
+                    "rerank_ms": 0,
+                    "llm_ms": 0,
+                },
+                "metadata": {
+                    "retrieval_count": len(selected),
+                    "coverage_check": "failed"
+                }
+            }
+
+        # Apply MMR diversification
+        t0 = time.time()
+        mmr_selected = apply_mmr_diversification(selected, scores, vecs_n, pack_top)
+        mmr_time = time.time() - t0
+
+        # Optional reranking
+        mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_time = apply_reranking(
+            question, chunks, mmr_selected, scores, use_rerank,
+            seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+        )
+
+        # Pack snippets
+        context_block, packed_ids, used_tokens = pack_snippets(
+            chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
+        )
+
+        # Generate answer
+        answer, llm_time, confidence = generate_llm_answer(
+            question, context_block,
+            seed=seed, num_ctx=num_ctx, num_predict=num_predict,
+            retries=retries, packed_ids=packed_ids
+        )
+
+        total_time = time.time() - t_start
+
+        # OPTIMIZATION (Analysis Section 9.1 #4): Confidence-based routing
+        # Auto-escalate low-confidence queries to human review
+        refused = (answer == REFUSAL_STR)
+        if refused:
+            increment_counter(MetricNames.REFUSALS_TOTAL)
+
+        routing = get_routing_action(confidence, refused=refused, critical=False)
+
+        # Latency metrics (milliseconds)
+        if rerank_time > 0:
+            observe_histogram(MetricNames.RERANK_LATENCY, rerank_time * 1000)
+        observe_histogram(MetricNames.LLM_LATENCY, llm_time * 1000)
+
         return {
-            "answer": REFUSAL_STR,
-            "refused": True,
-            "confidence": None,
-            "selected_chunks": [],
-            "packed_chunks": [],
-            "context_block": "",
+            "answer": answer,
+            "refused": refused,
+            "confidence": confidence,
+            "selected_chunks": selected,
+            "packed_chunks": mmr_selected,
+            "context_block": context_block,
             "timing": {
-                "total_ms": (time.time() - t_start) * 1000,
+                "total_ms": total_time * 1000,
                 "retrieve_ms": retrieve_time * 1000,
-                "mmr_ms": 0,
-                "rerank_ms": 0,
-                "llm_ms": 0,
+                "mmr_ms": mmr_time * 1000,
+                "rerank_ms": rerank_time * 1000,
+                "llm_ms": llm_time * 1000,
             },
             "metadata": {
                 "retrieval_count": len(selected),
-                "coverage_check": "failed"
-            }
+                "packed_count": len(packed_ids),
+                "used_tokens": used_tokens,
+                "rerank_applied": rerank_applied,
+                "rerank_reason": rerank_reason,
+            },
+            "routing": routing  # Add routing recommendation
         }
-
-    # Apply MMR diversification
-    t0 = time.time()
-    mmr_selected = apply_mmr_diversification(selected, scores, vecs_n, pack_top)
-    mmr_time = time.time() - t0
-
-    # Optional reranking
-    mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_time = apply_reranking(
-        question, chunks, mmr_selected, scores, use_rerank,
-        seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
-    )
-
-    # Pack snippets
-    context_block, packed_ids, used_tokens = pack_snippets(
-        chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
-    )
-
-    # Generate answer
-    answer, llm_time, confidence = generate_llm_answer(
-        question, context_block,
-        seed=seed, num_ctx=num_ctx, num_predict=num_predict,
-        retries=retries, packed_ids=packed_ids
-    )
-
-    total_time = time.time() - t_start
-
-    # OPTIMIZATION (Analysis Section 9.1 #4): Confidence-based routing
-    # Auto-escalate low-confidence queries to human review
-    refused = (answer == REFUSAL_STR)
-    routing = get_routing_action(confidence, refused=refused, critical=False)
-
-    return {
-        "answer": answer,
-        "refused": refused,
-        "confidence": confidence,
-        "selected_chunks": selected,
-        "packed_chunks": mmr_selected,
-        "context_block": context_block,
-        "timing": {
-            "total_ms": total_time * 1000,
-            "retrieve_ms": retrieve_time * 1000,
-            "mmr_ms": mmr_time * 1000,
-            "rerank_ms": rerank_time * 1000,
-            "llm_ms": llm_time * 1000,
-        },
-        "metadata": {
-            "retrieval_count": len(selected),
-            "packed_count": len(packed_ids),
-            "used_tokens": used_tokens,
-            "rerank_applied": rerank_applied,
-            "rerank_reason": rerank_reason,
-        },
-        "routing": routing  # Add routing recommendation
-    }
+    except Exception:
+        increment_counter(MetricNames.ERRORS_TOTAL)
+        raise
+    finally:
+        observe_histogram(
+            MetricNames.QUERY_LATENCY,
+            (time.perf_counter() - query_start) * 1000
+        )
 
 
 def answer_to_json(answer: str, citations: list, used_tokens: int | None, topk: int, packed: int, confidence: int | None = None) -> dict:

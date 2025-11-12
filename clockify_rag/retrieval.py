@@ -30,6 +30,7 @@ from .http_utils import get_session
 from .indexing import bm25_scores, get_faiss_index
 from .utils import tokenize  # FIX (Error #17): Import tokenize from utils instead of duplicating
 from .intent_classification import classify_intent, get_intent_metadata, adjust_scores_by_intent
+from .metrics import observe_histogram, MetricNames
 
 logger = logging.getLogger(__name__)
 
@@ -451,6 +452,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
     global RETRIEVE_PROFILE_LAST
 
     question = validate_query_length(question)
+    retrieve_start = time.perf_counter()
 
     # OPTIMIZATION: Classify query intent for specialized retrieval strategy (if enabled)
     intent_metadata = {}
@@ -465,7 +467,9 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
     expanded_question = expand_query(question)
 
     # Use original question for embedding
+    embed_start = time.perf_counter()
     qv_n = embed_query(question, retries=retries)
+    observe_histogram(MetricNames.EMBEDDING_LATENCY, (time.perf_counter() - embed_start) * 1000)
 
     # Get FAISS index from centralized source (indexing module)
     faiss_index = None
@@ -630,6 +634,8 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
             dense_total,
             profile_data["dense_dot_time_ms"],
         )
+
+    observe_histogram(MetricNames.RETRIEVAL_LATENCY, (time.perf_counter() - retrieve_start) * 1000)
 
     # OPTIMIZATION: Include intent metadata for logging and debugging (already populated above)
     return filtered, {

@@ -127,6 +127,33 @@ python3 -m uvicorn clockify_rag.api:app --host 0.0.0.0 --port 8000
 gunicorn -w 4 --bind 0.0.0.0:8000 clockify_rag.api:app
 ```
 
+## 📈 Metrics & Runbook
+
+The API exposes internal KPIs using Prometheus-compatible text at `GET /v1/metrics`. This endpoint is backed by the shared
+`clockify_rag.metrics` collector, so all counters and histograms are aggregated across CLI, API, and background tasks.
+
+### Quick Scrape
+
+```bash
+curl -H "Accept: text/plain" http://localhost:8000/v1/metrics
+```
+
+The response follows the `text/plain; version=0.0.4` format and includes counters such as `queries_total`, `cache_hits`, and
+histograms like `query_latency_ms` and `retrieval_latency_ms`.
+
+### Prometheus Configuration Snippet
+
+```yaml
+scrape_configs:
+  - job_name: clockify-rag
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["clockify-rag.local:8000"]
+```
+
+Place the snippet in your Prometheus configuration and reload the server. The collector tracks cache size gauges and latency
+histograms automatically, so no additional exporters are required.
+
 ## 📊 System Architecture
 
 ```

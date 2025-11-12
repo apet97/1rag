@@ -21,6 +21,7 @@ from typing import Optional, Dict, Any, List
 import typer
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, validator
 
 from . import config
@@ -28,6 +29,7 @@ from .answer import answer_once
 from .cli import ensure_index_ready
 from .indexing import build
 from .utils import check_ollama_connectivity
+from .metrics import get_metrics as get_metrics_collector, set_gauge, MetricNames
 
 logger = logging.getLogger(__name__)
 
@@ -397,18 +399,22 @@ def create_app() -> FastAPI:
     # Metrics Endpoint (Placeholder)
     # ========================================================================
 
-    @app.get("/v1/metrics")
-    async def get_metrics() -> Dict[str, Any]:
-        """Get system metrics (placeholder for Prometheus integration).
+    @app.get("/v1/metrics", response_class=PlainTextResponse)
+    async def metrics_endpoint() -> PlainTextResponse:
+        """Expose metrics in Prometheus text format."""
 
-        Returns:
-            Dictionary with metrics (JSON for easy parsing)
-        """
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "index_ready": app.state.index_ready,
-            "chunks_loaded": len(app.state.chunks) if app.state.chunks else 0,
-        }
+        # Update gauges tied to application state just before export
+        if app.state.chunks is not None:
+            set_gauge(MetricNames.INDEX_SIZE, len(app.state.chunks))
+
+        metrics_text = get_metrics_collector().export_prometheus()
+        if not metrics_text.endswith("\n"):
+            metrics_text += "\n"
+
+        return PlainTextResponse(
+            metrics_text,
+            media_type="text/plain; version=0.0.4; charset=utf-8",
+        )
 
     return app
 
