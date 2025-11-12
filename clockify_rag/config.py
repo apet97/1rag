@@ -1,7 +1,10 @@
 """Configuration constants for Clockify RAG system."""
 
+import json
 import logging
 import os
+from pathlib import Path
+from typing import FrozenSet, Iterable
 
 # FIX (Error #13): Helper functions for safe environment variable parsing
 _logger = logging.getLogger(__name__)
@@ -97,6 +100,85 @@ def _parse_allowed_origins() -> list[str]:
 
 
 RAG_API_ALLOWED_ORIGINS = _parse_allowed_origins()
+
+
+# ====== AUTH CONFIG ======
+
+
+def _read_secret_file(path: str) -> str | None:
+    """Read a secret value from a file.
+
+    Allows mounting secrets via Docker/Kubernetes secret volumes while keeping
+    environment variables minimal.
+    """
+
+    if not path:
+        return None
+
+    try:
+        secret_path = Path(path)
+        if not secret_path.exists():
+            _logger.warning("Secret file %s does not exist", secret_path)
+            return None
+
+        return secret_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:  # pragma: no cover - rare filesystem failures
+        _logger.error("Unable to read secret file %s: %s", path, exc)
+        return None
+
+
+def _parse_secret_collection(raw_values: Iterable[str]) -> FrozenSet[str]:
+    """Normalize an iterable of secret values into a frozenset."""
+
+    normalized = {value.strip() for value in raw_values if value and value.strip()}
+    return frozenset(normalized)
+
+
+def _load_api_keys() -> FrozenSet[str]:
+    """Load API keys from env variables or mounted secret files.
+
+    Supported sources:
+    - ``RAG_API_KEYS``: comma separated list (``key1,key2``)
+    - ``RAG_API_KEYS_FILE``: file path containing either newline separated keys
+      or a JSON array (``["key1", "key2"]``)
+    """
+
+    keys: list[str] = []
+
+    env_keys = os.environ.get("RAG_API_KEYS")
+    if env_keys:
+        keys.extend(part.strip() for part in env_keys.split(","))
+
+    secrets_file = os.environ.get("RAG_API_KEYS_FILE")
+    if secrets_file:
+        raw_secret = _read_secret_file(secrets_file)
+        if raw_secret:
+            try:
+                maybe_json = json.loads(raw_secret)
+            except json.JSONDecodeError:
+                keys.extend(line.strip() for line in raw_secret.splitlines())
+            else:
+                if isinstance(maybe_json, list):
+                    keys.extend(str(item) for item in maybe_json)
+                else:
+                    _logger.error(
+                        "Expected list in %s for API keys secret, got %s", secrets_file, type(maybe_json)
+                    )
+
+    return _parse_secret_collection(keys)
+
+
+API_AUTH_MODE = os.environ.get("RAG_AUTH_MODE", "none").strip().lower()
+API_KEY_HEADER = os.environ.get("RAG_API_KEY_HEADER", "x-api-key")
+API_ALLOWED_KEYS = _load_api_keys()
+API_JWT_SECRET = os.environ.get("RAG_JWT_SECRET") or _read_secret_file(
+    os.environ.get("RAG_JWT_SECRET_FILE", "")
+)
+API_JWT_ALGORITHMS = [
+    algo.strip()
+    for algo in os.environ.get("RAG_JWT_ALGORITHMS", "HS256").split(",")
+    if algo.strip()
+]
 
 # ====== OLLAMA CONFIG ======
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
