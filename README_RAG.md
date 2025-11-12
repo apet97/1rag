@@ -270,6 +270,32 @@ ollama pull qwen2.5:32b
 - Consider using a faster embedding model if available
 - Reduce the number of top chunks retrieved (currently set to 6)
 
+## Query Cache Behavior
+
+Clockify now keeps a TTL-based cache of normalized answers so repeated
+questions skip the expensive retrieval + generation pipeline. Both the CLI
+(`clockify_support_cli`) and the FastAPI server consult the cache before
+calling `answer_once()` and rehydrate the full response (answer text,
+citations, routing metadata, etc.) when a hit is found.
+
+- **Persistence path** – defaults to `query_cache.json`. Override via the
+  `RAG_QUERY_CACHE_PATH` environment variable or the new
+  `--query-cache-path` CLI flag. Set the path to an empty string to keep the
+  cache in-memory only.
+- **TTL / size** – entries live for 3,600 seconds by default (`CACHE_TTL`) and
+  the cache stores up to 100 answers (`CACHE_MAXSIZE`). Adjust these env vars
+  to tune retention.
+- **Logging and diagnostics** – enabling DEBUG logging surfaces
+  `[cache] HIT`/`MISS` lines from `clockify_rag.caching`. The CLI `--debug`
+  flag (and the API response metadata) include a `cache_status` field so you
+  can verify whether an answer came from cache.
+- **Invalidation** – delete the cache file or point `--query-cache-path` to a
+  new location to force a cold start. Expired entries are automatically
+  evicted based on the TTL.
+
+The cache is flushed to disk when the CLI exits and whenever the API writes a
+fresh entry, ensuring future sessions benefit from prior work.
+
 ## Advanced Customization
 
 ### Adjusting Relevance Threshold
@@ -340,7 +366,8 @@ When refreshing evaluation datasets after rerunning the chunk builder:
 - **Fixed Chunk Size**: Currently uses fixed 1600-char chunks; could use dynamic sizing based on semantic boundaries
 - **No Reranking**: Retrieved chunks are ranked only by cosine similarity; could add cross-encoder reranking for better relevance
 - **Single Model**: Uses one embedding and one chat model; could support multiple models for comparison
-- **No Caching**: Each query re-embeds the question; could cache frequently asked questions
+- **Cache TTL**: Query cache entries expire after `CACHE_TTL` seconds (default
+  1 hour). Increase the TTL if you rely on longer-lived cached answers.
 - **No User Feedback**: No mechanism to learn from user feedback on answer quality
 
 ## References

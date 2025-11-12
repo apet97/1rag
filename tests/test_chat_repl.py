@@ -14,11 +14,18 @@ def test_chat_repl_json_output(monkeypatch, capsys):
     class DummyCache:
         def __init__(self):
             self.cache = {}
+            self.hit = None
 
-        def load(self):
+        def load(self, *_args, **_kwargs):
             return None
 
-        def save(self):
+        def save(self, *_args, **_kwargs):
+            return None
+
+        def get(self, *_args, **_kwargs):
+            return self.hit
+
+        def put(self, *_args, **_kwargs):
             return None
 
     monkeypatch.setattr(cli_module, "get_query_cache", lambda: DummyCache())

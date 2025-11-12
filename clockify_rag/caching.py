@@ -1,11 +1,13 @@
 """Query caching and rate limiting for RAG system."""
 
+import copy
 import hashlib
 import logging
 import os
 import threading
 import time
 from collections import deque
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -306,6 +308,71 @@ def get_query_cache():
             ttl_seconds=int(os.environ.get("CACHE_TTL", "3600"))
         )
     return _QUERY_CACHE
+
+
+def build_cache_params(*,
+                       top_k: Optional[int],
+                       pack_top: Optional[int],
+                       threshold: Optional[float],
+                       use_rerank: bool,
+                       seed: Optional[int] = None,
+                       num_ctx: Optional[int] = None,
+                       num_predict: Optional[int] = None) -> Dict[str, Any]:
+    """Normalize retrieval knobs for cache key construction."""
+
+    params: Dict[str, Any] = {
+        "top_k": top_k,
+        "pack_top": pack_top,
+        "threshold": threshold,
+        "use_rerank": use_rerank,
+    }
+
+    if seed is not None:
+        params["seed"] = seed
+    if num_ctx is not None:
+        params["num_ctx"] = num_ctx
+    if num_predict is not None:
+        params["num_predict"] = num_predict
+
+    return params
+
+
+def serialize_result_for_cache(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a cache payload from the ``answer_once`` response structure."""
+
+    return {
+        "metadata": copy.deepcopy(result.get("metadata") or {}),
+        "selected_chunks": copy.deepcopy(result.get("selected_chunks") or []),
+        "packed_chunks": copy.deepcopy(result.get("packed_chunks")),
+        "context_block": result.get("context_block"),
+        "confidence": result.get("confidence"),
+        "routing": copy.deepcopy(result.get("routing")),
+        "timing": copy.deepcopy(result.get("timing")),
+        "refused": result.get("refused"),
+    }
+
+
+def hydrate_cached_answer(answer: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Reconstruct ``answer_once`` response data from cached payload."""
+
+    selected_chunks = copy.deepcopy(payload.get("selected_chunks") or [])
+    packed_chunks = payload.get("packed_chunks")
+    if packed_chunks is None:
+        packed_chunks = selected_chunks
+    else:
+        packed_chunks = copy.deepcopy(packed_chunks)
+
+    return {
+        "answer": answer,
+        "selected_chunks": selected_chunks,
+        "packed_chunks": packed_chunks,
+        "context_block": payload.get("context_block"),
+        "confidence": payload.get("confidence"),
+        "routing": copy.deepcopy(payload.get("routing")),
+        "timing": copy.deepcopy(payload.get("timing")),
+        "metadata": copy.deepcopy(payload.get("metadata") or {}),
+        "refused": payload.get("refused"),
+    }
 
 
 def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float,

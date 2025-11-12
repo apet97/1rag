@@ -25,6 +25,12 @@ from pydantic import BaseModel, Field, validator
 
 from . import config
 from .answer import answer_once
+from .caching import (
+    get_query_cache,
+    build_cache_params,
+    serialize_result_for_cache,
+    hydrate_cached_answer,
+)
 from .cli import ensure_index_ready
 from .indexing import build
 from .utils import check_ollama_connectivity
@@ -258,6 +264,8 @@ def create_app() -> FastAPI:
     app.state.bm = None
     app.state.hnsw = None
     app.state.index_ready = False
+    app.state.query_cache = get_query_cache()
+    app.state.query_cache_path = config.QUERY_CACHE_PATH
 
     @app.on_event("startup")
     async def startup_event():
@@ -275,6 +283,13 @@ def create_app() -> FastAPI:
                 logger.info(f"Index loaded: {len(chunks)} chunks")
             else:
                 logger.warning("Index not ready at startup")
+
+            cache_path = app.state.query_cache_path
+            if cache_path:
+                loaded = app.state.query_cache.load(cache_path)
+                logger.info(f"API query cache loaded: {loaded} entries from {cache_path}")
+            else:
+                logger.info("API query cache persistence disabled; using in-memory cache")
         except Exception as e:
             logger.error(f"Failed to load index at startup: {e}")
 
@@ -296,6 +311,13 @@ def create_app() -> FastAPI:
         app.state.bm = None
         app.state.hnsw = None
         app.state.index_ready = False
+        cache_path = getattr(app.state, "query_cache_path", None)
+        if cache_path:
+            try:
+                app.state.query_cache.save(cache_path)
+                logger.info(f"API query cache saved to {cache_path}")
+            except Exception as exc:  # pragma: no cover - best effort during shutdown
+                logger.warning(f"Failed to save API query cache: {exc}")
 
         logger.info("Graceful shutdown complete")
 
@@ -402,16 +424,56 @@ def create_app() -> FastAPI:
         try:
             start_time = time.time()
 
-            result = answer_once(
-                request.question,
-                app.state.chunks,
-                app.state.vecs_n,
-                app.state.bm,
+            cache_params = build_cache_params(
                 top_k=request.top_k,
                 pack_top=request.pack_top,
                 threshold=request.threshold,
-                hnsw=app.state.hnsw,
+                use_rerank=False,
+                num_ctx=config.DEFAULT_NUM_CTX,
+                num_predict=config.DEFAULT_NUM_PREDICT,
             )
+            query_cache = getattr(app.state, "query_cache", None)
+            cache_hit = None
+            if query_cache:
+                cache_hit = query_cache.get(request.question, params=cache_params)
+
+            if cache_hit:
+                result = hydrate_cached_answer(*cache_hit)
+                metadata = dict(result.get("metadata") or {})
+                metadata["cache_status"] = "hit"
+                result["metadata"] = metadata
+            else:
+                result = answer_once(
+                    request.question,
+                    app.state.chunks,
+                    app.state.vecs_n,
+                    app.state.bm,
+                    top_k=request.top_k,
+                    pack_top=request.pack_top,
+                    threshold=request.threshold,
+                    hnsw=app.state.hnsw,
+                )
+                metadata = dict(result.get("metadata") or {})
+                result["metadata"] = metadata
+                if query_cache:
+                    cache_snapshot = {
+                        "metadata": dict(metadata),
+                        "selected_chunks": result.get("selected_chunks", []),
+                        "packed_chunks": result.get("packed_chunks"),
+                        "context_block": result.get("context_block"),
+                        "confidence": result.get("confidence"),
+                        "routing": result.get("routing"),
+                        "timing": result.get("timing"),
+                        "refused": result.get("refused"),
+                    }
+                    cache_payload = serialize_result_for_cache(cache_snapshot)
+                    query_cache.put(request.question, result.get("answer", ""), cache_payload, params=cache_params)
+                    metadata["cache_status"] = "miss"
+                    cache_path = getattr(app.state, "query_cache_path", None)
+                    if cache_path:
+                        query_cache.save(cache_path)
+                else:
+                    metadata["cache_status"] = "disabled"
 
             elapsed_ms = (time.time() - start_time) * 1000
 

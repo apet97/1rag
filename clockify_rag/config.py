@@ -344,3 +344,6 @@ COVERAGE_MIN_CHUNKS = 2  # Minimum chunks above threshold to proceed
 # OPTIMIZATION: Pre-generate answers for top FAQs for 100% cache hit on common queries
 FAQ_CACHE_ENABLED = _get_bool_env("FAQ_CACHE_ENABLED", "0")  # Disabled by default (requires build step)
 FAQ_CACHE_PATH = os.environ.get("FAQ_CACHE_PATH", "faq_cache.json")  # Path to precomputed cache file
+
+# ====== QUERY CACHE CONFIG ======
+QUERY_CACHE_PATH = os.environ.get("RAG_QUERY_CACHE_PATH", "query_cache.json")

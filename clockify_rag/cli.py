@@ -17,7 +17,12 @@ from . import config
 from .indexing import build, load_index
 from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
 from .answer import answer_once, answer_to_json
-from .caching import get_query_cache
+from .caching import (
+    get_query_cache,
+    build_cache_params,
+    serialize_result_for_cache,
+    hydrate_cached_answer,
+)
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
 from .http_utils import http_post_with_retries
 from .precomputed_cache import get_precomputed_cache
@@ -77,7 +82,28 @@ def ensure_index_ready(retries=0) -> Tuple:
     return chunks, vecs_n, bm, hnsw
 
 
-def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=False, seed=config.DEFAULT_SEED, num_ctx=config.DEFAULT_NUM_CTX, num_predict=config.DEFAULT_NUM_PREDICT, retries=0, use_json=False):
+def _prepare_cache_snapshot(result: dict) -> Tuple[dict, dict]:
+    """Return metadata and cache snapshot for the current answer."""
+
+    metadata = dict(result.get("metadata") or {})
+    result["metadata"] = metadata
+    snapshot = {
+        "metadata": dict(metadata),
+        "selected_chunks": result.get("selected_chunks", []),
+        "packed_chunks": result.get("packed_chunks"),
+        "context_block": result.get("context_block"),
+        "confidence": result.get("confidence"),
+        "routing": result.get("routing"),
+        "timing": result.get("timing"),
+        "refused": result.get("refused"),
+    }
+    return metadata, snapshot
+
+
+def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=False,
+              seed=config.DEFAULT_SEED, num_ctx=config.DEFAULT_NUM_CTX,
+              num_predict=config.DEFAULT_NUM_PREDICT, retries=0, use_json=False,
+              cache_path: Optional[str] = None):
     """Stateless REPL loop - Task I. v4.1: JSON output support.
 
     OPTIMIZATION: Loads query cache from disk on startup and saves on exit for persistence.
@@ -90,8 +116,21 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
 
     # Rank 22: Persist query cache across REPL sessions
     query_cache = get_query_cache()
-    query_cache.load()  # Load previous session's cache
-    logger.info(f"Query cache loaded: {len(query_cache.cache)} entries")
+    cache_path = config.QUERY_CACHE_PATH if cache_path is None else cache_path
+    if cache_path:
+        query_cache.load(cache_path)
+        logger.info(f"Query cache loaded: {len(query_cache.cache)} entries (path={cache_path})")
+    else:
+        logger.info("Query cache persistence disabled; using in-memory cache only")
+    cache_params = build_cache_params(
+        top_k=top_k,
+        pack_top=pack_top,
+        threshold=threshold,
+        use_rerank=use_rerank,
+        seed=seed,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
+    )
 
     # OPTIMIZATION (Analysis Section 9.1 #3): Load precomputed FAQ cache
     faq_cache = None
@@ -128,49 +167,64 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
             print(f"Debug mode: {'ON' if debug_enabled else 'OFF'}")
             continue
 
-        # OPTIMIZATION (Analysis Section 9.1 #3): Check FAQ cache first for instant responses
-        faq_result = None
-        if faq_cache:
-            faq_result = faq_cache.get(question, fuzzy=True)
+        cache_hit = query_cache.get(question, params=cache_params)
+        if cache_hit:
+            result = hydrate_cached_answer(*cache_hit)
+            metadata = dict(result.get("metadata") or {})
+            metadata["cache_status"] = "hit"
+            result["metadata"] = metadata
+            if debug_enabled:
+                print("[DEBUG] Query cache hit (disk/memory)")
+        else:
+            # OPTIMIZATION (Analysis Section 9.1 #3): Check FAQ cache first for instant responses
+            faq_result = None
+            if faq_cache:
+                faq_result = faq_cache.get(question, fuzzy=True)
 
-        if faq_result:
-            # FAQ cache hit - synthesize result compatible with answer_once output
-            cached_chunks = faq_result.get("packed_chunks", [])
-            result = {
-                "answer": faq_result["answer"],
-                "refused": False,
-                "confidence": faq_result.get("confidence"),
-                "selected_chunks": cached_chunks,
-                "packed_chunks": cached_chunks,
-                "context_block": "",
-                "timing": {},
-                "metadata": {
+            if faq_result:
+                # FAQ cache hit - synthesize result compatible with answer_once output
+                cached_chunks = faq_result.get("packed_chunks", [])
+                metadata = {
                     "used_tokens": 0,
                     "retrieval_count": len(cached_chunks),
                     "packed_count": len(cached_chunks),
                     "cache_type": "faq_precomputed",
-                },
-                "routing": faq_result.get("routing"),
-            }
-            if debug_enabled:
-                print("[DEBUG] FAQ cache hit (precomputed answer)")
-        else:
-            # FAQ cache miss - normal retrieval
-            result = answer_once(
-                question,
-                chunks,
-                vecs_n,
-                bm,
-                top_k=top_k,
-                pack_top=pack_top,
-                threshold=threshold,
-                use_rerank=use_rerank,
-                hnsw=hnsw,
-                seed=seed,
-                num_ctx=num_ctx,
-                num_predict=num_predict,
-                retries=retries
-            )
+                }
+                result = {
+                    "answer": faq_result["answer"],
+                    "refused": False,
+                    "confidence": faq_result.get("confidence"),
+                    "selected_chunks": cached_chunks,
+                    "packed_chunks": cached_chunks,
+                    "context_block": "",
+                    "timing": {},
+                    "metadata": metadata,
+                    "routing": faq_result.get("routing"),
+                }
+                if debug_enabled:
+                    print("[DEBUG] FAQ cache hit (precomputed answer)")
+            else:
+                # FAQ cache miss - normal retrieval
+                result = answer_once(
+                    question,
+                    chunks,
+                    vecs_n,
+                    bm,
+                    top_k=top_k,
+                    pack_top=pack_top,
+                    threshold=threshold,
+                    use_rerank=use_rerank,
+                    hnsw=hnsw,
+                    seed=seed,
+                    num_ctx=num_ctx,
+                    num_predict=num_predict,
+                    retries=retries
+                )
+
+            metadata, cache_snapshot = _prepare_cache_snapshot(result)
+            cache_payload = serialize_result_for_cache(cache_snapshot)
+            query_cache.put(question, result.get("answer", ""), cache_payload, params=cache_params)
+            metadata["cache_status"] = "miss"
 
         answer_text = result.get("answer", "")
         citations = result.get("selected_chunks", [])
@@ -200,8 +254,9 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
                 print(f"[DEBUG] Metadata: {metadata}")
 
     # Save cache on exit
-    query_cache.save()
-    logger.info(f"Query cache saved: {len(query_cache.cache)} entries")
+    if cache_path:
+        query_cache.save(cache_path)
+        logger.info(f"Query cache saved: {len(query_cache.cache)} entries (path={cache_path})")
 
 
 def warmup_on_startup():
@@ -280,6 +335,11 @@ def setup_cli_args():
     query_flags.add_argument("--faiss-multiplier", type=int, default=config.FAISS_CANDIDATE_MULTIPLIER,
                              help="FAISS candidate multiplier: retrieve top_k * N for reranking (default 3)")
     query_flags.add_argument("--json", action="store_true", help="Output answer as JSON with metrics (v4.1)")
+    query_flags.add_argument(
+        "--query-cache-path",
+        default=config.QUERY_CACHE_PATH,
+        help="Path for persistent query cache (override RAG_QUERY_CACHE_PATH env)"
+    )
 
     ap = argparse.ArgumentParser(
         prog="clockify_support_cli",
@@ -395,22 +455,54 @@ def handle_ask_command(args):
         num_predict=args.num_predict,
         retries=getattr(args, "retries", 0)
     )
-    chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=getattr(args, "retries", 0))
-    result = answer_once(
-        args.question,
-        chunks,
-        vecs_n,
-        bm,
+    cache_path = getattr(args, "query_cache_path", None)
+    cache_path = config.QUERY_CACHE_PATH if cache_path is None else cache_path
+    query_cache = get_query_cache()
+    if cache_path:
+        query_cache.load(cache_path)
+    else:
+        logger.debug("Ask command cache persistence disabled; using in-memory cache")
+
+    cache_params = build_cache_params(
         top_k=args.topk,
         pack_top=args.pack,
         threshold=args.threshold,
         use_rerank=args.rerank,
-        hnsw=hnsw,
         seed=args.seed,
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
-        retries=getattr(args, "retries", 0)
     )
+
+    cache_hit = query_cache.get(args.question, params=cache_params)
+    if cache_hit:
+        result = hydrate_cached_answer(*cache_hit)
+        metadata = dict(result.get("metadata") or {})
+        metadata["cache_status"] = "hit"
+        result["metadata"] = metadata
+    else:
+        chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=getattr(args, "retries", 0))
+        result = answer_once(
+            args.question,
+            chunks,
+            vecs_n,
+            bm,
+            top_k=args.topk,
+            pack_top=args.pack,
+            threshold=args.threshold,
+            use_rerank=args.rerank,
+            hnsw=hnsw,
+            seed=args.seed,
+            num_ctx=args.num_ctx,
+            num_predict=args.num_predict,
+            retries=getattr(args, "retries", 0)
+        )
+        metadata, cache_snapshot = _prepare_cache_snapshot(result)
+        cache_payload = serialize_result_for_cache(cache_snapshot)
+        query_cache.put(args.question, result.get("answer", ""), cache_payload, params=cache_params)
+        metadata["cache_status"] = "miss"
+        if cache_path:
+            query_cache.save(cache_path)
+
     answer_text = result.get("answer", "")
     citations = result.get("selected_chunks", [])
     metadata = result.get("metadata", {}) or {}
@@ -532,5 +624,6 @@ def handle_chat_command(args):
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
         retries=getattr(args, "retries", 0),
-        use_json=getattr(args, "json", False)
+        use_json=getattr(args, "json", False),
+        cache_path=getattr(args, "query_cache_path", None),
     )
