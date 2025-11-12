@@ -19,7 +19,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any, List
 
 import typer
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, validator
 
@@ -30,6 +30,101 @@ from .indexing import build
 from .utils import check_ollama_connectivity
 
 logger = logging.getLogger(__name__)
+
+try:  # pragma: no cover - optional dependency when JWT auth disabled
+    import jwt
+except ModuleNotFoundError:  # pragma: no cover - dependency is optional
+    jwt = None
+
+
+async def validate_request_credentials(request: Request) -> Dict[str, Any]:
+    """Validate request credentials based on configured auth strategy."""
+
+    mode = (config.API_AUTH_MODE or "none").lower()
+    if mode in {"", "none"}:
+        return {"method": "none"}
+
+    if mode == "api_key":
+        if not config.API_ALLOWED_KEYS:
+            logger.error("API key authentication enabled but no keys loaded")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication misconfigured",
+            )
+
+        header_name = config.API_KEY_HEADER or "x-api-key"
+        provided_key = request.headers.get(header_name)
+        if not provided_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing API key",
+            )
+
+        if provided_key not in config.API_ALLOWED_KEYS:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Invalid API key",
+            )
+
+        return {"method": "api_key", "principal": provided_key}
+
+    if mode == "jwt":
+        if not config.API_JWT_SECRET:
+            logger.error("JWT authentication enabled but secret not configured")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication misconfigured",
+            )
+
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing Authorization header",
+            )
+
+        scheme, _, token = auth_header.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid Authorization header",
+            )
+
+        if jwt is None:
+            logger.error("JWT authentication requested but PyJWT is not installed")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="JWT authentication unavailable",
+            )
+
+        try:
+            decoded = jwt.decode(token, config.API_JWT_SECRET, algorithms=config.API_JWT_ALGORITHMS or None)
+        except Exception as exc:  # pragma: no cover - PyJWT supplies detailed errors
+            expired_error = getattr(jwt, "ExpiredSignatureError", tuple())
+            invalid_error = getattr(jwt, "InvalidTokenError", tuple())
+            if expired_error and isinstance(exc, expired_error):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token expired",
+                ) from exc
+            if invalid_error and isinstance(exc, invalid_error):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Invalid token",
+                ) from exc
+            logger.error("Unexpected JWT validation error: %s", exc)
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Authentication misconfigured",
+            ) from exc
+
+        return {"method": "jwt", "principal": decoded.get("sub"), "claims": decoded}
+
+    logger.error("Unsupported authentication mode: %s", config.API_AUTH_MODE)
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Authentication misconfigured",
+    )
 
 # ============================================================================
 # Pydantic Models
@@ -281,7 +376,10 @@ def create_app() -> FastAPI:
     # ========================================================================
 
     @app.post("/v1/query", response_model=QueryResponse)
-    async def submit_query(request: QueryRequest) -> QueryResponse:
+    async def submit_query(
+        request: QueryRequest,
+        _: Dict[str, Any] = Depends(validate_request_credentials),
+    ) -> QueryResponse:
         """Submit a question and get an answer.
 
         This endpoint uses the RAG system to retrieve relevant context
@@ -338,7 +436,9 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/ingest", response_model=IngestResponse)
     async def trigger_ingest(
-        request: IngestRequest, background_tasks: BackgroundTasks
+        request: IngestRequest,
+        background_tasks: BackgroundTasks,
+        _: Dict[str, Any] = Depends(validate_request_credentials),
     ) -> IngestResponse:
         """Trigger index build/rebuild.
 
@@ -398,7 +498,9 @@ def create_app() -> FastAPI:
     # ========================================================================
 
     @app.get("/v1/metrics")
-    async def get_metrics() -> Dict[str, Any]:
+    async def get_metrics(
+        _: Dict[str, Any] = Depends(validate_request_credentials),
+    ) -> Dict[str, Any]:
         """Get system metrics (placeholder for Prometheus integration).
 
         Returns:
