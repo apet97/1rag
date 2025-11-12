@@ -127,6 +127,12 @@ python3 -m uvicorn clockify_rag.api:app --host 0.0.0.0 --port 8000
 gunicorn -w 4 --bind 0.0.0.0:8000 clockify_rag.api:app
 ```
 
+> **Async-safe handlers:** The API server now offloads blocking ingestion and query
+> operations onto worker threads. This keeps the asyncio event loop responsive,
+> allowing health checks and queries to run concurrently even when Ollama or the
+> index build work take longer than usual. No additional dependencies are required
+> to benefit from this behaviour.
+
 ## 📊 System Architecture
 
 ```

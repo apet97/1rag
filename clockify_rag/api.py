@@ -9,6 +9,7 @@ Provides REST API endpoints:
 """
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -163,13 +164,14 @@ def create_app() -> FastAPI:
     app.state.bm = None
     app.state.hnsw = None
     app.state.index_ready = False
+    app.state.ingest_task = None
 
     @app.on_event("startup")
     async def startup_event():
         """Load index on startup."""
         try:
             logger.info("Loading index on startup...")
-            result = ensure_index_ready(retries=2)
+            result = await asyncio.to_thread(ensure_index_ready, retries=2)
             if result:
                 chunks, vecs_n, bm, hnsw = result
                 app.state.chunks = chunks
@@ -180,6 +182,9 @@ def create_app() -> FastAPI:
                 logger.info(f"Index loaded: {len(chunks)} chunks")
             else:
                 logger.warning("Index not ready at startup")
+        except asyncio.CancelledError:
+            logger.warning("Startup cancelled before index initialization")
+            raise
         except Exception as e:
             logger.error(f"Failed to load index at startup: {e}")
 
@@ -194,6 +199,13 @@ def create_app() -> FastAPI:
         - Allows in-flight requests to complete (handled by uvicorn)
         """
         logger.info("Initiating graceful shutdown...")
+
+        # Cancel any in-flight ingest task to avoid background churn
+        ingest_task = getattr(app.state, "ingest_task", None)
+        if ingest_task and not ingest_task.done():
+            ingest_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await ingest_task
 
         # Clear index from memory (helps with clean shutdown)
         app.state.chunks = None
@@ -230,8 +242,17 @@ def create_app() -> FastAPI:
         # Check Ollama connectivity with short timeout
         ollama_ok = False
         try:
-            check_ollama_connectivity(config.OLLAMA_URL, timeout=2)
+            async with asyncio.timeout(2.5):
+                await asyncio.to_thread(
+                    check_ollama_connectivity,
+                    config.OLLAMA_URL,
+                    timeout=2,
+                )
             ollama_ok = True
+        except asyncio.TimeoutError as exc:
+            logger.debug("Ollama health check timed out: %s", exc)
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             # Ollama connectivity failure is acceptable for health check
             # (allows graceful degradation), but log for debugging
@@ -304,7 +325,8 @@ def create_app() -> FastAPI:
         try:
             start_time = time.time()
 
-            result = answer_once(
+            result = await asyncio.to_thread(
+                answer_once,
                 request.question,
                 app.state.chunks,
                 app.state.vecs_n,
@@ -328,6 +350,9 @@ def create_app() -> FastAPI:
                 processing_time_ms=elapsed_ms,
             )
 
+        except asyncio.CancelledError:
+            logger.info("Query request cancelled by client")
+            raise
         except Exception as e:
             logger.error(f"Query error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
@@ -338,7 +363,7 @@ def create_app() -> FastAPI:
 
     @app.post("/v1/ingest", response_model=IngestResponse)
     async def trigger_ingest(
-        request: IngestRequest, background_tasks: BackgroundTasks
+        request: IngestRequest, _background_tasks: BackgroundTasks
     ) -> IngestResponse:
         """Trigger index build/rebuild.
 
@@ -359,13 +384,13 @@ def create_app() -> FastAPI:
         if not os.path.exists(input_file):
             raise HTTPException(status_code=404, detail=f"Input file not found: {input_file}")
 
-        def do_ingest():
+        async def do_ingest():
             """Background task to build index."""
             try:
                 logger.info(f"Starting ingest from {input_file}")
-                build(input_file, retries=2)
+                await asyncio.to_thread(build, input_file, retries=2)
 
-                result = ensure_index_ready(retries=2)
+                result = await asyncio.to_thread(ensure_index_ready, retries=2)
                 if not result:
                     raise RuntimeError("Index artifacts missing after build")
 
@@ -376,6 +401,9 @@ def create_app() -> FastAPI:
                 app.state.hnsw = hnsw
                 app.state.index_ready = True
                 logger.info("Ingest completed successfully")
+            except asyncio.CancelledError:
+                logger.warning("Ingest task cancelled before completion")
+                raise
             except Exception as e:
                 logger.error(f"Ingest failed: {e}", exc_info=True)
                 app.state.chunks = None
@@ -383,8 +411,12 @@ def create_app() -> FastAPI:
                 app.state.bm = None
                 app.state.hnsw = None
                 app.state.index_ready = False
+            finally:
+                app.state.ingest_task = None
 
-        background_tasks.add_task(do_ingest)
+        loop = asyncio.get_running_loop()
+        ingest_task = loop.create_task(do_ingest(), name="ingest-build")
+        app.state.ingest_task = ingest_task
 
         return IngestResponse(
             status="processing",
