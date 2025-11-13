@@ -17,7 +17,7 @@ from . import config
 from .indexing import build, load_index
 from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
 from .answer import answer_once, answer_to_json
-from .caching import get_query_cache, get_rate_limiter
+from .caching import RateLimitError, get_query_cache, get_rate_limiter
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
 from .http_utils import http_post_with_retries
 from .precomputed_cache import get_precomputed_cache
@@ -132,8 +132,18 @@ def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=Fals
             print(f"Debug mode: {'ON' if debug_enabled else 'OFF'}")
             continue
 
-        if not limiter.allow_request(limiter_identity):
-            wait_seconds = limiter.wait_time(limiter_identity)
+        try:
+            allowed = limiter.allow_request(limiter_identity)
+        except RateLimitError as exc:
+            logger.warning("Rate limiter unavailable (%s). Allowing question.", exc)
+            allowed = True
+
+        if not allowed:
+            try:
+                wait_seconds = limiter.wait_time(limiter_identity)
+            except RateLimitError as exc:
+                logger.warning("Rate limiter wait_time failed (%s). Defaulting to immediate retry message.", exc)
+                wait_seconds = 0.0
             wait_msg = f"Please wait {wait_seconds:.0f}s and try again."
             print(f"⚠️  Too many questions at once. {wait_msg}")
             continue
@@ -412,8 +422,18 @@ def handle_ask_command(args):
     limiter = get_rate_limiter()
     limiter_identity = f"cli-ask:{os.getpid()}"
 
-    if not limiter.allow_request(limiter_identity):
-        wait_seconds = limiter.wait_time(limiter_identity)
+    try:
+        allowed = limiter.allow_request(limiter_identity)
+    except RateLimitError as exc:
+        logger.warning("Rate limiter unavailable (%s). Allowing ask command.", exc)
+        allowed = True
+
+    if not allowed:
+        try:
+            wait_seconds = limiter.wait_time(limiter_identity)
+        except RateLimitError as exc:
+            logger.warning("Rate limiter wait_time failed (%s). Defaulting to immediate retry message.", exc)
+            wait_seconds = 0.0
         wait_msg = f"Please wait {wait_seconds:.0f}s and try again."
         print(f"⚠️  Request throttled. {wait_msg}")
         return

@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field, validator
 
 from . import config
 from .answer import answer_once
-from .caching import get_rate_limiter
+from .caching import RateLimitError, get_rate_limiter
 from .cli import ensure_index_ready
 from .indexing import build
 from .utils import check_ollama_connectivity
@@ -421,8 +421,18 @@ def create_app() -> FastAPI:
         client_host = raw_request.client.host if raw_request.client else None
         limiter_identity = principal or client_host or "api-anonymous"
 
-        if not limiter.allow_request(limiter_identity):
-            wait_seconds = limiter.wait_time(limiter_identity)
+        try:
+            allowed = limiter.allow_request(limiter_identity)
+        except RateLimitError as exc:
+            logger.warning("Rate limiter unavailable (%s). Allowing request.", exc)
+            allowed = True
+
+        if not allowed:
+            try:
+                wait_seconds = limiter.wait_time(limiter_identity)
+            except RateLimitError as exc:
+                logger.warning("Rate limiter wait_time failed (%s). Defaulting to 0s retry.", exc)
+                wait_seconds = 0.0
             detail = f"Rate limit exceeded. Retry after {wait_seconds:.0f} seconds."
             raise HTTPException(status_code=429, detail=detail)
 
