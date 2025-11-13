@@ -1,12 +1,11 @@
 import asyncio
 
-import asyncio
-
 import pytest
 import httpx
 from asgi_lifespan import LifespanManager
 
 import clockify_rag.api as api_module
+from clockify_rag.exceptions import IndexLoadError
 
 
 class EnsureStub:
@@ -16,11 +15,15 @@ class EnsureStub:
         self.calls = []
         self.return_values = []
         self.default_return = None
+        self.exceptions = []
 
     def __call__(self, retries=0):
         self.calls.append(retries)
         if self.return_values:
             return self.return_values.pop(0)
+        if self.exceptions:
+            exc = self.exceptions.pop(0)
+            raise exc
         return self.default_return
 
 
@@ -141,4 +144,59 @@ async def test_ingest_failure_clears_cached_state(tmp_path, monkeypatch):
             assert app.state.vecs_n is None
             assert app.state.bm is None
             assert app.state.hnsw is None
+
+
+@pytest.mark.asyncio
+async def test_ingest_corrupt_artifacts_leave_service_degraded(tmp_path, monkeypatch):
+    """If ingest produces corrupt artifacts, the API should fall back to degraded mode."""
+
+    kb_path = tmp_path / "kb.md"
+    kb_path.write_text("# Title\n\nSome helpful docs.", encoding="utf-8")
+
+    ensure_stub = EnsureStub()
+    ready_tuple = ([{"id": 1, "text": "chunk"}], ["vec"], {"idf": {}}, "hnsw")
+    ensure_stub.return_values.append(ready_tuple)
+    ensure_stub.default_return = ready_tuple
+    ensure_stub.exceptions.append(IndexLoadError("corrupt index produced"))
+    monkeypatch.setattr(api_module, "ensure_index_ready", ensure_stub)
+
+    build_calls = {"count": 0}
+
+    def fake_build(path, retries=0):
+        build_calls["count"] += 1
+
+    monkeypatch.setattr(api_module, "build", fake_build)
+
+    app = api_module.create_app()
+
+    async with LifespanManager(app):
+        # Startup should have consumed the prepared tuple and marked the index as ready
+        assert app.state.index_ready is True
+        assert app.state.index_error is None
+
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+            ingest_response = await client.post(
+                "/v1/ingest", json={"input_file": str(kb_path)}
+            )
+
+            assert ingest_response.status_code == 200
+            assert build_calls["count"] == 1
+
+            # Wait for the background task to report the corrupt artifact failure
+            for _ in range(40):
+                if app.state.index_ready is False and app.state.index_error:
+                    break
+                await asyncio.sleep(0.01)
+
+            assert app.state.index_ready is False
+            assert app.state.index_error is not None
+            assert "corrupt index produced" in app.state.index_error
+
+            query_response = await client.post(
+                "/v1/query", json={"question": "How do I use this?"}
+            )
+
+            assert query_response.status_code == 503
+            assert "corrupt index produced" in query_response.json()["detail"]
 

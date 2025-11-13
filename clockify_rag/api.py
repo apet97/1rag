@@ -32,7 +32,7 @@ from .cli import ensure_index_ready
 from .indexing import build
 from .logging_utils import log_query_event
 from .utils import check_ollama_connectivity
-from .exceptions import ValidationError
+from .exceptions import ValidationError, IndexLoadError
 
 logger = logging.getLogger(__name__)
 
@@ -263,6 +263,7 @@ def create_app() -> FastAPI:
     app.state.bm = None
     app.state.hnsw = None
     app.state.index_ready = False
+    app.state.index_error = None
     app.state.index_lock = threading.RLock()
 
     @app.on_event("startup")
@@ -271,6 +272,25 @@ def create_app() -> FastAPI:
         try:
             logger.info("Loading index on startup...")
             result = ensure_index_ready(retries=2)
+        except IndexLoadError as exc:
+            logger.warning("Index not ready at startup: %s", exc)
+            with app.state.index_lock:
+                app.state.chunks = None
+                app.state.vecs_n = None
+                app.state.bm = None
+                app.state.hnsw = None
+                app.state.index_ready = False
+                app.state.index_error = str(exc)
+        except Exception as e:
+            logger.error("Failed to load index at startup: %s", e, exc_info=True)
+            with app.state.index_lock:
+                app.state.chunks = None
+                app.state.vecs_n = None
+                app.state.bm = None
+                app.state.hnsw = None
+                app.state.index_ready = False
+                app.state.index_error = str(e)
+        else:
             if result:
                 chunks, vecs_n, bm, hnsw = result
                 with app.state.index_lock:
@@ -279,11 +299,17 @@ def create_app() -> FastAPI:
                     app.state.bm = bm
                     app.state.hnsw = hnsw
                     app.state.index_ready = True
+                    app.state.index_error = None
                 logger.info(f"Index loaded: {len(chunks)} chunks")
             else:
                 logger.warning("Index not ready at startup")
-        except Exception as e:
-            logger.error(f"Failed to load index at startup: {e}")
+                with app.state.index_lock:
+                    app.state.chunks = None
+                    app.state.vecs_n = None
+                    app.state.bm = None
+                    app.state.hnsw = None
+                    app.state.index_ready = False
+                    app.state.index_error = "Index not ready at startup"
 
     @app.on_event("shutdown")
     async def shutdown_event():
@@ -304,6 +330,7 @@ def create_app() -> FastAPI:
             app.state.bm = None
             app.state.hnsw = None
             app.state.index_ready = False
+            app.state.index_error = None
 
         logger.info("Graceful shutdown complete")
 
@@ -407,15 +434,17 @@ def create_app() -> FastAPI:
         """
         with app.state.index_lock:
             index_ready = app.state.index_ready
+            index_error = getattr(app.state, "index_error", None)
             chunks = app.state.chunks
             vecs_n = app.state.vecs_n
             bm = app.state.bm
             hnsw = app.state.hnsw
 
         if not index_ready:
-            raise HTTPException(
-                status_code=503, detail="Index not ready. Run /v1/ingest first or wait for startup."
-            )
+            detail = "Index not ready. Run /v1/ingest first or wait for startup."
+            if index_error:
+                detail = f"{detail} ({index_error})"
+            raise HTTPException(status_code=503, detail=detail)
 
         limiter = get_rate_limiter()
         principal = credentials.get("principal") if isinstance(credentials, dict) else None
@@ -532,6 +561,7 @@ def create_app() -> FastAPI:
                         app.state.bm = bm
                         app.state.hnsw = hnsw
                         app.state.index_ready = True
+                        app.state.index_error = None
                     logger.info("Ingest completed successfully")
                 except Exception as e:
                     logger.error(f"Ingest failed: {e}", exc_info=True)
@@ -541,6 +571,7 @@ def create_app() -> FastAPI:
                         app.state.bm = None
                         app.state.hnsw = None
                         app.state.index_ready = False
+                        app.state.index_error = str(e)
 
             background_tasks.add_task(do_ingest)
 
