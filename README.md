@@ -408,6 +408,9 @@ uvicorn app:app --workers 4
 - Thread safety locks protect shared state (QueryCache, RateLimiter, _FAISS_INDEX)
 - Cache and rate limiter shared across threads within same process
 - Better resource utilization
+- **No manual reloads required**: Each worker caches the `index.meta` version marker and auto-reloads
+  chunks/embeddings whenever an ingest writes a new version. Deployments with multiple workers
+  simply keep serving traffic while background builds propagate.
 
 **Option 2: Single-threaded (legacy)**
 ```bash

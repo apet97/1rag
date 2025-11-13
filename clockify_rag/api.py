@@ -28,8 +28,8 @@ from pydantic import BaseModel, Field, validator
 from . import config
 from .answer import answer_once
 from .caching import get_rate_limiter
-from .cli import ensure_index_ready
-from .indexing import build
+from .cli import ensure_index_ready, get_cached_index_version
+from .indexing import build, get_index_version_from_disk
 from .utils import check_ollama_connectivity
 from .exceptions import ValidationError
 
@@ -263,6 +263,49 @@ def create_app() -> FastAPI:
     app.state.hnsw = None
     app.state.index_ready = False
     app.state.index_lock = threading.RLock()
+    app.state.index_version = None
+    app.state._reload_in_progress = False
+
+    async def _maybe_reload_index_if_version_changed() -> None:
+        """Reload artifacts if the on-disk index version changed."""
+
+        disk_version = get_index_version_from_disk()
+        if not disk_version:
+            return
+
+        with app.state.index_lock:
+            cached_version = app.state.index_version
+            if disk_version == cached_version:
+                return
+            if app.state._reload_in_progress:
+                return
+            app.state._reload_in_progress = True
+
+        try:
+            logger.info(
+                "Detected index version change (cached=%s, disk=%s). Reloading artifacts...",
+                cached_version,
+                disk_version,
+            )
+            result = await run_in_threadpool(ensure_index_ready, 2)
+        except Exception as exc:
+            logger.error("Failed to reload index after version change: %s", exc)
+            result = None
+        finally:
+            with app.state.index_lock:
+                app.state._reload_in_progress = False
+
+        if not result:
+            return
+
+        chunks, vecs_n, bm, hnsw = result
+        with app.state.index_lock:
+            app.state.chunks = chunks
+            app.state.vecs_n = vecs_n
+            app.state.bm = bm
+            app.state.hnsw = hnsw
+            app.state.index_ready = True
+            app.state.index_version = get_cached_index_version() or disk_version
 
     @app.on_event("startup")
     async def startup_event():
@@ -278,6 +321,7 @@ def create_app() -> FastAPI:
                     app.state.bm = bm
                     app.state.hnsw = hnsw
                     app.state.index_ready = True
+                    app.state.index_version = get_cached_index_version()
                 logger.info(f"Index loaded: {len(chunks)} chunks")
             else:
                 logger.warning("Index not ready at startup")
@@ -404,6 +448,8 @@ def create_app() -> FastAPI:
         Raises:
             HTTPException: If index not ready or query fails
         """
+        await _maybe_reload_index_if_version_changed()
+
         with app.state.index_lock:
             index_ready = app.state.index_ready
             chunks = app.state.chunks
@@ -507,7 +553,8 @@ def create_app() -> FastAPI:
                     app.state.bm = bm
                     app.state.hnsw = hnsw
                     app.state.index_ready = True
-                logger.info("Ingest completed successfully")
+                    app.state.index_version = get_cached_index_version()
+                logger.info("Ingest completed successfully (version=%s)", app.state.index_version)
             except Exception as e:
                 logger.error(f"Ingest failed: {e}", exc_info=True)
                 with app.state.index_lock:

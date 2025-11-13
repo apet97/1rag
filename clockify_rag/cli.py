@@ -14,7 +14,7 @@ import numpy as np
 from typing import Tuple, Optional, Any
 
 from . import config
-from .indexing import build, load_index
+from .indexing import build, load_index, get_index_version_from_disk
 from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
 from .answer import answer_once, answer_to_json
 from .caching import get_query_cache, get_rate_limiter
@@ -24,6 +24,22 @@ from .precomputed_cache import get_precomputed_cache
 from .exceptions import ValidationError
 
 logger = logging.getLogger(__name__)
+
+_INDEX_VERSION: Optional[str] = None
+
+
+def get_cached_index_version() -> Optional[str]:
+    """Return the last index version observed by this process."""
+
+    return _INDEX_VERSION
+
+
+def _set_cached_index_version(version: Optional[str]) -> Optional[str]:
+    """Update the process-local index version cache."""
+
+    global _INDEX_VERSION
+    _INDEX_VERSION = version
+    return _INDEX_VERSION
 
 
 def ensure_index_ready(retries=0) -> Tuple:
@@ -74,6 +90,8 @@ def ensure_index_ready(retries=0) -> Tuple:
         chunks, vecs_n, bm, hnsw = result
     else:
         raise TypeError(f"load_index() must return dict or tuple, got {type(result)}")
+
+    _set_cached_index_version(get_index_version_from_disk())
 
     return chunks, vecs_n, bm, hnsw
 

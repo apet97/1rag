@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from clockify_rag import config, build_bm25, compute_sha256
+from clockify_rag.indexing import build_index_version_token
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -73,6 +74,7 @@ def main() -> None:
     else:
         kb_sha = "dummy"
 
+    built_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     index_meta = {
         "kb_sha256": kb_sha,
         "chunks": len(chunks),
@@ -85,7 +87,8 @@ def main() -> None:
         "mmr_lambda": config.MMR_LAMBDA,
         "chunk_chars": config.CHUNK_CHARS,
         "chunk_overlap": config.CHUNK_OVERLAP,
-        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "built_at": built_at,
+        "version": build_index_version_token(kb_sha, built_at),
         "code_version": "ci-dummy",
     }
 

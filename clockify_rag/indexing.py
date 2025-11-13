@@ -9,6 +9,7 @@ import platform
 import threading
 import time
 from collections import Counter
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -409,6 +410,8 @@ def build(md_path: str, retries=0):
         # Write metadata
         logger.info("\n[3.6/4] Writing artifact metadata...")
         kb_sha = compute_sha256(md_path)
+        built_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        version_token = build_index_version_token(kb_sha, built_at)
         index_meta = {
             "kb_sha256": kb_sha,
             "chunks": len(chunks),
@@ -418,7 +421,8 @@ def build(md_path: str, retries=0):
             "emb_model": config.EMB_MODEL if config.EMB_BACKEND == "ollama" else "all-MiniLM-L6-v2",
             "emb_backend": config.EMB_BACKEND,
             "ann": config.USE_ANN,
-            "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "built_at": built_at,
+            "version": version_token,
         }
         atomic_write_json(config.FILES["index_meta"], index_meta)
         logger.info(f"  Saved index metadata")
@@ -440,12 +444,9 @@ def load_index():
     Returns:
         dict with index artifacts, or None if validation fails (requiring rebuild)
     """
-    if not os.path.exists(config.FILES["index_meta"]):
-        logger.warning("[rebuild] index.meta.json missing")
+    meta = read_index_metadata()
+    if meta is None:
         return None
-
-    with open(config.FILES["index_meta"], encoding="utf-8") as f:
-        meta = json.load(f)
 
     # Validate backend compatibility
     stored_backend = meta.get("emb_backend")
@@ -513,11 +514,59 @@ def load_index():
 
     logger.info(f"Loaded {len(chunks)} chunks, {vecs_n.shape[0]} vectors, {len(bm['idf'])} terms")
 
+    version = compute_index_version(meta)
+
     return {
         "chunks": chunks,
         "chunks_dict": chunks_dict,
         "vecs_n": vecs_n,
         "bm": bm,
         "faiss_index": faiss_index,
-        "meta": meta
+        "index_meta": meta,
+        "version": version,
     }
+
+
+def read_index_metadata() -> Optional[Dict[str, Any]]:
+    """Safely load ``index.meta.json`` from disk."""
+
+    path = config.FILES["index_meta"]
+    if not os.path.exists(path):
+        logger.warning("[rebuild] index.meta.json missing")
+        return None
+
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.error("Failed to read %s: %s", path, exc)
+        return None
+
+
+def build_index_version_token(kb_sha: str, built_at: str) -> str:
+    """Construct a deterministic version marker from KB hash and build timestamp."""
+
+    return f"{kb_sha}:{built_at}"
+
+
+def compute_index_version(meta: Dict[str, Any]) -> Optional[str]:
+    """Return the preferred version marker for a metadata dictionary."""
+
+    version = meta.get("version")
+    if version:
+        return str(version)
+
+    kb_sha = meta.get("kb_sha256")
+    built_at = meta.get("built_at")
+    if kb_sha and built_at:
+        return build_index_version_token(kb_sha, built_at)
+    return kb_sha or built_at
+
+
+def get_index_version_from_disk() -> Optional[str]:
+    """Read the on-disk index version marker, if available."""
+
+    meta = read_index_metadata()
+    if not meta:
+        return None
+    return compute_index_version(meta)
