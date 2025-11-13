@@ -17,7 +17,7 @@ import signal
 import threading
 import time
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Sequence, Mapping
 
 import typer
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request, status
@@ -182,13 +182,92 @@ class QueryRequest(BaseModel):
         return v
 
 
+class SourceAttribution(BaseModel):
+    """Normalized representation of a retrieved chunk."""
+
+    id: str = Field(..., description="Chunk identifier")
+    title: Optional[str] = Field(default=None, description="Source title, if available")
+    section: Optional[str] = Field(default=None, description="Source section heading, if available")
+
+
+def _translate_sources(
+    selected_chunks: Sequence[Any] | None,
+    chunks: Sequence[Mapping[str, Any]] | None,
+    *,
+    limit: int = 5,
+    include_metadata: bool = True,
+) -> List[SourceAttribution]:
+    """Convert answer_once selected chunks into API source payloads."""
+
+    if not selected_chunks:
+        return []
+
+    sources: List[SourceAttribution] = []
+    total_chunks = len(chunks) if chunks is not None else 0
+
+    def from_index(idx: int) -> tuple[str, Optional[str], Optional[str]]:
+        if chunks is not None and 0 <= idx < total_chunks:
+            chunk = chunks[idx]
+            chunk_id = chunk.get("id") or chunk.get("chunk_id") or str(idx)
+            title = chunk.get("title") if include_metadata else None
+            section = chunk.get("section") if include_metadata else None
+            return str(chunk_id), title, section
+        return str(idx), None, None
+
+    for ref in selected_chunks:
+        if len(sources) >= limit:
+            break
+
+        chunk_id: Optional[str] = None
+        title: Optional[str] = None
+        section: Optional[str] = None
+
+        if isinstance(ref, Mapping):
+            maybe_id = ref.get("id") or ref.get("chunk_id")
+            if maybe_id is not None:
+                chunk_id = str(maybe_id)
+            if include_metadata:
+                title = ref.get("title")
+                section = ref.get("section")
+
+            if chunk_id is None and "index" in ref:
+                try:
+                    idx = int(ref["index"])
+                except (TypeError, ValueError):
+                    idx = None
+                if idx is not None:
+                    chunk_id, idx_title, idx_section = from_index(idx)
+                    if include_metadata:
+                        title = title or idx_title
+                        section = section or idx_section
+        else:
+            try:
+                idx = int(ref)
+            except (TypeError, ValueError):
+                if ref is not None:
+                    chunk_id = str(ref)
+            else:
+                chunk_id, title, section = from_index(idx)
+
+        if chunk_id is None:
+            continue
+
+        if not include_metadata:
+            title = None
+            section = None
+
+        sources.append(SourceAttribution(id=chunk_id, title=title, section=section))
+
+    return sources
+
+
 class QueryResponse(BaseModel):
     """Response body for /v1/query endpoint."""
 
     question: str
     answer: str
     confidence: Optional[float] = None
-    sources: List[int] = Field(default_factory=list, description="Chunk IDs used")
+    sources: List[SourceAttribution] = Field(default_factory=list, description="Chunk metadata used")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata from answer pipeline")
     routing: Optional[Dict[str, Any]] = Field(default=None, description="Routing recommendation metadata")
     timestamp: datetime
@@ -471,11 +550,18 @@ def create_app() -> FastAPI:
                 disabled=config.API_PRIVACY_MODE,
             )
 
+            sources = _translate_sources(
+                result.get("selected_chunks"),
+                chunks,
+                limit=5,
+                include_metadata=not config.API_PRIVACY_MODE,
+            )
+
             return QueryResponse(
                 question=request.question,
                 answer=result.get("answer", ""),
                 confidence=result.get("confidence"),
-                sources=result.get("selected_chunks", [])[:5],  # Top 5 sources
+                sources=sources,
                 metadata=result.get("metadata", {}) or {},
                 routing=result.get("routing"),
                 timestamp=datetime.now(),
