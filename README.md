@@ -49,28 +49,33 @@ For detailed M1 installation instructions, see [M1_COMPATIBILITY.md](M1_COMPATIB
 
 ### Configure Ollama Endpoint
 
-**Local Ollama (Default)**:
-The system defaults to `http://127.0.0.1:11434` for local Ollama installations.
-
-**Remote Ollama (Company-Hosted)**:
-If using a company-hosted Ollama endpoint, set the `OLLAMA_URL` environment variable:
+**Remote Ollama (Company-Hosted, default)**:
+`RAG_OLLAMA_URL` now defaults to the VPN-backed host `http://10.127.0.192:11434`. Ensure you are on the corporate network (or VPN) before running queries.
 
 ```bash
 # Example: Using remote Ollama server
-export OLLAMA_URL=http://10.127.0.192:11434
+export RAG_OLLAMA_URL=http://10.127.0.192:11434
 
 # Or inline for a single command
-OLLAMA_URL=http://10.127.0.192:11434 python3 clockify_support_cli_final.py chat
+RAG_OLLAMA_URL=http://10.127.0.192:11434 python3 clockify_support_cli_final.py chat
 ```
 
-**Important**: Remote endpoints require network connectivity and may have different timeout requirements. Consider increasing timeouts for VPN or slow connections:
+**Local Ollama Override**:
 
 ```bash
-export OLLAMA_URL=http://10.127.0.192:11434
+export RAG_OLLAMA_URL=http://127.0.0.1:11434
+```
+
+**Timeouts**: Remote endpoints may need higher read timeouts when accessed over VPN:
+
+```bash
+export RAG_OLLAMA_URL=http://10.127.0.192:11434
 export CHAT_READ_TIMEOUT=300
 export EMB_READ_TIMEOUT=180
 python3 clockify_support_cli_final.py chat
 ```
+
+See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the complete list of supported environment variables and defaults.
 
 ### Build Knowledge Base
 ```bash
@@ -84,7 +89,7 @@ python3 clockify_support_cli_final.py build knowledge_full.md
 python3 clockify_support_cli_final.py chat
 
 # With remote Ollama endpoint
-OLLAMA_URL=http://10.127.0.192:11434 python3 clockify_support_cli_final.py chat
+RAG_OLLAMA_URL=http://10.127.0.192:11434 python3 clockify_support_cli_final.py chat
 
 # With debug mode
 python3 clockify_support_cli_final.py chat --debug
@@ -92,11 +97,26 @@ python3 clockify_support_cli_final.py chat --debug
 # Single query (supports --rerank/--json/--topk/--pack)
 python3 clockify_support_cli_final.py ask "How do I track time in Clockify?" --rerank --json
 
-# Run self-tests
+# Run self-tests (uses configured RAG_OLLAMA_URL)
 python3 clockify_support_cli_final.py --selftest
 ```
 
 The self-test command generates a synthetic index on the fly, verifies that index artifacts load correctly, and exercises a hybrid retrieval smoke test so you can validate deployments without rebuilding the full knowledge base.
+
+> `ragctl query --json` and `clockify_support_cli_final.py ask --json` emit the same schema as `/v1/query`, including `metadata`, `routing`, and `timing` fields so scripts can automate routing decisions.
+
+### Smoke Test (offline or remote)
+
+```bash
+# Deterministic mock client (safe for CI/offline laptops)
+RAG_LLM_CLIENT=mock make smoke
+
+# Full stack against the VPN-hosted Ollama server
+RAG_OLLAMA_URL=http://10.127.0.192:11434 \
+RAG_LLM_CLIENT=ollama make smoke
+```
+
+`make smoke` wraps `scripts/smoke_rag.py`, which loads the local index, runs `answer_once`, and prints routing + latency stats. Non-zero exit codes indicate refusal/error so you can fail fast before exposing the API.
 
 ## What's New in v4.1.2
 
@@ -315,6 +335,38 @@ python3 clockify_support_cli.py chat --det-check --seed 42
 python3 clockify_support_cli.py --log DEBUG chat
 ```
 
+### Testing and Validation
+
+#### Run All Tests
+```bash
+# All tests with coverage
+make test
+
+# Or with pytest directly
+pytest tests/ --cov=clockify_rag --cov-report=html
+open htmlcov/index.html
+```
+
+#### Run Self-Tests
+```bash
+python3 clockify_support_cli_final.py --selftest
+# Expected: [selftest] 4/4 tests passed
+```
+
+#### Run Specific Test Categories
+```bash
+# Unit tests only
+pytest tests/ -k "not integration"
+
+# Integration tests only  
+pytest tests/test_integration.py
+
+# Thread safety tests
+pytest tests/test_thread_safety.py -n 4
+```
+
+For complete testing documentation, see [TESTING.md](TESTING.md).
+
 ### Automated Evaluation
 
 Ground-truth retrieval metrics are tracked via `eval.py`. The evaluator works in
@@ -326,6 +378,9 @@ python3 eval.py --dataset eval_datasets/clockify_v1.jsonl
 
 # Enable verbose per-query breakdown
 python3 eval.py --dataset eval_datasets/clockify_v1.jsonl --verbose
+
+# Generate an offline LLM answer report (deterministic mock client)
+RAG_LLM_CLIENT=mock python3 eval.py --dataset eval_datasets/clockify_v1.jsonl --llm-report
 ```
 
 Key details:
@@ -343,8 +398,7 @@ Key details:
 - ✅ **Thresholds** – Builds fail when any metric drops below the default
   thresholds: `MRR@10 ≥ 0.70`, `Precision@5 ≥ 0.55`, `NDCG@10 ≥ 0.60`.
 
-See [eval_datasets/README.md](eval_datasets/README.md) for dataset details and
-label generation.
+See [docs/EVALUATION.md](docs/EVALUATION.md) for end-to-end instructions (hybrid vs. lexical, thresholds, and LLM reports) and [eval_datasets/README.md](eval_datasets/README.md) for dataset details.
 
 ## Statistics
 
@@ -363,6 +417,14 @@ label generation.
 | **Query latency (M1)** | ~6-11 seconds (LLM dominates) |
 | **M1 performance gain** | 30-70% faster than Intel |
 
+## Documentation Map
+
+- `docs/RAG_ARCHITECTURE.md` – system overview and data flow.
+- `docs/CONFIGURATION.md` – authoritative list of `RAG_*` and related env vars.
+- `docs/API.md` – HTTP contract (same payload as `ragctl query --json`).
+- `docs/DEPLOYMENT.md` – platform-specific rollout steps + smoke guidance.
+- `docs/RUNBOOK.md` – health checks, troubleshooting, and rebuild procedures.
+
 ## Deployment Checklist
 
 ### Pre-Deployment
@@ -380,7 +442,7 @@ label generation.
 ### Build & Test
 - [ ] Build knowledge base: `python3 clockify_support_cli_final.py build knowledge_full.md`
 - [ ] Run self-tests: `python3 clockify_support_cli_final.py --selftest`
-- [ ] Run smoke tests: `bash scripts/smoke.sh`
+- [ ] Run smoke tests: `make smoke` (Python harness). Use `make smoke-full` for the legacy shell suite.
 - [ ] Test query: `python3 clockify_support_cli_final.py ask "How do I track time?"`
 
 ### Validation (M1 Only)
@@ -389,7 +451,7 @@ label generation.
 - [ ] Run M1 compatibility tests: `bash scripts/m1_compatibility_test.sh` (if available)
 
 ### Production (v5.1+)
-- [ ] Configure Ollama endpoint (`OLLAMA_URL` env var)
+- [ ] Configure Ollama endpoint (`RAG_OLLAMA_URL` env var; `OLLAMA_URL` still accepted)
 - [ ] Set production timeouts (if needed)
 - [ ] Test end-to-end query
 - [ ] **Choose deployment mode** (see below)
@@ -459,8 +521,8 @@ gunicorn -w 4 --threads 1 app:app
   - Graceful fallback to full-scan if unavailable
 
 ### External Services
-- **Ollama** – Local LLM server
-  - Default endpoint: `http://127.0.0.1:11434`
+- **Ollama** – Remote/Local LLM server
+  - Default endpoint: `http://10.127.0.192:11434` (VPN). Override to `http://127.0.0.1:11434` for local testing.
   - Required models:
     - `nomic-embed-text` – 768-dim embeddings (optional if using local)
     - `qwen2.5:32b` – LLM for answer generation
@@ -472,11 +534,15 @@ See [Quick Start](#quick-start) section above or [M1_COMPATIBILITY.md](M1_COMPAT
 
 ### Core Configuration
 ```bash
-OLLAMA_URL              # Ollama endpoint (default: http://127.0.0.1:11434)
-GEN_MODEL               # Generation model (default: qwen2.5:32b)
-EMB_MODEL               # Embedding model (default: nomic-embed-text)
+RAG_OLLAMA_URL          # Ollama endpoint (default: http://10.127.0.192:11434; override to http://127.0.0.1:11434 locally)
+RAG_CHAT_MODEL          # Generation model (default: qwen2.5:32b)
+RAG_EMBED_MODEL         # Embedding model (default: nomic-embed-text:latest)
 EMB_BACKEND             # "local" or "ollama" (default: local)
 ```
+
+Legacy aliases (`OLLAMA_URL`, `GEN_MODEL`, `EMB_MODEL`) remain supported but will be removed in a future major release.
+
+Set `RAG_LLM_CLIENT=mock` to force the deterministic offline client (used automatically in CI/tests). Any other value uses the real Ollama server.
 
 ### Performance Tuning
 ```bash

@@ -1,0 +1,95 @@
+# Configuration Reference
+
+Use this guide to configure the Clockify RAG stack across development laptops, CI, and production deployments. The system reads configuration in the following order (highest priority first):
+
+1. Environment variables (`RAG_*`, `CLOCKIFY_*`, etc.)
+2. `.env` file in the repository root (load with `python-dotenv` or `make dev`)
+3. Hard-coded defaults in `clockify_rag.config`
+
+> **Tip:** Legacy env names (`OLLAMA_URL`, `GEN_MODEL`, `EMB_MODEL`) are still honored, but the new `RAG_*` namespace is the supported path going forward.
+
+## Core RAG Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Base URL of the Ollama-compatible LLM host. Override with `http://127.0.0.1:11434` for local development or any other HTTP/S endpoint. |
+| `RAG_CHAT_MODEL` | `qwen2.5:32b` | Primary generation model used for chat/ask flows. |
+| `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model served by Ollama when `EMB_BACKEND=ollama`. |
+| `EMB_BACKEND` | `local` | `local` uses SentenceTransformers; `ollama` sends embedding requests to `RAG_OLLAMA_URL`. |
+| `DEFAULT_TOP_K` | `15` | Number of dense/BM25 candidates to pull before filtering. |
+| `DEFAULT_PACK_TOP` | `8` | Final snippets included in the prompt. |
+| `DEFAULT_THRESHOLD` | `0.25` | Minimum hybrid score required for inclusion. |
+| `DEFAULT_RETRIES` | `2` | Automatic retries for transient Ollama errors (chat + embeddings). |
+| `CHAT_CONNECT_TIMEOUT` | `3.0` | Connect timeout (seconds) for chat/generation calls. |
+| `CHAT_READ_TIMEOUT` | `120.0` | Read timeout (seconds) for chat/generation calls. |
+| `EMB_CONNECT_TIMEOUT` | `3.0` | Connect timeout for embedding calls. |
+| `EMB_READ_TIMEOUT` | `60.0` | Read timeout for embedding calls. |
+| `CTX_BUDGET` | `12000` | Token budget reserved for snippets (effective budget is `min(CTX_BUDGET, num_ctx * 0.6)`). |
+| `MMR_LAMBDA` | `0.75` | Balance between relevance and diversity during MMR selection. |
+
+## Additional Controls
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `RAG_LLM_CLIENT` | *(empty)* | Set to `mock` to force the deterministic offline LLM client (used automatically in tests/CI). Any other value uses the real Ollama client. |
+| `CLOCKIFY_QUERY_EXPANSIONS` | `config/query_expansions.json` | Optional JSON map of query → expansions. |
+| `MAX_QUERY_EXPANSION_FILE_SIZE` | `10485760` (10 MB) | Size guardrail for the expansions file. |
+| `CACHE_MAXSIZE` | `100` | Query cache capacity (LRU). |
+| `CACHE_TTL` | `3600` seconds | Cache entry TTL. |
+| `RATE_LIMIT_REQUESTS` | `10` | Requests per rate-limit window (currently a no-op but kept for API compatibility). |
+| `RATE_LIMIT_WINDOW` | `60` seconds | Window for rate limiting logic. |
+| `ANN` | `faiss` | `faiss` for ANN search or `none` for brute-force. |
+| `ANN_NLIST` / `ANN_NPROBE` | `64` / `16` | FAISS IVF parameters. |
+| `EMB_MAX_WORKERS` | `8` | Parallel workers when calling Ollama embeddings. |
+| `EMB_BATCH_SIZE` | `32` | Batch size per worker. |
+| `WARMUP` | `1` | Enable warmup sequence on startup (embeddings, LLM, FAISS). |
+| `BUILD_LOCK_TTL_SEC` | `900` | TTL for the ingestion/build lock. |
+| `RAG_LOG_FILE` | `rag_queries.jsonl` | Query log path. |
+| `RAG_LOG_INCLUDE_ANSWER` | `1` | Include answer text in logs (`0` redacts). |
+| `RAG_LOG_INCLUDE_CHUNKS` | `0` | Include chunk bodies in query logs. |
+| `RAG_STRICT_CITATIONS` | `0` | Force refusal when citations missing. |
+
+## Using `.env`
+
+1. Copy `.env.example` to `.env`.
+2. Adjust the values for your environment (VPN vs. local, timeouts, etc.).
+3. Source the file (`set -a; source .env; set +a`) or rely on tooling that loads it automatically (`uvicorn`, `make dev`, etc.).
+
+Example `.env` snippet for local development:
+
+```bash
+RAG_OLLAMA_URL=http://127.0.0.1:11434
+RAG_CHAT_MODEL=qwen2.5:32b
+RAG_EMBED_MODEL=nomic-embed-text:latest
+EMB_BACKEND=local
+DEFAULT_TOP_K=12
+DEFAULT_PACK_TOP=6
+```
+
+Example for production on the VPN-hosted Ollama:
+
+```bash
+RAG_OLLAMA_URL=http://10.127.0.192:11434
+RAG_CHAT_MODEL=qwen2.5:32b
+RAG_EMBED_MODEL=nomic-embed-text:latest
+EMB_BACKEND=ollama
+CHAT_READ_TIMEOUT=300
+EMB_READ_TIMEOUT=180
+DEFAULT_RETRIES=4
+```
+
+## Validating Configuration
+
+Run any of the following commands to ensure the config is wired correctly:
+
+- `ragctl doctor --json` – dumps resolved config, index status, and Ollama connectivity.
+- `python3 clockify_support_cli_final.py --selftest` – legacy self-test that reaches the configured endpoint.
+- `python3 -m clockify_rag.api` – starts the FastAPI server and logs config banner + health checks.
+
+If something looks off, check:
+
+1. The resolved values in `clockify_rag/config.py` (`RAG_*` constants printed at startup).
+2. That `.env` is being loaded (e.g., `pip install python-dotenv` and use `dotenv run`).
+3. Whether the VPN route to `10.127.0.192:11434` is active (try `curl $RAG_OLLAMA_URL/api/tags`).
+
+Document any environment-specific overrides (e.g., staging vs. prod) in `docs/DEPLOYMENT.md` so ops can reproduce the setup quickly.
