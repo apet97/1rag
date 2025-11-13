@@ -509,17 +509,33 @@ See [LOGGING_CONFIG.md](LOGGING_CONFIG.md) for comprehensive logging documentati
 
 ### Caching & Rate Limiting
 ```bash
-CACHE_MAXSIZE           # Query cache size (default: 100)
-CACHE_TTL               # Cache TTL in seconds (default: 3600)
-RATE_LIMIT_REQUESTS     # Max requests per window (default: 10)
-RATE_LIMIT_WINDOW       # Window in seconds (default: 60)
+CACHE_MAXSIZE                # Query cache size (default: 100)
+CACHE_TTL                    # Cache TTL in seconds (default: 3600)
+RATE_LIMIT_REQUESTS          # Backward-compatible alias for RATE_LIMIT_IDENTITY_REQUESTS
+RATE_LIMIT_WINDOW            # Backward-compatible alias for RATE_LIMIT_IDENTITY_WINDOW
+RATE_LIMIT_IDENTITY_REQUESTS # Max requests per caller identity (default: 10)
+RATE_LIMIT_IDENTITY_WINDOW   # Sliding window for identity limit (default: 60)
+RATE_LIMIT_GLOBAL_REQUESTS   # Optional aggregate limit across all clients (default: disabled)
+RATE_LIMIT_GLOBAL_WINDOW     # Window in seconds for the global limit
+RATE_LIMIT_BACKEND           # "memory" (default) or "redis" for distributed throttling
+RATE_LIMIT_REDIS_URL         # Redis URL when backend=redis (default: redis://127.0.0.1:6379/0)
+RATE_LIMIT_REDIS_TIMEOUT     # Redis socket/connect timeout in seconds (default: 1.0)
+RATE_LIMIT_REDIS_RETRIES     # Redis operation retries before failing open (default: 2)
+RATE_LIMIT_NAMESPACE         # Prefix for distributed counters (default: clockify:rate)
 ```
 
-The rate limiter enforces a sliding window per caller identity (CLI process, API key, or client IP).
-Set `RATE_LIMIT_REQUESTS=0` or `RATE_LIMIT_WINDOW=0` to disable throttling entirely for trusted environments.
-When the limit is hit, the CLI prints a friendly "please try again" message and the API returns HTTP 429 with a
-`Retry-After` style hint derived from the remaining window. Tune the values per environment to keep Ollama/LLM
-capacity from being overwhelmed.
+The in-memory limiter enforces a sliding window per caller identity (CLI process, API key, or client IP) and,
+optionally, a global aggregate limit. Setting `RATE_LIMIT_IDENTITY_REQUESTS=0`/`RATE_LIMIT_IDENTITY_WINDOW=0`
+disables per-identity throttling while still allowing a global ceiling to be applied.
+
+#### Distributed rate limiting (Redis)
+
+Set `RATE_LIMIT_BACKEND=redis` to enable the new distributed limiter. Provide the Redis URL, optional namespace,
+and (if desired) a global aggregate cap to coordinate limits across multiple API or CLI instances. The application
+ships with the `redis` Python client; you only need to provision a Redis service (managed cloud instance or
+Docker/Kubernetes deployment) that all workers can reach. The limiter will retry transient errors and automatically
+fall back to the in-memory implementation if Redis is unreachable during startup, while API/CLI callers fail open
+when a backend outage happens mid-flight so queries are never blocked by infrastructure issues.
 
 ### Query Expansion
 ```bash

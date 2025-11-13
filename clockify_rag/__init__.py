@@ -64,6 +64,8 @@ from .indexing import (
 from .caching import (
     QueryCache,
     RateLimiter,
+    RateLimitError,
+    RateLimitSettings,
     get_query_cache,
     get_rate_limiter
 )

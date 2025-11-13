@@ -1,12 +1,23 @@
 """Query caching and rate limiting for RAG system."""
 
+from __future__ import annotations
+
 import hashlib
 import logging
 import os
 import threading
 import time
 from collections import defaultdict, deque
-from typing import Optional
+from dataclasses import dataclass
+from typing import Optional, Callable
+
+try:  # Optional dependency for distributed rate limiting
+    import redis
+    from redis import Redis, RedisError
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    redis = None
+    Redis = None
+    RedisError = Exception
 
 logger = logging.getLogger(__name__)
 
@@ -15,12 +26,33 @@ _RATE_LIMITER = None
 _QUERY_CACHE = None
 
 
+class RateLimitError(RuntimeError):
+    """Raised when the rate limiter backend cannot be used."""
+
+
+@dataclass(frozen=True)
+class RateLimitSettings:
+    """Configuration for a single sliding-window limit."""
+
+    max_requests: int
+    window_seconds: float
+
+    @property
+    def disabled(self) -> bool:
+        return self.max_requests <= 0 or self.window_seconds <= 0
+
+
 class RateLimiter:
     """Sliding-window rate limiter keyed by identity."""
 
     _GLOBAL_KEY = "__global__"
 
-    def __init__(self, max_requests: int = 10, window_seconds: float = 60.0):
+    def __init__(
+        self,
+        max_requests: int = 10,
+        window_seconds: float = 60.0,
+        global_limit: Optional[RateLimitSettings] = None,
+    ):
         if max_requests < 0:
             raise ValueError("max_requests must be >= 0")
         if window_seconds < 0:
@@ -28,15 +60,19 @@ class RateLimiter:
 
         self.max_requests = int(max_requests)
         self.window_seconds = float(window_seconds)
+        self._identity_disabled = self.max_requests == 0 or self.window_seconds == 0
+        if global_limit and global_limit.disabled:
+            global_limit = None
+        self._global_limit = global_limit
         self._time_fn = time.monotonic
         self._lock = threading.RLock()
         self._events = defaultdict(deque)  # identity -> deque[timestamps]
-        self._disabled = self.max_requests == 0 or self.window_seconds == 0
+        self._global_events = deque()
 
     def _normalized_key(self, identity: Optional[str]) -> str:
         return identity or self._GLOBAL_KEY
 
-    def _prune(self, key: str, now: float) -> deque:
+    def _prune_identity(self, key: str, now: float) -> deque:
         bucket = self._events.get(key)
         if not bucket:
             return deque()
@@ -44,63 +80,309 @@ class RateLimiter:
         while bucket and bucket[0] <= cutoff:
             bucket.popleft()
         if not bucket:
-            # Drop empty buckets to prevent unbounded growth
             self._events.pop(key, None)
             return deque()
+        return bucket
+
+    def _prune_global(self, now: float) -> deque:
+        if not self._global_limit:
+            return deque()
+        cutoff = now - self._global_limit.window_seconds
+        bucket = self._global_events
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
         return bucket
 
     def allow_request(self, identity: Optional[str] = None) -> bool:
         """Return True if request is allowed for the identity."""
 
-        if self._disabled:
+        if self._identity_disabled and not self._global_limit:
             return True
 
         now = self._time_fn()
         key = self._normalized_key(identity)
 
         with self._lock:
-            bucket = self._prune(key, now)
-            if len(bucket) < self.max_requests:
+            bucket = None
+            if not self._identity_disabled:
+                bucket = self._prune_identity(key, now)
+                if len(bucket) >= self.max_requests:
+                    return False
+
+            global_bucket = None
+            if self._global_limit:
+                global_bucket = self._prune_global(now)
+                if len(global_bucket) >= self._global_limit.max_requests:
+                    return False
+
+            if not self._identity_disabled:
+                bucket = bucket or self._prune_identity(key, now)
                 bucket.append(now)
                 self._events[key] = bucket
-                return True
-            return False
+            if self._global_limit:
+                global_bucket = global_bucket or self._prune_global(now)
+                global_bucket.append(now)
+
+            return True
 
     def wait_time(self, identity: Optional[str] = None) -> float:
         """Return seconds until the next request would be allowed."""
 
-        if self._disabled:
+        if self._identity_disabled and not self._global_limit:
             return 0.0
 
         now = self._time_fn()
         key = self._normalized_key(identity)
 
         with self._lock:
-            bucket = self._prune(key, now)
-            if len(bucket) < self.max_requests:
+            wait_candidates = []
+
+            if not self._identity_disabled:
+                bucket = self._prune_identity(key, now)
+                if len(bucket) >= self.max_requests:
+                    oldest = bucket[0]
+                    retry_after = (oldest + self.window_seconds) - now
+                    wait_candidates.append(retry_after)
+
+            if self._global_limit:
+                global_bucket = self._prune_global(now)
+                if len(global_bucket) >= self._global_limit.max_requests:
+                    oldest = global_bucket[0]
+                    retry_after = (oldest + self._global_limit.window_seconds) - now
+                    wait_candidates.append(retry_after)
+
+            if not wait_candidates:
                 return 0.0
-            oldest = bucket[0]
-            retry_after = (oldest + self.window_seconds) - now
-            return max(0.0, retry_after)
+
+            return max(0.0, max(wait_candidates))
+
+
+class RedisRateLimiter:
+    """Distributed limiter backed by Redis sorted sets."""
+
+    def __init__(
+        self,
+        client: Redis,
+        identity_limit: RateLimitSettings,
+        global_limit: Optional[RateLimitSettings] = None,
+        namespace: str = "clockify:rate",
+        max_retries: int = 2,
+    ) -> None:
+        if client is None:
+            raise ValueError("Redis client is required for RedisRateLimiter")
+        self.client = client
+        self.identity_limit = identity_limit
+        self.global_limit = None if (global_limit and global_limit.disabled) else global_limit
+        self.namespace = namespace or "clockify:rate"
+        self.max_retries = max(1, int(max_retries or 1))
+
+    def _identity_disabled(self) -> bool:
+        return self.identity_limit.disabled if self.identity_limit else True
+
+    def _key(self, identity: Optional[str], settings: RateLimitSettings) -> str:
+        normalized = identity or "anonymous"
+        safe = normalized.strip() or "anonymous"
+        if len(safe) > 64:
+            safe = hashlib.sha1(safe.encode("utf-8")).hexdigest()
+        return f"{self.namespace}:{int(settings.window_seconds)}:{safe}"
+
+    def _run_with_retries(self, func: Callable[[], float | bool | list]) -> float | bool | list:
+        last_exc = None
+        for attempt in range(self.max_retries):
+            try:
+                return func()
+            except RedisError as exc:  # pragma: no cover - network failure is rare
+                last_exc = exc
+                backoff = min(0.25, 0.05 * (attempt + 1))
+                time.sleep(backoff)
+        raise RateLimitError(f"Redis backend unavailable: {last_exc}") from last_exc
+
+    def _within_limit(self, key: str, settings: RateLimitSettings, now: float) -> bool:
+        if settings.disabled:
+            return True
+
+        cutoff = now - settings.window_seconds
+
+        def op():
+            pipe = self.client.pipeline()
+            pipe.zremrangebyscore(key, 0, cutoff)
+            pipe.zcard(key)
+            return pipe.execute()
+
+        _, count = self._run_with_retries(op)
+        return count < settings.max_requests
+
+    def _record_event(self, key: str, settings: RateLimitSettings, now: float) -> None:
+        if settings.disabled:
+            return
+
+        def op():
+            pipe = self.client.pipeline()
+            pipe.zadd(key, {str(now): now})
+            pipe.expire(key, int(settings.window_seconds) + 1)
+            return pipe.execute()
+
+        self._run_with_retries(op)
+
+    def allow_request(self, identity: Optional[str] = None) -> bool:
+        if self._identity_disabled() and not self.global_limit:
+            return True
+
+        now = time.time()
+        identity_allowed = True
+        if not self._identity_disabled():
+            identity_key = self._key(identity, self.identity_limit)
+            identity_allowed = self._within_limit(identity_key, self.identity_limit, now)
+
+        global_allowed = True
+        if self.global_limit:
+            global_key = self._key("__global__", self.global_limit)
+            global_allowed = self._within_limit(global_key, self.global_limit, now)
+
+        if identity_allowed and global_allowed:
+            if not self._identity_disabled():
+                identity_key = self._key(identity, self.identity_limit)
+                self._record_event(identity_key, self.identity_limit, now)
+            if self.global_limit:
+                global_key = self._key("__global__", self.global_limit)
+                self._record_event(global_key, self.global_limit, now)
+            return True
+        return False
+
+    def _wait_time_for_key(self, key: str, settings: RateLimitSettings, now: float) -> float:
+        if settings.disabled:
+            return 0.0
+        cutoff = now - settings.window_seconds
+
+        def op():
+            pipe = self.client.pipeline()
+            pipe.zremrangebyscore(key, 0, cutoff)
+            pipe.zrange(key, 0, 0, withscores=True)
+            return pipe.execute()
+
+        _, entries = self._run_with_retries(op)
+        if not entries:
+            return 0.0
+        oldest_score = entries[0][1]
+        retry_after = (oldest_score + settings.window_seconds) - now
+        return max(0.0, retry_after)
+
+    def wait_time(self, identity: Optional[str] = None) -> float:
+        if self._identity_disabled() and not self.global_limit:
+            return 0.0
+
+        now = time.time()
+        waits = []
+        if not self._identity_disabled():
+            identity_key = self._key(identity, self.identity_limit)
+            waits.append(self._wait_time_for_key(identity_key, self.identity_limit, now))
+        if self.global_limit:
+            global_key = self._key("__global__", self.global_limit)
+            waits.append(self._wait_time_for_key(global_key, self.global_limit, now))
+
+        return max(waits) if waits else 0.0
 
 
 # Global rate limiter (10 queries per minute by default)
 _RATE_LIMITER_LOCK = threading.Lock()
 
 
-def get_rate_limiter():
-    """Get global rate limiter instance.
+def _parse_int(env_keys: list[str], default: int) -> int:
+    for key in env_keys:
+        raw = os.environ.get(key)
+        if raw is None:
+            continue
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning("Invalid integer for %s='%s'. Using %s.", key, raw, default)
+            break
+    return default
 
-    FIX (Error #2): Use proper `is None` check instead of fragile globals() check.
-    """
+
+def _parse_float(env_keys: list[str], default: float) -> float:
+    for key in env_keys:
+        raw = os.environ.get(key)
+        if raw is None:
+            continue
+        try:
+            return float(raw)
+        except ValueError:
+            logger.warning("Invalid float for %s='%s'. Using %s.", key, raw, default)
+            break
+    return default
+
+
+def _build_limit_settings(request_env: list[str], window_env: list[str], default_requests: int, default_window: float) -> RateLimitSettings:
+    requests = _parse_int(request_env, default_requests)
+    window = _parse_float(window_env, default_window)
+    return RateLimitSettings(max_requests=requests, window_seconds=window)
+
+
+def _create_rate_limiter_from_env():
+    identity_limit = _build_limit_settings(
+        ["RATE_LIMIT_IDENTITY_REQUESTS", "RATE_LIMIT_REQUESTS"],
+        ["RATE_LIMIT_IDENTITY_WINDOW", "RATE_LIMIT_WINDOW"],
+        default_requests=10,
+        default_window=60.0,
+    )
+
+    global_limit_raw = _build_limit_settings(
+        ["RATE_LIMIT_GLOBAL_REQUESTS"],
+        ["RATE_LIMIT_GLOBAL_WINDOW"],
+        default_requests=0,
+        default_window=60.0,
+    )
+    global_limit = None if global_limit_raw.disabled else global_limit_raw
+
+    backend = (os.environ.get("RATE_LIMIT_BACKEND", "memory") or "memory").strip().lower()
+    namespace = os.environ.get("RATE_LIMIT_NAMESPACE", "clockify:rate")
+
+    if backend == "redis":
+        if redis is None:
+            logger.warning("RATE_LIMIT_BACKEND=redis but redis package not installed. Falling back to in-memory limiter.")
+        else:
+            redis_url = os.environ.get("RATE_LIMIT_REDIS_URL", "redis://127.0.0.1:6379/0")
+            socket_timeout = _parse_float(["RATE_LIMIT_REDIS_TIMEOUT"], 1.0)
+            max_retries = _parse_int(["RATE_LIMIT_REDIS_RETRIES"], 2)
+            try:
+                client = redis.Redis.from_url(
+                    redis_url,
+                    socket_timeout=socket_timeout,
+                    socket_connect_timeout=socket_timeout,
+                    retry_on_timeout=True,
+                )
+                client.ping()
+                logger.info("Using Redis-backed rate limiter (backend=%s, namespace=%s)", redis_url, namespace)
+                return RedisRateLimiter(
+                    client,
+                    identity_limit,
+                    global_limit=global_limit,
+                    namespace=namespace,
+                    max_retries=max_retries,
+                )
+            except RedisError as exc:
+                logger.error("Failed to initialize Redis rate limiter at %s: %s. Falling back to in-memory limiter.", redis_url, exc)
+
+    if not identity_limit.disabled:
+        logger.info("Using in-memory rate limiter (window=%ss, max=%s)", identity_limit.window_seconds, identity_limit.max_requests)
+    elif global_limit:
+        logger.info("Using in-memory global-only rate limiter (window=%ss, max=%s)", global_limit.window_seconds, global_limit.max_requests)
+    return RateLimiter(
+        max_requests=identity_limit.max_requests,
+        window_seconds=identity_limit.window_seconds,
+        global_limit=global_limit,
+    )
+
+
+def get_rate_limiter():
+    """Get global rate limiter instance."""
+
     global _RATE_LIMITER
     if _RATE_LIMITER is None:
         with _RATE_LIMITER_LOCK:
             if _RATE_LIMITER is None:
-                _RATE_LIMITER = RateLimiter(
-                    max_requests=int(os.environ.get("RATE_LIMIT_REQUESTS", "10")),
-                    window_seconds=float(os.environ.get("RATE_LIMIT_WINDOW", "60")),
-                )
+                _RATE_LIMITER = _create_rate_limiter_from_env()
     return _RATE_LIMITER
 
 
