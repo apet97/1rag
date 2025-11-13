@@ -115,7 +115,7 @@ Repository = "https://github.com/apet97/1rag.git"
 Issues = "https://github.com/apet97/1rag/issues"
 
 [project.scripts]
-ragctl = "clockify_rag.cli:app"
+ragctl = "clockify_rag.cli_modern:app"
 
 # ============================================================================
 # Tool Configurations
