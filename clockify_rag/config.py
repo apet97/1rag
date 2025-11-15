@@ -267,6 +267,17 @@ RATE_LIMIT_REQUESTS = _parse_env_int("RATE_LIMIT_REQUESTS", 10, min_val=1, max_v
 # Rate limiting window in seconds
 RATE_LIMIT_WINDOW = _parse_env_int("RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600)
 
+# ====== API AUTH CONFIG ======
+API_AUTH_MODE = os.environ.get("API_AUTH_MODE", "none").strip().lower()
+_api_keys_raw = os.environ.get("API_ALLOWED_KEYS", "")
+if _api_keys_raw.strip():
+    API_ALLOWED_KEYS = frozenset(
+        key.strip() for key in _api_keys_raw.split(",") if key.strip()
+    )
+else:
+    API_ALLOWED_KEYS = frozenset()
+API_KEY_HEADER = os.environ.get("API_KEY_HEADER", "x-api-key").strip() or "x-api-key"
+
 # ====== WARMUP CONFIG ======
 # Warm-up on startup
 WARMUP_ENABLED = _get_bool_env("WARMUP", "1")

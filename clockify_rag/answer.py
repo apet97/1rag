@@ -41,7 +41,8 @@ from .retrieval import (
 )
 from .exceptions import LLMError, LLMUnavailableError
 from .confidence_routing import get_routing_action
-from .metrics import get_metrics, MetricNames
+from .metrics import MetricNames
+from . import metrics as metrics_module
 from .utils import sanitize_for_log
 
 logger = logging.getLogger(__name__)
@@ -336,7 +337,7 @@ def answer_once(
         Dict with answer and metadata
     """
     t_start = time.time()
-    metrics = get_metrics()
+    metrics = metrics_module.get_metrics()
     metrics.increment_counter(MetricNames.QUERIES_TOTAL)
     question_preview = sanitize_for_log(question, max_length=200)
     question_hash = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
@@ -360,6 +361,10 @@ def answer_once(
     # Check coverage
     if not coverage_ok(selected, scores["dense"], threshold):
         metrics.increment_counter(MetricNames.ERRORS_TOTAL, labels={"type": "coverage"})
+        metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels={"reason": "coverage"})
+        total_time = time.time() - t_start
+        metrics.observe_histogram(MetricNames.QUERY_LATENCY, total_time * 1000)
+        metrics.observe_histogram(MetricNames.RETRIEVAL_LATENCY, retrieve_time * 1000)
         logger.warning(json.dumps({
             "event": "rag.query.coverage_failure",
             "question_hash": question_hash,
@@ -406,12 +411,15 @@ def answer_once(
     def _llm_failure(reason: str, error: Exception) -> Dict[str, Any]:
         total_time = time.time() - t_start
         metrics.increment_counter(MetricNames.ERRORS_TOTAL, labels={"type": reason})
+        metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels={"reason": reason})
         logger.error(json.dumps({
             "event": "rag.query.failure",
             "reason": reason,
             "question_hash": question_hash,
             "message": str(error),
         }))
+        metrics.observe_histogram(MetricNames.QUERY_LATENCY, total_time * 1000)
+        metrics.observe_histogram(MetricNames.RETRIEVAL_LATENCY, retrieve_time * 1000)
         return {
             "answer": REFUSAL_STR,
             "refused": True,
@@ -460,6 +468,7 @@ def answer_once(
     refused = (answer == REFUSAL_STR)
     if refused:
         metrics.increment_counter(MetricNames.ERRORS_TOTAL, labels={"type": "refused"})
+        metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels={"reason": "llm"})
     logger.info(json.dumps({
         "event": "rag.query.complete",
         "question_hash": question_hash,
@@ -481,6 +490,7 @@ def answer_once(
         "confidence": confidence,
         "selected_chunks": selected,
         "packed_chunks": mmr_selected,
+        "selected_chunk_ids": packed_ids,
         "context_block": context_block,
         "timing": {
             "total_ms": total_time * 1000,

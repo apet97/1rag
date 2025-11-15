@@ -36,6 +36,9 @@ class MetricNames:
     CACHE_MISSES = "cache_misses"
     ERRORS_TOTAL = "errors_total"
     INGESTIONS_TOTAL = "ingestions_total"
+    REFUSALS_TOTAL = "refusals_total"
+    RATE_LIMIT_ALLOWED = "rate_limit_allowed"
+    RATE_LIMIT_BLOCKED = "rate_limit_blocked"
 
     # Latencies
     QUERY_LATENCY = "query_latency_ms"

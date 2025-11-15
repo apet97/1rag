@@ -16,18 +16,26 @@ import platform
 import signal
 import time
 from datetime import datetime
+from functools import partial
 from typing import Optional, Dict, Any
 
 import typer
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, validator
 
 from . import config
 from .answer import answer_once
+from .caching import get_rate_limiter as _get_rate_limiter
 from .cli import ensure_index_ready
+from .exceptions import ValidationError
 from .indexing import build
-from .utils import validate_ollama_url, check_ollama_connectivity
+from .metrics import MetricNames, get_metrics
+from .utils import check_ollama_connectivity
+
+# Re-export for tests that monkeypatch api.get_rate_limiter
+get_rate_limiter = _get_rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +94,7 @@ class QueryResponse(BaseModel):
     question: str
     answer: str
     confidence: Optional[float] = None
-    sources: list[int] = Field(default_factory=list, description="Chunk IDs used")
+    sources: list[str] = Field(default_factory=list, description="Chunk IDs used")
     timestamp: datetime
     processing_time_ms: float
     refused: bool = Field(False, description="True when the answer is a refusal/fallback")
@@ -165,6 +173,34 @@ def create_app() -> FastAPI:
     app.state.hnsw = None
     app.state.index_ready = False
 
+    def _clear_index_state() -> None:
+        app.state.chunks = None
+        app.state.vecs_n = None
+        app.state.bm = None
+        app.state.hnsw = None
+        app.state.index_ready = False
+
+    def _set_index_state(result) -> None:
+        if not result:
+            _clear_index_state()
+            return
+        chunks, vecs_n, bm, hnsw = result
+        app.state.chunks = chunks
+        app.state.vecs_n = vecs_n
+        app.state.bm = bm
+        app.state.hnsw = hnsw
+        app.state.index_ready = True
+
+    def _require_api_key(req: Request) -> None:
+        if config.API_AUTH_MODE != "api_key":
+            return
+        header_name = config.API_KEY_HEADER or "x-api-key"
+        api_key = req.headers.get(header_name)
+        if not api_key:
+            raise HTTPException(status_code=401, detail="Missing API key")
+        if api_key not in config.API_ALLOWED_KEYS:
+            raise HTTPException(status_code=403, detail="Invalid API key")
+
     @app.on_event("startup")
     async def startup_event():
         """Load index on startup."""
@@ -172,17 +208,13 @@ def create_app() -> FastAPI:
             logger.info("Loading index on startup...")
             result = ensure_index_ready(retries=2)
             if result:
-                chunks, vecs_n, bm, hnsw = result
-                app.state.chunks = chunks
-                app.state.vecs_n = vecs_n
-                app.state.bm = bm
-                app.state.hnsw = hnsw
-                app.state.index_ready = True
-                logger.info(f"Index loaded: {len(chunks)} chunks")
+                _set_index_state(result)
+                logger.info(f"Index loaded: {len(result[0])} chunks")
             else:
                 logger.warning("Index not ready at startup")
         except Exception as e:
             logger.error(f"Failed to load index at startup: {e}")
+            _clear_index_state()
 
     @app.on_event("shutdown")
     async def shutdown_event():
@@ -197,11 +229,7 @@ def create_app() -> FastAPI:
         logger.info("Initiating graceful shutdown...")
 
         # Clear index from memory (helps with clean shutdown)
-        app.state.chunks = None
-        app.state.vecs_n = None
-        app.state.bm = None
-        app.state.hnsw = None
-        app.state.index_ready = False
+        _clear_index_state()
 
         logger.info("Graceful shutdown complete")
 
@@ -228,10 +256,13 @@ def create_app() -> FastAPI:
         )
         index_ready = app.state.index_ready and index_files_exist
 
-        # Check Ollama connectivity with short timeout
+        # Check Ollama connectivity with short timeout (threadpool to avoid blocking)
         ollama_ok = False
+        loop = asyncio.get_running_loop()
         try:
-            check_ollama_connectivity(config.RAG_OLLAMA_URL, timeout=2)
+            await loop.run_in_executor(
+                None, partial(check_ollama_connectivity, config.RAG_OLLAMA_URL, 2)
+            )
             ollama_ok = True
         except Exception as e:
             # Ollama connectivity failure is acceptable for health check
@@ -282,7 +313,7 @@ def create_app() -> FastAPI:
     # ========================================================================
 
     @app.post("/v1/query", response_model=QueryResponse)
-    async def submit_query(request: QueryRequest) -> QueryResponse:
+    async def submit_query(request: QueryRequest, raw_request: Request) -> QueryResponse:
         """Submit a question and get an answer.
 
         This endpoint uses the RAG system to retrieve relevant context
@@ -297,6 +328,8 @@ def create_app() -> FastAPI:
         Raises:
             HTTPException: If index not ready or query fails
         """
+        _require_api_key(raw_request)
+
         if not app.state.index_ready:
             raise HTTPException(
                 status_code=503, detail="Index not ready. Run /v1/ingest first or wait for startup."
@@ -304,6 +337,23 @@ def create_app() -> FastAPI:
 
         try:
             start_time = time.time()
+            metrics = get_metrics()
+            rate_limiter = get_rate_limiter()
+            if rate_limiter:
+                if rate_limiter.allow_request():
+                    metrics.increment_counter(MetricNames.RATE_LIMIT_ALLOWED)
+                else:
+                    metrics.increment_counter(MetricNames.RATE_LIMIT_BLOCKED)
+                    wait_seconds = 0.0
+                    if hasattr(rate_limiter, "wait_time"):
+                        try:
+                            wait_seconds = float(rate_limiter.wait_time())
+                        except Exception:
+                            wait_seconds = 0.0
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"Rate limit exceeded. Retry after {wait_seconds:.2f} seconds.",
+                    )
 
             result = answer_once(
                 request.question,
@@ -318,14 +368,16 @@ def create_app() -> FastAPI:
 
             elapsed_ms = (time.time() - start_time) * 1000
 
-            metadata = result.get("metadata", {})
+            metadata = result.get("metadata") or {}
             selected_chunks = result.get("selected_chunks", [])
+            chunk_ids = result.get("selected_chunk_ids") or selected_chunks
+            sources = [str(identifier) for identifier in (chunk_ids or [])][:5]
 
             return QueryResponse(
                 question=request.question,
                 answer=result["answer"],
                 confidence=result.get("confidence"),
-                sources=selected_chunks[:5],
+                sources=sources,
                 timestamp=datetime.now(),
                 processing_time_ms=elapsed_ms,
                 refused=result.get("refused", False),
@@ -334,6 +386,9 @@ def create_app() -> FastAPI:
                 timing=result.get("timing"),
             )
 
+        except ValidationError as e:
+            logger.warning(f"Validation error: {e}")
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             logger.error(f"Query error: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
@@ -367,14 +422,17 @@ def create_app() -> FastAPI:
 
         def do_ingest():
             """Background task to build index."""
+            started_at = time.time()
             try:
                 logger.info(f"Starting ingest from {input_file}")
                 build(input_file, retries=2)
-                app.state.index_ready = True
-                logger.info("Ingest completed successfully")
+                result = ensure_index_ready(retries=2)
+                _set_index_state(result)
+                duration_ms = (time.time() - started_at) * 1000
+                logger.info(f"Ingest completed successfully in {duration_ms:.1f} ms")
             except Exception as e:
                 logger.error(f"Ingest failed: {e}", exc_info=True)
-                app.state.index_ready = False
+                _clear_index_state()
 
         background_tasks.add_task(do_ingest)
 
@@ -386,21 +444,28 @@ def create_app() -> FastAPI:
         )
 
     # ========================================================================
-    # Metrics Endpoint (Placeholder)
+    # Metrics Endpoint
     # ========================================================================
 
     @app.get("/v1/metrics")
-    async def get_metrics() -> Dict[str, Any]:
-        """Get system metrics (placeholder for Prometheus integration).
+    async def get_metrics_endpoint(format: str = "json") -> Response:
+        """Expose in-process metrics in JSON, Prometheus, or CSV format."""
+        collector = get_metrics()
+        fmt = (format or "json").lower()
 
-        Returns:
-            Dictionary with metrics (JSON for easy parsing)
-        """
-        return {
-            "timestamp": datetime.now().isoformat(),
-            "index_ready": app.state.index_ready,
-            "chunks_loaded": len(app.state.chunks) if app.state.chunks else 0,
-        }
+        if fmt == "prometheus":
+            payload = collector.export_prometheus()
+            return Response(payload, media_type="text/plain; version=0.0.4")
+        if fmt == "csv":
+            payload = collector.export_csv()
+            return Response(payload, media_type="text/csv")
+
+        # Default JSON structure
+        snapshot_json = collector.export_json(include_histograms=True)
+        payload = json.loads(snapshot_json)
+        payload["index_ready"] = app.state.index_ready
+        payload["chunks_loaded"] = len(app.state.chunks) if app.state.chunks else 0
+        return JSONResponse(payload)
 
     return app
 
