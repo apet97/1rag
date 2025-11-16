@@ -37,18 +37,19 @@ try:
     from rank_bm25 import BM25Okapi
 except ImportError:  # pragma: no cover - handled at runtime
     BM25Okapi = None  # type: ignore[assignment]
-MRR_THRESHOLD = 0.70
-PRECISION_THRESHOLD = 0.40
-NDCG_THRESHOLD = 0.65
-
-# Add current directory to path
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 SUCCESS_THRESHOLDS = {
     "mrr_at_10": 0.70,
     "precision_at_5": 0.35,
     "ndcg_at_10": 0.60,
 }
+
+MRR_THRESHOLD = SUCCESS_THRESHOLDS["mrr_at_10"]
+PRECISION_THRESHOLD = SUCCESS_THRESHOLDS["precision_at_5"]
+NDCG_THRESHOLD = SUCCESS_THRESHOLDS["ndcg_at_10"]
+WARN_FRACTION = 0.85
+
+# Add current directory to path
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 TOP_K = 12
 
@@ -443,41 +444,33 @@ def evaluate(
 
     # Interpretation
     print("\nINTERPRETATION:")
-    if results['mrr_at_10'] >= SUCCESS_THRESHOLDS['mrr_at_10']:
-        print(
-            f"✅ MRR@10 ≥ {SUCCESS_THRESHOLDS['mrr_at_10']:.2f}: "
-            "Excellent - first relevant result typically in top 2"
-        )
-    if results['mrr_at_10'] >= MRR_THRESHOLD:
+    warn_mrr = SUCCESS_THRESHOLDS["mrr_at_10"] * WARN_FRACTION
+    warn_precision = SUCCESS_THRESHOLDS["precision_at_5"] * WARN_FRACTION
+    warn_ndcg = SUCCESS_THRESHOLDS["ndcg_at_10"] * WARN_FRACTION
+
+    mrr_val = results["mrr_at_10"]
+    if mrr_val >= MRR_THRESHOLD:
         print(f"✅ MRR@10 ≥ {MRR_THRESHOLD:.2f}: Excellent - first relevant result typically in top 2")
-    elif results['mrr_at_10'] >= 0.50:
-        print("⚠️  MRR@10 ≥ 0.50: Good - first relevant result typically in top 3-4")
+    elif mrr_val >= warn_mrr:
+        print(f"⚠️  MRR@10 ≥ {warn_mrr:.2f}: Adequate - first relevant result usually appears near the top")
     else:
-        print("❌ MRR@10 < 0.50: Needs improvement - relevant results ranked too low")
+        print("❌ MRR@10 below target: Needs improvement - relevant results ranked too low")
 
-    if results['precision_at_5'] >= SUCCESS_THRESHOLDS['precision_at_5']:
-        print(
-            f"✅ Precision@5 ≥ {SUCCESS_THRESHOLDS['precision_at_5']:.2f}: "
-            "Excellent - majority of top 5 are relevant"
-        )
-    if results['precision_at_5'] >= PRECISION_THRESHOLD:
-        print(f"✅ Precision@5 ≥ {PRECISION_THRESHOLD:.2f}: Excellent - majority of top 5 are relevant")
-    elif results['precision_at_5'] >= 0.40:
-        print("⚠️  Precision@5 ≥ 0.40: Good - decent relevance in top results")
+    precision_val = results["precision_at_5"]
+    if precision_val >= PRECISION_THRESHOLD:
+        print(f"✅ Precision@5 ≥ {PRECISION_THRESHOLD:.2f}: Relevant snippets dominate the top 5")
+    elif precision_val >= warn_precision:
+        print(f"⚠️  Precision@5 ≥ {warn_precision:.2f}: Mixed relevance in top results")
     else:
-        print("❌ Precision@5 < 0.40: Needs improvement - too many irrelevant results")
+        print("❌ Precision@5 below target: Too many irrelevant chunks in top results")
 
-    if results['ndcg_at_10'] >= SUCCESS_THRESHOLDS['ndcg_at_10']:
-        print(
-            f"✅ NDCG@10 ≥ {SUCCESS_THRESHOLDS['ndcg_at_10']:.2f}: "
-            "Excellent - relevant results well-ranked"
-        )
-    if results['ndcg_at_10'] >= NDCG_THRESHOLD:
-        print(f"✅ NDCG@10 ≥ {NDCG_THRESHOLD:.2f}: Excellent - relevant results well-ranked")
-    elif results['ndcg_at_10'] >= 0.50:
-        print("⚠️  NDCG@10 ≥ 0.50: Good - reasonable ranking quality")
+    ndcg_val = results["ndcg_at_10"]
+    if ndcg_val >= NDCG_THRESHOLD:
+        print(f"✅ NDCG@10 ≥ {NDCG_THRESHOLD:.2f}: Relevant results are well ranked")
+    elif ndcg_val >= warn_ndcg:
+        print(f"⚠️  NDCG@10 ≥ {warn_ndcg:.2f}: Ranking acceptable but could be sharper")
     else:
-        print("❌ NDCG@10 < 0.50: Needs improvement - ranking quality suboptimal")
+        print("❌ NDCG@10 below target: Ranking quality is suboptimal")
 
     if llm_report and rag_available and llm_outputs:
         output_path = llm_output or os.path.join("eval_reports", "llm_answers.jsonl")
@@ -557,12 +550,3 @@ if __name__ == "__main__":
         sys.exit(1)
 
     sys.exit(0)
-    # Exit with appropriate code based on results
-    if (
-        results['mrr_at_10'] >= MRR_THRESHOLD
-        and results['precision_at_5'] >= PRECISION_THRESHOLD
-        and results['ndcg_at_10'] >= NDCG_THRESHOLD
-    ):
-        sys.exit(0)  # Success
-    else:
-        sys.exit(1)  # Metrics below target

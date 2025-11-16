@@ -63,7 +63,7 @@ deps-check:
 .PHONY: test-quick
 test-quick:
 	@echo "Running quick verification tests..."
-	python3 -m pytest tests/test_config_module.py tests/test_api_client.py tests/test_answer.py
+	python3 -m pytest tests/test_config_module.py tests/test_api_client.py tests/test_answer.py tests/test_cli_dependencies.py
 
 .PHONY: freeze
 freeze:
