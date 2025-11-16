@@ -1,4 +1,5 @@
 """Tests for input sanitization."""
+
 import pytest
 import sys
 import os

@@ -55,10 +55,7 @@ def _parse_env_float(key: str, default: float, min_val: float = None, max_val: f
     try:
         parsed = float(value)
     except ValueError as e:
-        _logger.error(
-            f"Invalid float for {key}='{value}': {e}. "
-            f"Using default: {default}"
-        )
+        _logger.error(f"Invalid float for {key}='{value}': {e}. " f"Using default: {default}")
         return default
 
     if min_val is not None and parsed < min_val:
@@ -92,10 +89,7 @@ def _parse_env_int(key: str, default: int, min_val: int = None, max_val: int = N
     try:
         parsed = int(value)
     except ValueError as e:
-        _logger.error(
-            f"Invalid integer for {key}='{value}': {e}. "
-            f"Using default: {default}"
-        )
+        _logger.error(f"Invalid integer for {key}='{value}': {e}. " f"Using default: {default}")
         return default
 
     if min_val is not None and parsed < min_val:
@@ -194,6 +188,7 @@ def current_llm_settings(default_client_mode: str = "") -> LLMSettings:
         client_mode=get_llm_client_mode(default_client_mode),
     )
 
+
 # Backwards-compatible aliases (legacy code/tests expect these names)
 OLLAMA_URL = RAG_OLLAMA_URL
 GEN_MODEL = RAG_CHAT_MODEL
@@ -206,8 +201,12 @@ CHUNK_OVERLAP = _parse_env_int("CHUNK_OVERLAP", 200, min_val=0, max_val=4000)
 # ====== RETRIEVAL CONFIG ======
 # OPTIMIZATION: Increase retrieval parameters for better recall on internal deployment
 DEFAULT_TOP_K = _parse_env_int("DEFAULT_TOP_K", 15, min_val=1, max_val=100)  # Was 12, now 15 (more candidates)
-DEFAULT_PACK_TOP = _parse_env_int("DEFAULT_PACK_TOP", 8, min_val=1, max_val=50)  # Was 6, now 8 (more snippets in context)
-DEFAULT_THRESHOLD = _parse_env_float("DEFAULT_THRESHOLD", 0.25, min_val=0.0, max_val=1.0)  # Was 0.30, now 0.25 (lower bar)
+DEFAULT_PACK_TOP = _parse_env_int(
+    "DEFAULT_PACK_TOP", 8, min_val=1, max_val=50
+)  # Was 6, now 8 (more snippets in context)
+DEFAULT_THRESHOLD = _parse_env_float(
+    "DEFAULT_THRESHOLD", 0.25, min_val=0.0, max_val=1.0
+)  # Was 0.30, now 0.25 (lower bar)
 DEFAULT_SEED = 42
 
 # OPTIMIZATION: Increase max query length for internal use (no DoS risk)
@@ -266,7 +265,9 @@ ANN_NPROBE = _parse_env_int("ANN_NPROBE", 16, min_val=1, max_val=256)  # cluster
 
 # ====== HYBRID SCORING (v4.1) ======
 # FIX (Error #13): Use safe env var parsing
-ALPHA_HYBRID = _parse_env_float("ALPHA", 0.5, min_val=0.0, max_val=1.0)  # 0.5 = BM25 and dense equally weighted (fallback)
+ALPHA_HYBRID = _parse_env_float(
+    "ALPHA", 0.5, min_val=0.0, max_val=1.0
+)  # 0.5 = BM25 and dense equally weighted (fallback)
 
 # ====== INTENT CLASSIFICATION (v5.9) ======
 # OPTIMIZATION: Enable intent-based retrieval for +8-12% accuracy improvement
@@ -278,9 +279,11 @@ ALPHA_HYBRID = _parse_env_float("ALPHA", 0.5, min_val=0.0, max_val=1.0)  # 0.5 =
 # - General: 0.50 (balanced, same as ALPHA_HYBRID)
 USE_INTENT_CLASSIFICATION = _get_bool_env("USE_INTENT_CLASSIFICATION", "1")
 
+
 # ====== KPI TIMINGS (v4.1) ======
 class KPI:
     """Global KPI tracking for performance metrics."""
+
     retrieve_ms = 0
     ann_ms = 0
     rerank_ms = 0
@@ -313,10 +316,14 @@ REFUSAL_STR = "I don't know based on the MD."
 QUERY_LOG_FILE = _get_env_value("RAG_LOG_FILE", "rag_queries.jsonl") or "rag_queries.jsonl"
 LOG_QUERY_INCLUDE_ANSWER = _get_bool_env("RAG_LOG_INCLUDE_ANSWER", "1")
 LOG_QUERY_ANSWER_PLACEHOLDER = _get_env_value("RAG_LOG_ANSWER_PLACEHOLDER", "[REDACTED]") or "[REDACTED]"
-LOG_QUERY_INCLUDE_CHUNKS = _get_bool_env("RAG_LOG_INCLUDE_CHUNKS", "0")  # Redact chunk text by default for security/privacy
+LOG_QUERY_INCLUDE_CHUNKS = _get_bool_env(
+    "RAG_LOG_INCLUDE_CHUNKS", "0"
+)  # Redact chunk text by default for security/privacy
 
 # Citation validation configuration
-STRICT_CITATIONS = _get_bool_env("RAG_STRICT_CITATIONS", "0")  # Refuse answers without citations (improves trust in regulated environments)
+STRICT_CITATIONS = _get_bool_env(
+    "RAG_STRICT_CITATIONS", "0"
+)  # Refuse answers without citations (improves trust in regulated environments)
 
 # ====== CACHING & RATE LIMITING CONFIG ======
 # Query cache size
@@ -332,9 +339,7 @@ RATE_LIMIT_WINDOW = _parse_env_int("RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3
 API_AUTH_MODE = (_get_env_value("API_AUTH_MODE", "none") or "none").strip().lower()
 _api_keys_raw = _get_env_value("API_ALLOWED_KEYS", "")
 if _api_keys_raw.strip():
-    API_ALLOWED_KEYS = frozenset(
-        key.strip() for key in _api_keys_raw.split(",") if key.strip()
-    )
+    API_ALLOWED_KEYS = frozenset(key.strip() for key in _api_keys_raw.split(",") if key.strip())
 else:
     API_ALLOWED_KEYS = frozenset()
 API_KEY_HEADER = (_get_env_value("API_KEY_HEADER", "x-api-key") or "x-api-key").strip() or "x-api-key"
@@ -352,7 +357,9 @@ NLTK_AUTO_DOWNLOAD = _get_bool_env("NLTK_AUTO_DOWNLOAD", "1")
 CLOCKIFY_QUERY_EXPANSIONS = get_query_expansions_path()
 
 # Maximum query expansion file size (in bytes)
-MAX_QUERY_EXPANSION_FILE_SIZE = _parse_env_int("MAX_QUERY_EXPANSION_FILE_SIZE", 10485760, min_val=1024, max_val=104857600)  # 10MB default, 100MB max
+MAX_QUERY_EXPANSION_FILE_SIZE = _parse_env_int(
+    "MAX_QUERY_EXPANSION_FILE_SIZE", 10485760, min_val=1024, max_val=104857600
+)  # 10MB default, 100MB max
 
 # ====== PROXY CONFIGURATION ======
 # Optional HTTP proxy support (disabled by default for security)
@@ -388,8 +395,12 @@ BUILD_LOCK_TTL_SEC = _parse_env_int("BUILD_LOCK_TTL_SEC", 900, min_val=60, max_v
 # ====== RETRIEVAL CONFIG (CONTINUED) ======
 # FAISS/HNSW candidate generation (Quick Win #6)
 # Expose FAISS candidate knobs through env for prod-level tuning
-FAISS_CANDIDATE_MULTIPLIER = _parse_env_int("FAISS_CANDIDATE_MULTIPLIER", 3, min_val=1, max_val=10)  # Retrieve top_k * N
-ANN_CANDIDATE_MIN = _parse_env_int("ANN_CANDIDATE_MIN", 200, min_val=1, max_val=2000)  # Minimum candidates even if top_k is small
+FAISS_CANDIDATE_MULTIPLIER = _parse_env_int(
+    "FAISS_CANDIDATE_MULTIPLIER", 3, min_val=1, max_val=10
+)  # Retrieve top_k * N
+ANN_CANDIDATE_MIN = _parse_env_int(
+    "ANN_CANDIDATE_MIN", 200, min_val=1, max_val=2000
+)  # Minimum candidates even if top_k is small
 
 # Reranking (Quick Win #6)
 RERANK_SNIPPET_MAX_CHARS = 500  # Truncate chunk text for reranking prompt

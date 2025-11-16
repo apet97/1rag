@@ -1,4 +1,5 @@
 """Tests for query caching functionality."""
+
 import pytest
 import sys
 import os

@@ -16,14 +16,22 @@ from .chunking import build_chunks
 from . import config
 from .embedding import embed_texts, embed_local_batch, load_embedding_cache, save_embedding_cache
 from .exceptions import BuildError
-from .utils import (build_lock, atomic_write_jsonl, atomic_save_npy, atomic_write_json,
-                   tokenize, compute_sha256, _fsync_dir)
+from .utils import (
+    build_lock,
+    atomic_write_jsonl,
+    atomic_save_npy,
+    atomic_write_json,
+    tokenize,
+    compute_sha256,
+    _fsync_dir,
+)
 from .metrics import get_metrics, MetricNames
 
 logger = logging.getLogger(__name__)
 
 # Global FAISS index with thread safety
 _FAISS_INDEX = None
+_FAISS_INDEX_PATH = None
 _FAISS_LOCK = threading.Lock()
 
 
@@ -31,6 +39,7 @@ def _try_load_faiss():
     """Try importing FAISS; returns None if not available."""
     try:
         import faiss
+
         return faiss
     except ImportError:
         logger.info("info: ann=fallback reason=missing-faiss")
@@ -73,8 +82,6 @@ def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") ->
                 train_vecs = vecs_f32
 
             # Seed for deterministic training
-            # FAISS has internal randomness in k-means clustering that needs explicit seeding
-            import numpy as np
             np.random.seed(config.DEFAULT_SEED)
             index.train(train_vecs)
             index.add(vecs_f32)
@@ -99,17 +106,15 @@ def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") ->
         train_vecs = vecs_f32[train_indices]
 
         # Seed for deterministic training
-        # FAISS has internal randomness in k-means clustering that needs explicit seeding
-        import numpy as np
         np.random.seed(config.DEFAULT_SEED)
         index.train(train_vecs)
         index.add(vecs_f32)
 
     # Only set nprobe for IVF indexes (not flat indexes)
-    if hasattr(index, 'nprobe'):
+    if hasattr(index, "nprobe"):
         index.nprobe = config.ANN_NPROBE
 
-    index_type = "IVFFlat" if hasattr(index, 'nlist') else "FlatIP"
+    index_type = "IVFFlat" if hasattr(index, "nlist") else "FlatIP"
     logger.debug(f"Built FAISS index: type={index_type}, vectors={len(vecs)}")
     return index
 
@@ -126,24 +131,27 @@ def save_faiss_index(index, path: str = None):
 
 def load_faiss_index(path: str = None):
     """Load FAISS index from disk with thread-safe lazy loading."""
-    global _FAISS_INDEX
+    global _FAISS_INDEX, _FAISS_INDEX_PATH
 
     if path is None or not os.path.exists(path):
         return None
 
+    abs_path = os.path.abspath(path)
+
     # Double-checked locking pattern for thread safety
-    if _FAISS_INDEX is not None:
+    if _FAISS_INDEX is not None and _FAISS_INDEX_PATH == abs_path:
         return _FAISS_INDEX
 
     with _FAISS_LOCK:
-        if _FAISS_INDEX is not None:  # Check again inside lock
+        if _FAISS_INDEX is not None and _FAISS_INDEX_PATH == abs_path:
             return _FAISS_INDEX
 
         faiss = _try_load_faiss()
         if faiss:
             _FAISS_INDEX = faiss.read_index(path)
+            _FAISS_INDEX_PATH = abs_path
             # Only set nprobe for IVF indexes (not flat indexes)
-            if hasattr(_FAISS_INDEX, 'nprobe'):
+            if hasattr(_FAISS_INDEX, "nprobe"):
                 _FAISS_INDEX.nprobe = config.ANN_NPROBE
             logger.debug(f"Loaded FAISS index from {path}")
             return _FAISS_INDEX
@@ -163,12 +171,13 @@ def get_faiss_index(path: str = None):
     Returns:
         FAISS index object or None if not available
     """
-    global _FAISS_INDEX
-    if _FAISS_INDEX is not None:
-        return _FAISS_INDEX
+    global _FAISS_INDEX, _FAISS_INDEX_PATH
     if path:
+        abs_path = os.path.abspath(path)
+        if _FAISS_INDEX is not None and _FAISS_INDEX_PATH == abs_path:
+            return _FAISS_INDEX
         return load_faiss_index(path)
-    return None
+    return _FAISS_INDEX
 
 
 def reset_faiss_index():
@@ -176,9 +185,10 @@ def reset_faiss_index():
 
     FIX (Error #1): Centralized index reset to prevent stale references.
     """
-    global _FAISS_INDEX
+    global _FAISS_INDEX, _FAISS_INDEX_PATH
     with _FAISS_LOCK:
         _FAISS_INDEX = None
+        _FAISS_INDEX_PATH = None
         logger.debug("Reset global FAISS index cache")
 
 
@@ -204,7 +214,7 @@ def build_bm25(chunks: list) -> dict:
         "idf": idf,
         "avgdl": avgdl,
         "doc_lens": doc_lens,
-        "doc_tfs": [{k: v for k, v in tf.items()} for tf in doc_tfs]
+        "doc_tfs": [{k: v for k, v in tf.items()} for tf in doc_tfs],
     }
 
 
@@ -224,6 +234,7 @@ def bm25_scores(query: str, bm: dict, k1: float = None, b: float = None, top_k: 
     # OPTIMIZATION: Lowered threshold from 1.5x to 1.1x for 2-3x speedup on medium/large corpora
     if top_k is not None and top_k > 0 and len(doc_lens) > top_k * 1.1:  # Was 1.5, now 1.1
         import heapq
+
         term_upper_bounds = {}
         for w in q:
             if w in idf:
@@ -294,11 +305,15 @@ def build(md_path: str, retries=0):
         metrics = get_metrics()
         metrics.increment_counter(MetricNames.INGESTIONS_TOTAL)
         ingest_start = time.time()
-        logger.info(json.dumps({
-            "event": "rag.ingest.start",
-            "md_path": md_path,
-            "backend": config.EMB_BACKEND,
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "rag.ingest.start",
+                    "md_path": md_path,
+                    "backend": config.EMB_BACKEND,
+                }
+            )
+        )
 
         logger.info("\n[1/4] Parsing and chunking...")
         chunks = build_chunks(md_path)
@@ -395,10 +410,7 @@ def build(md_path: str, retries=0):
         logger.info(f"  Saved {vecs_n.shape} embeddings (normalized)")
 
         # Write metadata
-        meta_lines = [
-            {"id": c["id"], "title": c["title"], "url": c["url"], "section": c["section"]}
-            for c in chunks
-        ]
+        meta_lines = [{"id": c["id"], "title": c["title"], "url": c["url"], "section": c["section"]} for c in chunks]
         atomic_write_jsonl(config.FILES["meta"], meta_lines)
 
         logger.info("\n[3/4] Building BM25 index...")
@@ -440,13 +452,17 @@ def build(md_path: str, retries=0):
         duration_ms = (time.time() - ingest_start) * 1000
         metrics.observe_histogram(MetricNames.INGESTION_LATENCY, duration_ms)
         metrics.set_gauge(MetricNames.INDEX_SIZE, len(chunks))
-        logger.info(json.dumps({
-            "event": "rag.ingest.complete",
-            "md_path": md_path,
-            "chunks": len(chunks),
-            "duration_ms": round(duration_ms, 2),
-            "cache_hit_rate": round(hit_rate, 2) if chunks else 0.0,
-        }))
+        logger.info(
+            json.dumps(
+                {
+                    "event": "rag.ingest.complete",
+                    "md_path": md_path,
+                    "chunks": len(chunks),
+                    "duration_ms": round(duration_ms, 2),
+                    "cache_hit_rate": round(hit_rate, 2) if chunks else 0.0,
+                }
+            )
+        )
 
         logger.info("\n[4/4] Done.")
         logger.info("=" * 70)
@@ -474,18 +490,12 @@ def load_index():
     stored_model = meta.get("emb_model")
 
     if stored_backend and stored_backend != config.EMB_BACKEND:
-        logger.error(
-            f"❌ Index backend mismatch: stored={stored_backend}, current={config.EMB_BACKEND}"
-        )
-        logger.error(
-            f"   Stored model: {stored_model}"
-        )
+        logger.error(f"❌ Index backend mismatch: stored={stored_backend}, current={config.EMB_BACKEND}")
+        logger.error(f"   Stored model: {stored_model}")
         logger.error(
             f"   Current model: {config.RAG_EMBED_MODEL if config.EMB_BACKEND == 'ollama' else 'all-MiniLM-L6-v2'}"
         )
-        logger.error(
-            f"   Expected dimension: {config.EMB_DIM}"
-        )
+        logger.error(f"   Expected dimension: {config.EMB_DIM}")
         logger.error("")
         logger.error(f"💡 Solution: Rebuild the index with the current backend:")
         logger.error(f"   python3 clockify_support_cli.py build knowledge_full.md")
@@ -512,9 +522,7 @@ def load_index():
             f"❌ Embedding dimension mismatch: stored={stored_dim}, expected={expected_dim} "
             f"(backend={config.EMB_BACKEND})"
         )
-        logger.error(
-            f"   This usually happens after switching embedding backends without rebuilding."
-        )
+        logger.error(f"   This usually happens after switching embedding backends without rebuilding.")
         logger.error("")
         logger.error(f"💡 Solution: Rebuild the index:")
         logger.error(f"   python3 clockify_support_cli.py build knowledge_full.md")
@@ -541,5 +549,5 @@ def load_index():
         "vecs_n": vecs_n,
         "bm": bm,
         "faiss_index": faiss_index,
-        "meta": meta
+        "meta": meta,
     }

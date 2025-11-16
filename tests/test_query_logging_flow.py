@@ -70,12 +70,16 @@ def test_handle_ask_command_respects_no_log(tmp_path, monkeypatch):
 
     fake_chunks = [{"id": "chunk-1"}]
     monkeypatch.setattr(cli, "ensure_index_ready", lambda retries=0: (fake_chunks, [], {}, None))
-    monkeypatch.setattr(cli, "answer_once", lambda *_, **__: {
-        "answer": "Mock answer",
-        "selected_chunks": [0],
-        "metadata": {},
-        "timing": {"total_ms": 3},
-    })
+    monkeypatch.setattr(
+        cli,
+        "answer_once",
+        lambda *_, **__: {
+            "answer": "Mock answer",
+            "selected_chunks": [0],
+            "metadata": {},
+            "timing": {"total_ms": 3},
+        },
+    )
     monkeypatch.setattr(cli, "get_rate_limiter", lambda: _DummyLimiter())
     monkeypatch.setattr("builtins.print", lambda *_args, **_kwargs: None)
 

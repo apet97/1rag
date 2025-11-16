@@ -43,14 +43,12 @@ async def test_health_concurrency_latency(monkeypatch, tmp_path):
             baseline_elapsed = time.perf_counter() - baseline_start
 
             concurrent_start = time.perf_counter()
-            responses = await asyncio.gather(
-                *[client.get("/health") for _ in range(request_count)]
-            )
+            responses = await asyncio.gather(*[client.get("/health") for _ in range(request_count)])
             concurrent_elapsed = time.perf_counter() - concurrent_start
 
             for response in responses:
                 assert response.status_code == 200
 
-    assert concurrent_elapsed <= baseline_elapsed * 0.6, (
-        f"concurrent latency {concurrent_elapsed:.3f}s should be well below baseline {baseline_elapsed:.3f}s"
-    )
+    assert (
+        concurrent_elapsed <= baseline_elapsed * 0.6
+    ), f"concurrent latency {concurrent_elapsed:.3f}s should be well below baseline {baseline_elapsed:.3f}s"

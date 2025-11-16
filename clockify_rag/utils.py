@@ -36,10 +36,7 @@ def sanitize_for_log(text: str, max_length: int = 1000) -> str:
         Sanitized text safe for logging
     """
     # Remove control characters except tab
-    sanitized = "".join(
-        ch if ch.isprintable() or ch in ('\t',) else f"\\x{ord(ch):02x}"
-        for ch in text
-    )
+    sanitized = "".join(ch if ch.isprintable() or ch in ("\t",) else f"\\x{ord(ch):02x}" for ch in text)
 
     # Truncate to max length
     if len(sanitized) > max_length:
@@ -83,13 +80,16 @@ def _pid_alive(pid: int) -> bool:
             # Windows: best-effort with optional psutil
             try:
                 import psutil
+
                 return psutil.pid_exists(pid)
             except Exception:
                 # Fallback: treat as alive; bounded wait handles stale locks
                 # Hint once for better DX
                 try:
                     if not getattr(_pid_alive, "_hinted_psutil", False):
-                        logger.debug("[build_lock] psutil not available on Windows; install 'psutil' for precise PID checks")
+                        logger.debug(
+                            "[build_lock] psutil not available on Windows; install 'psutil' for precise PID checks"
+                        )
                         _pid_alive._hinted_psutil = True  # type: ignore
                 except Exception:
                     pass
@@ -123,7 +123,7 @@ def build_lock():
                         "host": hostname,
                         "started_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(started_at)),
                         "started_at_epoch": started_at,
-                        "ttl_sec": BUILD_LOCK_TTL_SEC
+                        "ttl_sec": BUILD_LOCK_TTL_SEC,
                     }
                     f.write(json.dumps(lock_data))
                 break  # Successfully acquired lock
@@ -200,6 +200,7 @@ def build_lock():
 def validate_ollama_url(url: str) -> str:
     """Validate and normalize Ollama URL. Returns validated URL."""
     from urllib.parse import urlparse
+
     try:
         candidate = url.strip()
         if "://" not in candidate:
@@ -243,7 +244,23 @@ def check_ollama_connectivity(url: str, timeout: float = 3.0) -> str:
         raise RuntimeError(f"Failed to connect to Ollama at {normalized}: {exc}") from exc
 
 
-def validate_and_set_config(ollama_url=None, gen_model=None, emb_model=None, ctx_budget=None, emb_backend=None, ann_backend=None, alpha_hybrid=None, top_k=None, pack_top=None, threshold=None, seed=None, num_ctx=None, num_predict=None, retries=None, faiss_multiplier=None):
+def validate_and_set_config(
+    ollama_url=None,
+    gen_model=None,
+    emb_model=None,
+    ctx_budget=None,
+    emb_backend=None,
+    ann_backend=None,
+    alpha_hybrid=None,
+    top_k=None,
+    pack_top=None,
+    threshold=None,
+    seed=None,
+    num_ctx=None,
+    num_predict=None,
+    retries=None,
+    faiss_multiplier=None,
+):
     """Validate and set global config from CLI args."""
     import clockify_rag.config as config
 
@@ -334,6 +351,7 @@ def check_pytorch_mps():
 
     try:
         import torch
+
         mps_available = torch.backends.mps.is_available()
 
         if mps_available:
@@ -350,13 +368,24 @@ def check_pytorch_mps():
         logger.debug(f"info: pytorch_mps check failed: {e}")
 
 
-def _log_config_summary(use_rerank=False, pack_top=None, seed=None, threshold=None,
-                       top_k=None, num_ctx=None, num_predict=None, retries=0):
+def _log_config_summary(
+    use_rerank=False, pack_top=None, seed=None, threshold=None, top_k=None, num_ctx=None, num_predict=None, retries=0
+):
     """Log configuration summary at startup."""
-    from .config import (GEN_MODEL, EMB_MODEL, DEFAULT_PACK_TOP, DEFAULT_SEED,
-                        DEFAULT_THRESHOLD, DEFAULT_TOP_K, DEFAULT_NUM_CTX,
-                        DEFAULT_NUM_PREDICT, EMB_READ_T, CHAT_READ_T,
-                        RERANK_READ_T, REFUSAL_STR)
+    from .config import (
+        GEN_MODEL,
+        EMB_MODEL,
+        DEFAULT_PACK_TOP,
+        DEFAULT_SEED,
+        DEFAULT_THRESHOLD,
+        DEFAULT_TOP_K,
+        DEFAULT_NUM_CTX,
+        DEFAULT_NUM_PREDICT,
+        EMB_READ_T,
+        CHAT_READ_T,
+        RERANK_READ_T,
+        REFUSAL_STR,
+    )
 
     # Use defaults if not provided
     pack_top = pack_top or DEFAULT_PACK_TOP
@@ -369,16 +398,20 @@ def _log_config_summary(use_rerank=False, pack_top=None, seed=None, threshold=No
     # IMPROVEMENT: Log platform and architecture for M1 compatibility verification
     # See: CODEBASE_HEALTH_REVIEW_2025-11-09.md - Apple Silicon (M1/M2/M3) Compatibility
     import platform
+
     sys_platform = platform.system()
     sys_arch = platform.machine()
     is_macos_arm64 = sys_platform == "Darwin" and sys_arch == "arm64"
 
     if is_macos_arm64:
-        logger.info(f"PLATFORM platform={sys_platform} arch={sys_arch} (Apple Silicon detected - using M1-optimized settings)")
+        logger.info(
+            f"PLATFORM platform={sys_platform} arch={sys_arch} (Apple Silicon detected - using M1-optimized settings)"
+        )
     else:
         logger.info(f"PLATFORM platform={sys_platform} arch={sys_arch}")
 
     from .config import ALLOW_PROXIES
+
     proxy_trust = 1 if ALLOW_PROXIES else 0
     # Single-line CONFIG banner
     logger.info(
@@ -569,6 +602,7 @@ def truncate_to_token_budget(text: str, budget: int) -> str:
 _NLTK_AVAILABLE = False
 _NLTK_DOWNLOAD_ATTEMPTED = False
 
+
 def _ensure_nltk(auto_download=None):
     """Ensure NLTK is available, with optional download control for offline environments."""
     global _NLTK_AVAILABLE, _NLTK_DOWNLOAD_ATTEMPTED
@@ -584,7 +618,7 @@ def _ensure_nltk(auto_download=None):
 
     # Check if we already have punkt
     try:
-        nltk.data.find('tokenizers/punkt')
+        nltk.data.find("tokenizers/punkt")
         _NLTK_AVAILABLE = True
         return True
     except LookupError:
@@ -592,6 +626,7 @@ def _ensure_nltk(auto_download=None):
 
     # Determine if we should download
     import clockify_rag.config as config
+
     if auto_download is None:
         # Use centralized config (default: allow download unless explicitly disabled)
         auto_download = config.NLTK_AUTO_DOWNLOAD
@@ -600,8 +635,8 @@ def _ensure_nltk(auto_download=None):
         _NLTK_DOWNLOAD_ATTEMPTED = True
         logger.info("Downloading NLTK punkt tokenizer (one-time setup)...")
         try:
-            nltk.download('punkt', quiet=True)
-            nltk.download('punkt_tab', quiet=True)  # For newer NLTK versions
+            nltk.download("punkt", quiet=True)
+            nltk.download("punkt_tab", quiet=True)  # For newer NLTK versions
             _NLTK_AVAILABLE = True
             logger.info("NLTK punkt downloaded successfully.")
             return True
@@ -618,11 +653,13 @@ def _ensure_nltk(auto_download=None):
 _ST_ENCODER = None
 _ST_BATCH_SIZE = 96
 
+
 def _load_st_encoder():
     """Lazy-load SentenceTransformer model once."""
     global _ST_ENCODER
     if _ST_ENCODER is None:
         from sentence_transformers import SentenceTransformer
+
         _ST_ENCODER = SentenceTransformer("all-MiniLM-L6-v2")
         logger.debug("Loaded SentenceTransformer: all-MiniLM-L6-v2 (384-dim)")
     return _ST_ENCODER
@@ -633,6 +670,7 @@ def _try_load_faiss():
     """Try importing FAISS; returns None if not available."""
     try:
         import faiss
+
         return faiss
     except ImportError:
         logger.info("info: ann=fallback reason=missing-faiss")
@@ -644,17 +682,38 @@ def looks_sensitive(question: str) -> bool:
     """Check if question involves sensitive intent (account/billing/PII)."""
     sensitive_keywords = {
         # Financial
-        "invoice", "billing", "credit card", "payment", "salary", "account balance",
+        "invoice",
+        "billing",
+        "credit card",
+        "payment",
+        "salary",
+        "account balance",
         # Authentication & Secrets
-        "password", "token", "api key", "secret", "private key",
+        "password",
+        "token",
+        "api key",
+        "secret",
+        "private key",
         # PII
-        "ssn", "social security", "iban", "swift", "routing number", "account number",
-        "phone number", "email address", "home address", "date of birth",
+        "ssn",
+        "social security",
+        "iban",
+        "swift",
+        "routing number",
+        "account number",
+        "phone number",
+        "email address",
+        "home address",
+        "date of birth",
         # Compliance
-        "gdpr", "pii", "personally identifiable", "personal data"
+        "gdpr",
+        "pii",
+        "personally identifiable",
+        "personal data",
     }
     q_lower = question.lower()
     return any(kw in q_lower for kw in sensitive_keywords)
+
 
 def inject_policy_preamble(snippets_block: str, question: str) -> str:
     """Optionally prepend policy reminder for sensitive queries."""
@@ -695,21 +754,21 @@ def sanitize_question(q: str, max_length: int = 2000) -> str:
         )
 
     # Check for null bytes first (specific check)
-    if '\x00' in q:
+    if "\x00" in q:
         raise ValueError("Question contains control characters")
 
     # Check for control characters (except newline, tab, carriage return)
-    if any(ord(c) < 32 and c not in '\n\r\t' for c in q):
+    if any(ord(c) < 32 and c not in "\n\r\t" for c in q):
         raise ValueError("Question contains invalid control characters")
 
     # Check for suspicious patterns (basic prompt injection detection)
     suspicious_patterns = [
-        '<script',
-        'javascript:',
-        'eval(',
-        'exec(',
-        '__import__',
-        '<?php',
+        "<script",
+        "javascript:",
+        "eval(",
+        "exec(",
+        "__import__",
+        "<?php",
     ]
     q_lower = q.lower()
     for pattern in suspicious_patterns:
@@ -726,7 +785,7 @@ def log_query_metrics(
     confidence: Optional[int],
     timing: Dict[str, float],
     metadata: Dict[str, Any],
-    routing: Optional[Dict[str, Any]] = None
+    routing: Optional[Dict[str, Any]] = None,
 ) -> None:
     """Log structured query metrics for monitoring dashboard.
 
@@ -779,17 +838,14 @@ def log_query_metrics(
             "action": routing_action,
             "level": routing_level,
             "escalated": escalated,
-        }
+        },
     }
 
     logger.info(json.dumps(log_entry))
 
 
 def log_performance_metrics(
-    operation: str,
-    duration_ms: float,
-    success: bool,
-    metadata: Optional[Dict[str, Any]] = None
+    operation: str, duration_ms: float, success: bool, metadata: Optional[Dict[str, Any]] = None
 ) -> None:
     """Log performance metrics for operations.
 

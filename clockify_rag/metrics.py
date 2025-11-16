@@ -270,14 +270,8 @@ class MetricsCollector:
     def get_snapshot(self) -> Snapshot:
         with self._lock:
             now = time.time()
-            counters = {
-                self._format_key(name, labels): value
-                for (name, labels), value in self._counters.items()
-            }
-            gauges = {
-                self._format_key(name, labels): value
-                for (name, labels), value in self._gauges.items()
-            }
+            counters = {self._format_key(name, labels): value for (name, labels), value in self._counters.items()}
+            gauges = {self._format_key(name, labels): value for (name, labels), value in self._gauges.items()}
             histograms = {
                 self._format_key(name, labels): self._stats_for(values)
                 for (name, labels), values in self._histo.items()
@@ -310,10 +304,7 @@ class MetricsCollector:
             "uptime_seconds": snap.uptime_seconds,
             "counters": snap.counters,
             "gauges": snap.gauges,
-            "histogram_stats": {
-                name: hist_to_dict(h)
-                for name, h in snap.histograms.items()
-            },
+            "histogram_stats": {name: hist_to_dict(h) for name, h in snap.histograms.items()},
         }
 
         # Raw histogram samples deliberately omitted by default; tests only
@@ -363,15 +354,11 @@ class MetricsCollector:
                 label_txt = self._format_labels(labels)
                 # Count & sum
                 lines.append(f"{summary_name}_count{label_txt} {stats.count}")
-                lines.append(
-                    f"{summary_name}_sum{label_txt} {stats.mean * stats.count}"
-                )
+                lines.append(f"{summary_name}_sum{label_txt} {stats.mean * stats.count}")
                 # Quantiles
                 for q, v in ((0.5, stats.p50), (0.95, stats.p95), (0.99, stats.p99)):
                     q_labels = self._merge_labels(labels, {"quantile": str(q)})
-                    lines.append(
-                        f"{summary_name}{self._format_labels(q_labels)} {v}"
-                    )
+                    lines.append(f"{summary_name}{self._format_labels(q_labels)} {v}")
 
         return "\n".join(lines) + "\n"
 
@@ -381,21 +368,15 @@ class MetricsCollector:
         rows = ["metric_type,metric_name,labels,value"]
         with self._lock:
             for (name, labels), value in sorted(self._counters.items()):
-                rows.append(
-                    f"counter,{name},\"{self._labels_str(labels)}\",{value}"
-                )
+                rows.append(f'counter,{name},"{self._labels_str(labels)}",{value}')
             for (name, labels), value in sorted(self._gauges.items()):
-                rows.append(
-                    f"gauge,{name},\"{self._labels_str(labels)}\",{value}"
-                )
+                rows.append(f'gauge,{name},"{self._labels_str(labels)}",{value}')
             for (name, labels), values in sorted(self._histo.items()):
                 if not values:
                     continue
                 stats = self._stats_for(values)
                 lbl = self._labels_str(labels)
-                rows.append(
-                    f"histogram_mean,{name},\"{lbl}\",{stats.mean}"
-                )
+                rows.append(f'histogram_mean,{name},"{lbl}",{stats.mean}')
         return "\n".join(rows) + "\n"
 
     def get_summary(self) -> Dict[str, Any]:
@@ -429,10 +410,7 @@ class MetricsCollector:
                 # merge by summing counts and averaging means approximately
                 total_count = cur["count"] + h.count
                 if total_count > 0:
-                    cur["mean"] = (
-                        cur["mean"] * cur["count"]
-                        + h.mean * h.count
-                    ) / total_count
+                    cur["mean"] = (cur["mean"] * cur["count"] + h.mean * h.count) / total_count
                 cur["count"] = total_count
                 cur["p95"] = max(cur["p95"], h.p95)
 
@@ -484,9 +462,7 @@ class MetricsCollector:
         return f"{{{inner}}}"
 
     @staticmethod
-    def _merge_labels(
-        base_labels: Labels, extra: Dict[str, str]
-    ) -> Labels:
+    def _merge_labels(base_labels: Labels, extra: Dict[str, str]) -> Labels:
         merged = {k: v for k, v in base_labels}
         merged.update(extra)
         return _norm_labels(merged)

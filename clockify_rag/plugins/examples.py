@@ -48,7 +48,7 @@ class SimpleRetrieverPlugin(RetrieverPlugin):
         # Score each chunk by keyword overlap
         scores = []
         for chunk in self.chunks_list:
-            chunk_tokens = set(tokenize(chunk['text']))
+            chunk_tokens = set(tokenize(chunk["text"]))
             overlap = len(q_tokens & chunk_tokens)
             scores.append((chunk, overlap))
 
@@ -56,13 +56,15 @@ class SimpleRetrieverPlugin(RetrieverPlugin):
         scores.sort(key=lambda x: x[1], reverse=True)
         results = []
         for chunk, score in scores[:top_k]:
-            results.append({
-                'id': chunk['id'],
-                'text': chunk['text'],
-                'title': chunk.get('title', ''),
-                'section': chunk.get('section', ''),
-                'score': float(score)
-            })
+            results.append(
+                {
+                    "id": chunk["id"],
+                    "text": chunk["text"],
+                    "title": chunk.get("title", ""),
+                    "section": chunk.get("section", ""),
+                    "score": float(score),
+                }
+            )
 
         return results
 

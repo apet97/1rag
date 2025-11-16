@@ -1,4 +1,5 @@
 """Packaging metadata regression tests for ragctl console script."""
+
 from pathlib import Path
 
 import pytest

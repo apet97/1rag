@@ -13,7 +13,7 @@ import pytest
 
 def test_chunk_logging_disabled_by_default(monkeypatch):
     """Verify that chunk text is redacted from logs by default."""
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as f:
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".jsonl") as f:
         log_file = f.name
 
     try:
@@ -23,6 +23,7 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
         # Reload config to pick up env var
         import importlib
         import clockify_rag.config
+
         importlib.reload(clockify_rag.config)
 
         from clockify_rag.caching import log_query
@@ -39,7 +40,7 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
                 "bm25": 0.7,
                 "hybrid": 0.75,
                 "chunk": "Sensitive chunk text that should be redacted",
-                "text": "More sensitive text"
+                "text": "More sensitive text",
             }
         ]
 
@@ -49,11 +50,11 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
             retrieved_chunks=test_chunks,
             latency_ms=100.0,
             refused=False,
-            metadata={"test": True}
+            metadata={"test": True},
         )
 
         # Read and verify log entry
-        with open(log_file, 'r') as f:
+        with open(log_file, "r") as f:
             log_entry = json.loads(f.readline())
 
         # Verify chunks are in log but text is redacted
@@ -70,7 +71,7 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
 
 def test_chunk_logging_enabled_when_flag_set(monkeypatch):
     """Verify that chunk text is included when RAG_LOG_INCLUDE_CHUNKS=1."""
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as f:
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".jsonl") as f:
         log_file = f.name
 
     try:
@@ -81,6 +82,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
         # Reload config to pick up env vars
         import importlib
         import clockify_rag.config
+
         importlib.reload(clockify_rag.config)
 
         from clockify_rag.caching import log_query
@@ -96,7 +98,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
                 "bm25": 0.8,
                 "hybrid": 0.85,
                 "chunk": "This chunk text should be preserved",
-                "text": "This text should also be preserved"
+                "text": "This text should also be preserved",
             }
         ]
 
@@ -106,11 +108,11 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
             retrieved_chunks=test_chunks,
             latency_ms=150.0,
             refused=False,
-            metadata={"test": True}
+            metadata={"test": True},
         )
 
         # Read and verify log entry
-        with open(log_file, 'r') as f:
+        with open(log_file, "r") as f:
             log_entry = json.loads(f.readline())
 
         # Verify chunks and their text are preserved
@@ -129,7 +131,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
 
 def test_chunk_logging_independent_of_answer_logging(monkeypatch):
     """Verify chunk logging is independent of answer logging flag."""
-    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.jsonl') as f:
+    with tempfile.NamedTemporaryFile(mode="w+", delete=False, suffix=".jsonl") as f:
         log_file = f.name
 
     try:
@@ -141,6 +143,7 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
         # Reload config to pick up env vars
         import importlib
         import clockify_rag.config
+
         importlib.reload(clockify_rag.config)
 
         from clockify_rag.caching import log_query
@@ -156,7 +159,7 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
                 "dense": 0.7,
                 "bm25": 0.6,
                 "hybrid": 0.65,
-                "chunk": "Chunk text should be included despite answer redaction"
+                "chunk": "Chunk text should be included despite answer redaction",
             }
         ]
 
@@ -166,11 +169,11 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
             retrieved_chunks=test_chunks,
             latency_ms=200.0,
             refused=False,
-            metadata={"test": True}
+            metadata={"test": True},
         )
 
         # Read and verify log entry
-        with open(log_file, 'r') as f:
+        with open(log_file, "r") as f:
             log_entry = json.loads(f.readline())
 
         # Verify answer is redacted
@@ -179,7 +182,9 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
         # Verify chunks are included (independent of answer flag)
         assert len(log_entry["retrieved_chunks"]) == 1
         chunk_logged = log_entry["retrieved_chunks"][0]
-        assert "chunk" in chunk_logged, "chunk field should be present when LOG_QUERY_INCLUDE_CHUNKS=1, regardless of answer flag"
+        assert (
+            "chunk" in chunk_logged
+        ), "chunk field should be present when LOG_QUERY_INCLUDE_CHUNKS=1, regardless of answer flag"
         assert chunk_logged["chunk"] == "Chunk text should be included despite answer redaction"
 
     finally:

@@ -83,7 +83,7 @@ async def async_ask_llm(
     seed: int = DEFAULT_SEED,
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
-    retries: int = DEFAULT_RETRIES
+    retries: int = DEFAULT_RETRIES,
 ) -> str:
     """Async version of ask_llm.
 
@@ -136,7 +136,7 @@ async def async_generate_llm_answer(
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
-    packed_ids: Optional[List] = None
+    packed_ids: Optional[List] = None,
 ) -> Tuple[str, float, Optional[int]]:
     """Async version of generate_llm_answer with confidence scoring and citation validation.
 
@@ -153,14 +153,16 @@ async def async_generate_llm_answer(
     from .config import STRICT_CITATIONS
 
     t0 = time.time()
-    raw_response = (await async_ask_llm(
-        question,
-        context_block,
-        seed,
-        num_ctx,
-        num_predict,
-        retries,
-    )).strip()
+    raw_response = (
+        await async_ask_llm(
+            question,
+            context_block,
+            seed,
+            num_ctx,
+            num_predict,
+            retries,
+        )
+    ).strip()
     timing = time.time() - t0
 
     # Parse JSON response with confidence
@@ -219,7 +221,9 @@ async def async_generate_llm_answer(
 
             if invalid_cites:
                 if STRICT_CITATIONS:
-                    logger.warning(f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer")
+                    logger.warning(
+                        f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer"
+                    )
                     answer = REFUSAL_STR
                     confidence = None
                 else:
@@ -242,7 +246,7 @@ async def async_answer_once(
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
-    faiss_index_path: Optional[str] = None
+    faiss_index_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Async version of answer_once for non-blocking LLM calls.
 
@@ -270,10 +274,9 @@ async def async_answer_once(
     # Retrieve (synchronous for now, retrieval is fast)
     t0 = time.time()
     from .retrieval import retrieve
+
     selected, scores = retrieve(
-        question, chunks, vecs_n, bm,
-        top_k=top_k, hnsw=hnsw, retries=retries,
-        faiss_index_path=faiss_index_path
+        question, chunks, vecs_n, bm, top_k=top_k, hnsw=hnsw, retries=retries, faiss_index_path=faiss_index_path
     )
     retrieve_time = time.time() - t0
 
@@ -293,11 +296,8 @@ async def async_answer_once(
                 "rerank_ms": 0,
                 "llm_ms": 0,
             },
-            "metadata": {
-                "retrieval_count": len(selected),
-                "coverage_check": "failed"
-            },
-            "routing": get_routing_action(None, refused=True, critical=False)
+            "metadata": {"retrieval_count": len(selected), "coverage_check": "failed"},
+            "routing": get_routing_action(None, refused=True, critical=False),
         }
 
     # Apply MMR diversification
@@ -311,16 +311,22 @@ async def async_answer_once(
     rerank_reason = "disabled"
     if use_rerank:
         from .answer import apply_reranking
+
         t0 = time.time()
         mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_time = apply_reranking(
-            question, chunks, mmr_selected, scores, use_rerank,
-            seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+            question,
+            chunks,
+            mmr_selected,
+            scores,
+            use_rerank,
+            seed=seed,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            retries=retries,
         )
 
     # Pack snippets
-    context_block, packed_ids, used_tokens = pack_snippets(
-        chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
-    )
+    context_block, packed_ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx)
 
     def _failure(reason: str, error: Exception) -> Dict[str, Any]:
         total_time = time.time() - t_start
@@ -353,9 +359,13 @@ async def async_answer_once(
     # Generate answer (async)
     try:
         answer, llm_time, confidence = await async_generate_llm_answer(
-            question, context_block,
-            seed=seed, num_ctx=num_ctx, num_predict=num_predict,
-            retries=retries, packed_ids=packed_ids
+            question,
+            context_block,
+            seed=seed,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            retries=retries,
+            packed_ids=packed_ids,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during async answer generation: {exc}")
@@ -367,7 +377,7 @@ async def async_answer_once(
     total_time = time.time() - t_start
 
     # Confidence-based routing
-    refused = (answer == REFUSAL_STR)
+    refused = answer == REFUSAL_STR
     routing = get_routing_action(confidence, refused=refused, critical=False)
 
     return {
@@ -378,11 +388,11 @@ async def async_answer_once(
         "packed_chunks": mmr_selected,
         "context_block": context_block,
         "timing": {
-                "total_ms": total_time * 1000,
-                "retrieve_ms": retrieve_time * 1000,
-                "mmr_ms": mmr_time * 1000,
-                "rerank_ms": rerank_time * 1000,
-                "llm_ms": llm_time * 1000,
+            "total_ms": total_time * 1000,
+            "retrieve_ms": retrieve_time * 1000,
+            "mmr_ms": mmr_time * 1000,
+            "rerank_ms": rerank_time * 1000,
+            "llm_ms": llm_time * 1000,
         },
         "metadata": {
             "retrieval_count": len(selected),
@@ -391,7 +401,7 @@ async def async_answer_once(
             "rerank_applied": rerank_applied,
             "rerank_reason": rerank_reason,
         },
-        "routing": routing
+        "routing": routing,
     }
 
 

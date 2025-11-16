@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class ConfidenceLevel(Enum):
     """Confidence level categories for routing decisions."""
+
     HIGH = "high"  # 80-100: Auto-approve
     GOOD = "good"  # 60-79: Review if critical
     MEDIUM = "medium"  # 40-59: Manual review
@@ -125,13 +126,7 @@ def get_routing_action(confidence: Optional[int], refused: bool = False, critica
         action = "review"
         reason = f"Medium confidence ({confidence}) requires review"
 
-    return {
-        "action": action,
-        "level": level.value,
-        "confidence": confidence,
-        "reason": reason,
-        "escalated": escalate
-    }
+    return {"action": action, "level": level.value, "confidence": confidence, "reason": reason, "escalated": escalate}
 
 
 def log_routing_decision(question: str, routing: Dict[str, Any]) -> None:
@@ -149,7 +144,7 @@ def log_routing_decision(question: str, routing: Dict[str, Any]) -> None:
         "level": routing["level"],
         "confidence": routing.get("confidence"),
         "reason": routing["reason"],
-        "question_preview": question[:100]  # First 100 chars for context
+        "question_preview": question[:100],  # First 100 chars for context
     }
 
     logger.info(json.dumps(log_entry))

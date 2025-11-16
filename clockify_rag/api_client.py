@@ -1,6 +1,6 @@
 """Typed API client for Ollama-compatible endpoints.
 
-This module provides a typed, structured client for interacting with 
+This module provides a typed, structured client for interacting with
 Ollama-style APIs for both chat completion and embedding generation.
 """
 
@@ -43,12 +43,14 @@ logger = logging.getLogger(__name__)
 
 class ChatMessage(TypedDict):
     """Typed representation of a chat message."""
+
     role: str  # "system", "user", or "assistant"
     content: str
 
 
 class ChatCompletionOptions(TypedDict, total=False):
     """Typed representation of chat completion options."""
+
     temperature: float
     seed: int
     num_ctx: int
@@ -60,6 +62,7 @@ class ChatCompletionOptions(TypedDict, total=False):
 
 class ChatCompletionRequest(TypedDict, total=False):
     """Typed representation of chat completion request."""
+
     model: str
     messages: List[ChatMessage]
     options: Optional[ChatCompletionOptions]
@@ -69,6 +72,7 @@ class ChatCompletionRequest(TypedDict, total=False):
 
 class ChatCompletionResponse(TypedDict):
     """Typed representation of chat completion response."""
+
     model: str
     created_at: str
     message: Dict[str, str]  # {"role": str, "content": str}
@@ -83,6 +87,7 @@ class ChatCompletionResponse(TypedDict):
 
 class EmbeddingRequest(TypedDict):
     """Typed representation of embedding request."""
+
     model: str
     prompt: str  # Ollama uses "prompt" for embeddings
     options: Optional[Dict[str, Any]]
@@ -90,11 +95,13 @@ class EmbeddingRequest(TypedDict):
 
 class EmbeddingResponse(TypedDict):
     """Typed representation of embedding response."""
+
     embedding: List[float]
 
 
 class ModelInfo(TypedDict):
     """Typed representation of model information."""
+
     model: str
     modified_at: str
     size: int
@@ -112,7 +119,7 @@ class BaseLLMClient:
         options: Optional[ChatCompletionOptions] = None,
         stream: bool = False,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> ChatCompletionResponse:
         raise NotImplementedError
 
@@ -123,16 +130,12 @@ class BaseLLMClient:
         model: Optional[str] = None,
         options: Optional[ChatCompletionOptions] = None,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> str:
         raise NotImplementedError
 
     def create_embedding(
-        self,
-        text: str,
-        model: Optional[str] = None,
-        timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        self, text: str, model: Optional[str] = None, timeout: Optional[tuple] = None, retries: Optional[int] = None
     ) -> List[float]:
         raise NotImplementedError
 
@@ -141,7 +144,7 @@ class BaseLLMClient:
         texts: List[str],
         model: Optional[str] = None,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> List[List[float]]:
         raise NotImplementedError
 
@@ -154,11 +157,11 @@ class BaseLLMClient:
 
 class OllamaAPIClient(BaseLLMClient):
     """Type-safe client for Ollama-compatible APIs.
-    
+
     Provides structured interfaces for chat completion and embedding
     generation with proper error handling and configuration management.
     """
-    
+
     def __init__(
         self,
         base_url: Optional[str] = None,
@@ -172,7 +175,7 @@ class OllamaAPIClient(BaseLLMClient):
         retries: Optional[int] = None,
     ):
         """Initialize the Ollama API client with configuration.
-        
+
         Args:
             base_url: Base URL for Ollama API (defaults to config.RAG_OLLAMA_URL)
             gen_model: Generation model name (defaults to config.RAG_CHAT_MODEL)
@@ -193,7 +196,7 @@ class OllamaAPIClient(BaseLLMClient):
         self.emb_read_timeout = emb_read_timeout or EMB_READ_T
         self.rerank_read_timeout = rerank_read_timeout or RERANK_READ_T
         self.retries = retries or DEFAULT_RETRIES
-        
+
         # Set up session with proper proxy configuration
         self.session = get_session(retries=self.retries)
         self.session.trust_env = ALLOW_PROXIES
@@ -217,10 +220,10 @@ class OllamaAPIClient(BaseLLMClient):
         options: Optional[ChatCompletionOptions] = None,
         stream: bool = False,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> ChatCompletionResponse:
         """Make a chat completion request to the Ollama API.
-        
+
         Args:
             messages: List of chat messages
             model: Model to use (defaults to gen_model)
@@ -228,10 +231,10 @@ class OllamaAPIClient(BaseLLMClient):
             stream: Whether to stream the response
             timeout: (connect, read) timeout tuple
             retries: Number of retries for this request
-            
+
         Returns:
             Chat completion response
-            
+
         Raises:
             LLMError: If the request fails after all retries
         """
@@ -243,29 +246,19 @@ class OllamaAPIClient(BaseLLMClient):
             "num_predict": DEFAULT_NUM_PREDICT,
             "top_p": 0.9,
             "top_k": 40,
-            "repeat_penalty": 1.05
+            "repeat_penalty": 1.05,
         }
-        
-        payload: ChatCompletionRequest = {
-            "model": model,
-            "messages": messages,
-            "options": options,
-            "stream": stream
-        }
-        
+
+        payload: ChatCompletionRequest = {"model": model, "messages": messages, "options": options, "stream": stream}
+
         req_timeout = timeout or (self.chat_connect_timeout, self.chat_read_timeout)
         req_retries = retries or self.retries
         session = self._get_session(req_retries)
         start_time = time.time()
         response = None
-        
+
         try:
-            response = session.post(
-                self._chat_endpoint,
-                json=payload,
-                timeout=req_timeout,
-                allow_redirects=False
-            )
+            response = session.post(self._chat_endpoint, json=payload, timeout=req_timeout, allow_redirects=False)
             response.raise_for_status()
             result = response.json()
         except requests.exceptions.Timeout as e:
@@ -314,7 +307,7 @@ class OllamaAPIClient(BaseLLMClient):
         except Exception as e:
             logger.error("Chat completion unexpected error model=%s: %s", model, e)
             raise LLMError(f"Chat completion unexpected error: {e}") from e
-        
+
         validated = self._validate_chat_response(result, model)
         duration = time.time() - start_time
         logger.debug("Chat completion finished in %.2fs model=%s", duration, model)
@@ -327,10 +320,10 @@ class OllamaAPIClient(BaseLLMClient):
         model: Optional[str] = None,
         options: Optional[ChatCompletionOptions] = None,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> str:
         """Generate text from a simple prompt using the chat endpoint.
-        
+
         Args:
             prompt: User prompt
             system_prompt: Optional system prompt
@@ -338,85 +331,68 @@ class OllamaAPIClient(BaseLLMClient):
             options: Generation options
             timeout: (connect, read) timeout tuple
             retries: Number of retries for this request
-            
+
         Returns:
             Generated text
         """
         messages: List[ChatMessage] = []
-        
+
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        
+
         messages.append({"role": "user", "content": prompt})
-        
+
         response = self.chat_completion(
-            messages=messages,
-            model=model,
-            options=options,
-            timeout=timeout,
-            retries=retries
+            messages=messages, model=model, options=options, timeout=timeout, retries=retries
         )
-        
+
         return response["message"]["content"]
 
     def create_embedding(
-        self,
-        text: str,
-        model: Optional[str] = None,
-        timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        self, text: str, model: Optional[str] = None, timeout: Optional[tuple] = None, retries: Optional[int] = None
     ) -> List[float]:
         """Create an embedding for the given text.
-        
+
         Args:
             text: Text to embed
             model: Model to use (defaults to emb_model for Ollama, ignored for local)
             timeout: (connect, read) timeout tuple
             retries: Number of retries for this request
-            
+
         Returns:
             Embedding vector as a list of floats
-            
+
         Raises:
             EmbeddingError: If embedding generation fails
         """
         # If using local embeddings, return an error since this method is for API calls
         if EMB_BACKEND == "local":
             raise EmbeddingError(
-                "create_embedding method is for API embeddings only. "
-                "Use local embedding methods for local backend."
+                "create_embedding method is for API embeddings only. " "Use local embedding methods for local backend."
             )
-        
+
         model = model or self.emb_model
         req_timeout = timeout or (self.emb_connect_timeout, self.emb_read_timeout)
         req_retries = retries or self.retries
-        
+
         # Get session with appropriate retry settings for this request
         session = self._get_session(req_retries)
         response = None
-        
-        payload: EmbeddingRequest = {
-            "model": model,
-            "prompt": text
-        }
-        
+
+        payload: EmbeddingRequest = {"model": model, "prompt": text}
+
         logger.debug(f"Creating embedding for text of length {len(text)} with model {model}")
         start_time = time.time()
-        
+
         try:
-            response = session.post(
-                self._emb_endpoint,
-                json=payload,
-                timeout=req_timeout,
-                allow_redirects=False
-            )
+            response = session.post(self._emb_endpoint, json=payload, timeout=req_timeout, allow_redirects=False)
             response.raise_for_status()
             result = response.json()
             embedding = self._validate_embedding_response(result)
             duration = time.time() - start_time
             logger.debug("Embedding created in %.2fs for model %s dim=%d", duration, model, len(embedding))
             return embedding
-            
+
         except requests.exceptions.Timeout as e:
             logger.error(
                 "Embedding creation timeout (read %.1fs) model=%s host=%s: %s",
@@ -469,16 +445,16 @@ class OllamaAPIClient(BaseLLMClient):
         texts: List[str],
         model: Optional[str] = None,
         timeout: Optional[tuple] = None,
-        retries: Optional[int] = None
+        retries: Optional[int] = None,
     ) -> List[List[float]]:
         """Create embeddings for a batch of texts.
-        
+
         Args:
             texts: List of texts to embed
             model: Model to use (defaults to emb_model)
             timeout: (connect, read) timeout tuple for each request
             retries: Number of retries for each request
-            
+
         Returns:
             List of embedding vectors
         """
@@ -487,17 +463,12 @@ class OllamaAPIClient(BaseLLMClient):
                 "create_embeddings_batch method is for API embeddings only. "
                 "Use local embedding methods for local backend."
             )
-        
+
         embeddings = []
         for text in texts:
-            embedding = self.create_embedding(
-                text=text,
-                model=model,
-                timeout=timeout,
-                retries=retries
-            )
+            embedding = self.create_embedding(text=text, model=model, timeout=timeout, retries=retries)
             embeddings.append(embedding)
-        
+
         return embeddings
 
     @staticmethod
@@ -542,39 +513,37 @@ class OllamaAPIClient(BaseLLMClient):
 
         expected_dim = EMB_DIM_OLLAMA if EMB_BACKEND == "ollama" else EMB_DIM_LOCAL
         if len(vector) != expected_dim:
-            raise EmbeddingError(
-                f"Embedding dimension mismatch (expected {expected_dim}, got {len(vector)})"
-            )
+            raise EmbeddingError(f"Embedding dimension mismatch (expected {expected_dim}, got {len(vector)})")
 
         return vector
 
     def list_models(self) -> List[ModelInfo]:
         """List available models on the server.
-        
+
         Returns:
             List of available models
         """
         try:
             session = get_session(retries=0)  # No retries for listing models
             session.trust_env = ALLOW_PROXIES
-            
+
             response = session.get(
                 f"{self.base_url}/api/tags",
                 timeout=(self.chat_connect_timeout, 5.0),  # Short read timeout for listing
-                allow_redirects=False
+                allow_redirects=False,
             )
             response.raise_for_status()
-            
+
             result = response.json()
             return result.get("models", [])
-            
+
         except Exception as e:
             logger.warning(f"Failed to list models: {e}")
             return []
 
     def check_health(self) -> bool:
         """Check if the Ollama server is accessible.
-        
+
         Returns:
             True if server is accessible, False otherwise
         """
@@ -739,7 +708,7 @@ def reset_llm_client() -> None:
 
 def get_ollama_client() -> BaseLLMClient:
     """Get a global instance of the Ollama API client.
-    
+
     Returns:
         Ollama API client instance
     """
@@ -769,7 +738,7 @@ def chat_completion(
     retries: Optional[int] = None,
 ) -> ChatCompletionResponse:
     """Global function to make chat completion requests.
-    
+
     Args:
         messages: List of chat messages
         model: Model to use (defaults to configured gen_model)
@@ -777,7 +746,7 @@ def chat_completion(
         stream: Whether to stream the response
         timeout: (connect, read) timeout tuple
         retries: Number of retries for this request
-        
+
     Returns:
         Chat completion response
     """
@@ -799,12 +768,12 @@ def create_embedding(
     retries: Optional[int] = None,
 ) -> List[float]:
     """Global function to create embeddings.
-    
+
     Args:
         text: Text to embed
         model: Model to use (defaults to configured emb_model)
         timeout: (connect, read) timeout tuple
-        
+
     Returns:
         Embedding vector as a list of floats
     """
@@ -814,7 +783,7 @@ def create_embedding(
 
 def check_ollama_health() -> bool:
     """Check if the configured Ollama server is accessible.
-    
+
     Returns:
         True if accessible, False otherwise
     """

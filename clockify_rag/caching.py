@@ -55,12 +55,10 @@ def get_rate_limiter():
     FIX (Error #2): Use proper `is None` check instead of fragile globals() check.
     """
     from . import config  # Import here to avoid circular import
+
     global _RATE_LIMITER
     if _RATE_LIMITER is None:
-        _RATE_LIMITER = RateLimiter(
-            max_requests=config.RATE_LIMIT_REQUESTS,
-            window_seconds=config.RATE_LIMIT_WINDOW
-        )
+        _RATE_LIMITER = RateLimiter(max_requests=config.RATE_LIMIT_REQUESTS, window_seconds=config.RATE_LIMIT_WINDOW)
     return _RATE_LIMITER
 
 
@@ -97,7 +95,7 @@ class QueryCache:
             # Sort params for consistent hashing
             sorted_params = sorted(params.items())
             cache_input = question + str(sorted_params)
-        return hashlib.md5(cache_input.encode('utf-8')).hexdigest()
+        return hashlib.md5(cache_input.encode("utf-8")).hexdigest()
 
     def get(self, question: str, params: dict = None):
         """Retrieve cached answer if available and not expired.
@@ -160,6 +158,7 @@ class QueryCache:
             # Store entry with timestamp
             # FIX: Deep copy metadata to prevent mutation leaks
             import copy
+
             timestamp = time.time()
             metadata_copy = copy.deepcopy(metadata) if metadata is not None else {}
             metadata_copy["timestamp"] = timestamp
@@ -195,7 +194,7 @@ class QueryCache:
                 "misses": self.misses,
                 "size": len(self.cache),
                 "maxsize": self.maxsize,
-                "hit_rate": hit_rate
+                "hit_rate": hit_rate,
             }
 
     def save(self, path: str = "query_cache.json"):
@@ -207,6 +206,7 @@ class QueryCache:
             path: File path to save cache (default: query_cache.json)
         """
         import json
+
         with self._lock:
             try:
                 cache_data = {
@@ -214,19 +214,14 @@ class QueryCache:
                     "maxsize": self.maxsize,
                     "ttl_seconds": self.ttl_seconds,
                     "entries": [
-                        {
-                            "key": key,
-                            "answer": answer,
-                            "metadata": metadata,
-                            "timestamp": timestamp
-                        }
+                        {"key": key, "answer": answer, "metadata": metadata, "timestamp": timestamp}
                         for key, (answer, metadata, timestamp) in self.cache.items()
                     ],
                     "access_order": list(self.access_order),
                     "hits": self.hits,
-                    "misses": self.misses
+                    "misses": self.misses,
                 }
-                with open(path, 'w', encoding='utf-8') as f:
+                with open(path, "w", encoding="utf-8") as f:
                     json.dump(cache_data, f, ensure_ascii=False, indent=2)
                 logger.info(f"[cache] SAVE {len(self.cache)} entries to {path}")
             except Exception as e:
@@ -244,13 +239,14 @@ class QueryCache:
             Number of entries loaded (0 if file doesn't exist or load fails)
         """
         import json
+
         with self._lock:
             if not os.path.exists(path):
                 logger.debug(f"[cache] No cache file found at {path}")
                 return 0
 
             try:
-                with open(path, 'r', encoding='utf-8') as f:
+                with open(path, "r", encoding="utf-8") as f:
                     cache_data = json.load(f)
 
                 # Validate version
@@ -278,15 +274,16 @@ class QueryCache:
 
                 # Restore access order (only for non-expired keys)
                 self.access_order = deque(
-                    [k for k in cache_data.get("access_order", []) if k in self.cache],
-                    maxlen=self.maxsize * 2
+                    [k for k in cache_data.get("access_order", []) if k in self.cache], maxlen=self.maxsize * 2
                 )
 
                 # Restore stats (reset to avoid inflated numbers from old sessions)
                 # self.hits = cache_data.get("hits", 0)
                 # self.misses = cache_data.get("misses", 0)
 
-                logger.info(f"[cache] LOAD {loaded_count} entries from {path} (skipped {len(cache_data.get('entries', [])) - loaded_count} expired)")
+                logger.info(
+                    f"[cache] LOAD {loaded_count} entries from {path} (skipped {len(cache_data.get('entries', [])) - loaded_count} expired)"
+                )
                 return loaded_count
 
             except Exception as e:
@@ -301,17 +298,16 @@ def get_query_cache():
     FIX (Error #2): Use proper `is None` check instead of fragile globals() check.
     """
     from . import config  # Import here to avoid circular import
+
     global _QUERY_CACHE
     if _QUERY_CACHE is None:
-        _QUERY_CACHE = QueryCache(
-            maxsize=config.CACHE_MAXSIZE,
-            ttl_seconds=config.CACHE_TTL
-        )
+        _QUERY_CACHE = QueryCache(maxsize=config.CACHE_MAXSIZE, ttl_seconds=config.CACHE_TTL)
     return _QUERY_CACHE
 
 
-def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float,
-              refused: bool = False, metadata: dict = None):
+def log_query(
+    query: str, answer: str, retrieved_chunks: list, latency_ms: float, refused: bool = False, metadata: dict = None
+):
     """Log query with structured JSON format for monitoring and analytics.
 
     FIX (Error #6): Sanitizes user input to prevent log injection attacks.
@@ -337,7 +333,7 @@ def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float
             # Redact chunk text for security/privacy unless explicitly enabled
             if not LOG_QUERY_INCLUDE_CHUNKS:
                 normalized.pop("chunk", None)  # Remove full chunk text
-                normalized.pop("text", None)   # Remove text field if present
+                normalized.pop("text", None)  # Remove text field if present
         else:
             normalized = {
                 "id": chunk,
@@ -358,6 +354,7 @@ def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float
     # FIX: Sanitize metadata to prevent chunk text leaks
     # Deep copy and remove any 'text'/'chunk' fields from nested structures
     import copy
+
     sanitized_metadata = copy.deepcopy(metadata) if metadata else {}
     if not LOG_QUERY_INCLUDE_CHUNKS and isinstance(sanitized_metadata, dict):
         # Remove chunk text from any nested chunk dicts in metadata
@@ -402,4 +399,3 @@ def log_query(query: str, answer: str, retrieved_chunks: list, latency_ms: float
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
     except Exception as e:
         logger.warning(f"Failed to log query: {e}")
-

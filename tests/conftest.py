@@ -37,7 +37,7 @@ def pytest_configure(config):
         pytest.exit(
             f"\nERROR: Missing required test dependencies: {', '.join(missing)}\n"
             f"Install with: pip install -e '.[dev]'\n",
-            returncode=1
+            returncode=1,
         )
 
     # Check optional dependencies (just warn)
@@ -94,36 +94,36 @@ def sample_chunks():
             "title": "Time Tracking",
             "section": "Basics",
             "text": "Track time by clicking the timer button in the top right corner",
-            "url": "https://clockify.me/help/time-tracking"
+            "url": "https://clockify.me/help/time-tracking",
         },
         {
             "id": "2",
             "title": "Pricing",
             "section": "Plans",
             "text": "Free plan includes unlimited users and unlimited time tracking",
-            "url": "https://clockify.me/pricing"
+            "url": "https://clockify.me/pricing",
         },
         {
             "id": "3",
             "title": "Time Tracking",
             "section": "Advanced",
             "text": "Manual time entries can be added by clicking the plus button",
-            "url": "https://clockify.me/help/time-tracking-advanced"
+            "url": "https://clockify.me/help/time-tracking-advanced",
         },
         {
             "id": "4",
             "title": "Reports",
             "section": "Overview",
             "text": "Generate detailed reports of your time tracking data",
-            "url": "https://clockify.me/help/reports"
+            "url": "https://clockify.me/help/reports",
         },
         {
             "id": "5",
             "title": "Integrations",
             "section": "Setup",
             "text": "Integrate Clockify with your favorite tools like Jira and Slack",
-            "url": "https://clockify.me/help/integrations"
-        }
+            "url": "https://clockify.me/help/integrations",
+        },
     ]
 
 
@@ -134,6 +134,7 @@ def sample_embeddings(sample_chunks):
     Creates simple embeddings with some semantic similarity between related chunks.
     """
     from clockify_rag.config import EMB_DIM
+
     n = len(sample_chunks)
 
     # Create base embeddings
@@ -185,7 +186,7 @@ def temp_index_dir(sample_chunks, sample_embeddings, sample_bm25):
             "emb_rows": len(sample_embeddings),
             "bm25_docs": len(sample_bm25["doc_lens"]),
             "kb_sha256": "test_hash",
-            "built_at": "2025-11-06T00:00:00Z"
+            "built_at": "2025-11-06T00:00:00Z",
         }
         meta_path = os.path.join(tmpdir, "index.meta.json")
         with open(meta_path, "w") as f:
@@ -204,6 +205,7 @@ def sample_query():
 def sample_query_embedding():
     """Sample query embedding for testing."""
     from clockify_rag.config import EMB_DIM
+
     qv = np.random.randn(EMB_DIM).astype("float32")
     qv = qv / np.linalg.norm(qv)
     return qv
@@ -212,19 +214,14 @@ def sample_query_embedding():
 @pytest.fixture
 def mock_ollama_response():
     """Mock Ollama API response for testing."""
-    return {
-        "embedding": np.random.randn(768).tolist(),  # 768-dim for Ollama
-        "model": "nomic-embed-text"
-    }
+    return {"embedding": np.random.randn(768).tolist(), "model": "nomic-embed-text"}  # 768-dim for Ollama
 
 
 @pytest.fixture
 def mock_llm_response():
     """Mock LLM response for testing."""
     return {
-        "message": {
-            "content": "Track time by clicking the timer button in the top right corner."
-        },
+        "message": {"content": "Track time by clicking the timer button in the top right corner."},
         "model": "qwen2.5:32b",
-        "done": True
+        "done": True,
     }

@@ -1,4 +1,5 @@
 """Tests for retrieval functionality."""
+
 import pytest
 import sys
 import os
@@ -16,7 +17,13 @@ class TestRetrieval:
     def setup_method(self):
         """Setup test data."""
         self.chunks = [
-            {"id": 0, "text": "How to track time in Clockify", "title": "Time Tracking", "section": "Basics", "url": "#track"},
+            {
+                "id": 0,
+                "text": "How to track time in Clockify",
+                "title": "Time Tracking",
+                "section": "Basics",
+                "url": "#track",
+            },
             {"id": 1, "text": "Clockify pricing plans", "title": "Pricing", "section": "Plans", "url": "#pricing"},
             {"id": 2, "text": "Track time with timer", "title": "Timer", "section": "Features", "url": "#timer"},
         ]
@@ -70,10 +77,7 @@ class TestRetrieval:
 
         # Hybrid with alpha=0.5
         alpha = 0.5
-        hybrid_scores = [
-            alpha * bm25_norm[i] + (1 - alpha) * dense_scores[i]
-            for i in range(len(self.chunks))
-        ]
+        hybrid_scores = [alpha * bm25_norm[i] + (1 - alpha) * dense_scores[i] for i in range(len(self.chunks))]
 
         # Verify hybrid scores are combinations
         assert len(hybrid_scores) == len(self.chunks)
@@ -97,11 +101,10 @@ class TestMMR:
         """Test that MMR promotes diversity."""
         # Create 3 very similar vectors (redundant)
         base_vec = np.random.rand(384)
-        vecs = np.array([
-            base_vec,
-            base_vec + np.random.randn(384) * 0.01,  # Very similar
-            np.random.rand(384)  # Different
-        ], dtype=np.float32)
+        vecs = np.array(
+            [base_vec, base_vec + np.random.randn(384) * 0.01, np.random.rand(384)],  # Very similar  # Different
+            dtype=np.float32,
+        )
 
         # Normalize
         vecs = vecs / np.linalg.norm(vecs, axis=1, keepdims=True)

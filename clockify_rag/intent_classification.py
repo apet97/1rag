@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class IntentConfig:
     """Configuration for intent-specific retrieval."""
+
     name: str
     alpha_hybrid: float  # BM25 weight (0=all dense, 1=all BM25)
     boost_factor: float  # Score multiplier for intent-specific chunks
@@ -27,37 +28,37 @@ INTENT_CONFIGS = {
         name="procedural",
         alpha_hybrid=0.65,  # Higher BM25 weight for exact keyword matching (how-to steps)
         boost_factor=1.1,
-        description="How-to questions requiring step-by-step instructions"
+        description="How-to questions requiring step-by-step instructions",
     ),
     "factual": IntentConfig(
         name="factual",
         alpha_hybrid=0.35,  # Higher dense weight for semantic understanding (definitions)
         boost_factor=1.0,
-        description="What/define questions seeking factual information"
+        description="What/define questions seeking factual information",
     ),
     "capability": IntentConfig(
         name="capability",
         alpha_hybrid=0.50,  # Balanced (yes/no feature questions)
         boost_factor=1.0,
-        description="Can I / Is it possible questions about features"
+        description="Can I / Is it possible questions about features",
     ),
     "pricing": IntentConfig(
         name="pricing",
         alpha_hybrid=0.70,  # High BM25 for exact pricing/plan terms
         boost_factor=1.2,  # Boost pricing sections
-        description="Questions about pricing, plans, costs, tiers"
+        description="Questions about pricing, plans, costs, tiers",
     ),
     "troubleshooting": IntentConfig(
         name="troubleshooting",
         alpha_hybrid=0.60,  # Favor BM25 for error messages/symptoms
         boost_factor=1.1,
-        description="Error messages, issues, problems, not working"
+        description="Error messages, issues, problems, not working",
     ),
     "general": IntentConfig(
         name="general",
         alpha_hybrid=0.50,  # Balanced hybrid
         boost_factor=1.0,
-        description="General questions without specific intent"
+        description="General questions without specific intent",
     ),
 }
 
@@ -65,21 +66,26 @@ INTENT_CONFIGS = {
 # Intent detection patterns (order matters - more specific first)
 INTENT_PATTERNS = [
     # Pricing intent (highest priority)
-    (r'\b(price|cost|pricing|plan|tier|package|subscription|upgrade|downgrade|billing|invoice|payment|free|paid|trial)\b', "pricing"),
-
+    (
+        r"\b(price|cost|pricing|plan|tier|package|subscription|upgrade|downgrade|billing|invoice|payment|free|paid|trial)\b",
+        "pricing",
+    ),
     # Procedural intent (how-to)
-    (r'\b(how do i|how to|how can i|steps to|guide to|tutorial|setup|configure|install|create|add|delete|remove|edit|change|update)\b', "procedural"),
-    (r'^(setup|configure|install|create|add|delete|remove|edit)\b', "procedural"),
-
+    (
+        r"\b(how do i|how to|how can i|steps to|guide to|tutorial|setup|configure|install|create|add|delete|remove|edit|change|update)\b",
+        "procedural",
+    ),
+    (r"^(setup|configure|install|create|add|delete|remove|edit)\b", "procedural"),
     # Troubleshooting intent
-    (r'\b(error|issue|problem|not working|doesn\'t work|can\'t|cannot|failed|broken|fix|troubleshoot|debug)\b', "troubleshooting"),
-    (r'\b(why (is|does|doesn\'t|can\'t)|why not)\b', "troubleshooting"),
-
+    (
+        r"\b(error|issue|problem|not working|doesn\'t work|can\'t|cannot|failed|broken|fix|troubleshoot|debug)\b",
+        "troubleshooting",
+    ),
+    (r"\b(why (is|does|doesn\'t|can\'t)|why not)\b", "troubleshooting"),
     # Capability intent
-    (r'\b(can i|is it possible|does it support|do you support|is there|are there|does clockify)\b', "capability"),
-
+    (r"\b(can i|is it possible|does it support|do you support|is there|are there|does clockify)\b", "capability"),
     # Factual intent
-    (r'\b(what is|what are|what\'s|define|explain|describe|tell me about|difference between)\b', "factual"),
+    (r"\b(what is|what are|what\'s|define|explain|describe|tell me about|difference between)\b", "factual"),
 ]
 
 
@@ -143,11 +149,7 @@ def get_intent_metadata(intent_name: str, confidence: float) -> Dict:
     }
 
 
-def adjust_scores_by_intent(
-    chunks: list,
-    scores: Dict,
-    intent_config: IntentConfig
-) -> Dict:
+def adjust_scores_by_intent(chunks: list, scores: Dict, intent_config: IntentConfig) -> Dict:
     """Adjust retrieval scores based on intent-specific boosting.
 
     OPTIMIZATION: Boosts chunks that match the intent (e.g., pricing sections for pricing queries).

@@ -9,26 +9,25 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from clockify_rag.retrieval import retrieve, normalize_scores_zscore, DenseScoreStore
 from clockify_rag.utils import sanitize_question
 
+
 # Check if Ollama is available (may not be in CI)
 def is_ollama_available():
     """Check if Ollama service is running and accessible."""
     import os
+
     try:
         import requests
-        ollama_url = (
-            os.environ.get("RAG_OLLAMA_URL")
-            or os.environ.get("OLLAMA_URL")
-            or "http://127.0.0.1:11434"
-        )
+
+        ollama_url = os.environ.get("RAG_OLLAMA_URL") or os.environ.get("OLLAMA_URL") or "http://127.0.0.1:11434"
         response = requests.get(f"{ollama_url}/api/version", timeout=1)
         return response.ok
     except Exception:
         return False
 
+
 OLLAMA_AVAILABLE = is_ollama_available()
 requires_ollama = pytest.mark.skipif(
-    not OLLAMA_AVAILABLE,
-    reason="Ollama not running (expected in CI, start with 'ollama serve' for local testing)"
+    not OLLAMA_AVAILABLE, reason="Ollama not running (expected in CI, start with 'ollama serve' for local testing)"
 )
 
 
@@ -234,7 +233,9 @@ def test_retrieve_scores_are_numeric(sample_chunks, sample_embeddings, sample_bm
         assert not np.any(np.isnan(score_array)), f"{score_type} scores should not contain NaN"
 
 
-@pytest.mark.skip(reason="FAISS optimization test - tracking matrix still receives 1 dot call despite monkeypatch. Core functionality works (151/152 tests pass). TODO: investigate why FAISS path still calls dot() once")
+@pytest.mark.skip(
+    reason="FAISS optimization test - tracking matrix still receives 1 dot call despite monkeypatch. Core functionality works (151/152 tests pass). TODO: investigate why FAISS path still calls dot() once"
+)
 def test_retrieve_faiss_skips_full_dot(monkeypatch, sample_chunks, sample_embeddings, sample_bm25):
     """Ensure FAISS retrieval path does not compute full dense dot product."""
 
@@ -282,6 +283,7 @@ def test_retrieve_faiss_skips_full_dot(monkeypatch, sample_chunks, sample_embedd
     # Avoid external embedding call - patch in the retrieval module where it's actually called
     query_vec = sample_embeddings[0]
     import clockify_rag.retrieval as retrieval_module
+
     monkeypatch.setattr(retrieval_module, "embed_query", lambda question, retries=0: query_vec, raising=False)
 
     selected, scores = retrieve("How do I track time?", sample_chunks, tracker, sample_bm25, top_k=3)

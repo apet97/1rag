@@ -25,10 +25,7 @@ def test_query_cache_thread_safe():
             errors.append(e)
 
     # Create 100 threads that simultaneously access the cache
-    threads = [
-        threading.Thread(target=worker, args=(f"question_{i}", f"answer_{i}"))
-        for i in range(100)
-    ]
+    threads = [threading.Thread(target=worker, args=(f"question_{i}", f"answer_{i}")) for i in range(100)]
 
     for t in threads:
         t.start()
@@ -89,7 +86,7 @@ def test_query_cache_concurrent_put_get():
             for i in range(start_idx, start_idx + 10):
                 cache.put(f"q{i}", f"a{i}", {"idx": i})
         except Exception as e:
-            errors.append(('writer', e))
+            errors.append(("writer", e))
 
     def reader(start_idx):
         try:
@@ -97,7 +94,7 @@ def test_query_cache_concurrent_put_get():
                 result = cache.get(f"q{i}")
                 # Result might be None if not yet written or evicted
         except Exception as e:
-            errors.append(('reader', e))
+            errors.append(("reader", e))
 
     # Create interleaved writers and readers
     writers = [threading.Thread(target=writer, args=(i * 10,)) for i in range(5)]

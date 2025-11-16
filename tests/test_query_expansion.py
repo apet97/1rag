@@ -1,4 +1,5 @@
 """Tests for query expansion functionality."""
+
 import json
 import os
 import sys
@@ -63,6 +64,7 @@ class TestQueryExpansion:
     def test_expand_query_empty(self):
         """Test that empty query raises ValidationError."""
         from clockify_rag.exceptions import ValidationError
+
         with pytest.raises(ValidationError, match="cannot be empty"):
             expand_query("")
 

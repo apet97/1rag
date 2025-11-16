@@ -11,7 +11,9 @@ QUERY_CACHE = get_query_cache()
 RATE_LIMITER = get_rate_limiter()
 
 
-@pytest.mark.skip(reason="Test needs update: answer_once() return structure changed and no longer includes 'debug' parameter or 'cached'/'cache_hit' metadata")
+@pytest.mark.skip(
+    reason="Test needs update: answer_once() return structure changed and no longer includes 'debug' parameter or 'cached'/'cache_hit' metadata"
+)
 def test_answer_once_logs_retrieved_chunks_with_cache(monkeypatch):
     QUERY_CACHE.clear()
 
@@ -50,7 +52,13 @@ def test_answer_once_logs_retrieved_chunks_with_cache(monkeypatch):
     monkeypatch.setattr(
         answer_module,
         "apply_reranking",
-        lambda question, chunks_arg, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries: (mmr_selected, {}, False, "", 0.0),
+        lambda question, chunks_arg, mmr_selected, scores, use_rerank, seed, num_ctx, num_predict, retries: (
+            mmr_selected,
+            {},
+            False,
+            "",
+            0.0,
+        ),
     )
     monkeypatch.setattr(retrieval_module, "coverage_ok", lambda selected, dense_scores, threshold: True)
 

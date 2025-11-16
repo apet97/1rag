@@ -1,4 +1,5 @@
 """Tests for context packing functionality."""
+
 import pytest
 import sys
 import os
@@ -12,10 +13,7 @@ class TestContextPacking:
 
     def test_pack_respects_token_budget(self):
         """Test that packing respects token budget."""
-        chunks = [
-            {"id": i, "text": "word " * 100}  # ~400 chars each
-            for i in range(10)
-        ]
+        chunks = [{"id": i, "text": "word " * 100} for i in range(10)]  # ~400 chars each
 
         # Budget for ~2 chunks (800 chars = 200 tokens at 4 chars/token)
         budget_chars = 800

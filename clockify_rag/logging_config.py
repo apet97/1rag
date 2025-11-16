@@ -151,10 +151,7 @@ def setup_logging(
     logging.getLogger("fastapi").setLevel(logging.INFO)
 
     # Log configuration applied
-    root.info(
-        f"Logging configured: level={level}, format={format_type}, "
-        f"file={log_file or 'none'}, quiet={quiet}"
-    )
+    root.info(f"Logging configured: level={level}, format={format_type}, " f"file={log_file or 'none'}, quiet={quiet}")
 
 
 def get_logger(name: str) -> logging.Logger:

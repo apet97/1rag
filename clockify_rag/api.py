@@ -15,6 +15,7 @@ import os
 import platform
 import signal
 import time
+from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
 from typing import Optional, Dict, Any
@@ -23,7 +24,7 @@ import typer
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 
 from . import config
 from .answer import answer_once
@@ -53,8 +54,9 @@ class QueryRequest(BaseModel):
     threshold: Optional[float] = Field(0.25, ge=0.0, le=1.0, description="Minimum similarity")
     debug: Optional[bool] = Field(False, description="Include debug information")
 
-    @validator('question')
-    def validate_question(cls, v):
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, v: str) -> str:
         """Validate and sanitize question input.
 
         Prevents XSS, injection attacks, and other malicious input.
@@ -67,13 +69,13 @@ class QueryRequest(BaseModel):
 
         # Check for suspicious patterns (basic XSS prevention)
         suspicious_patterns = [
-            '<script',
-            'javascript:',
-            'onerror=',
-            'onload=',
-            '<iframe',
-            'eval(',
-            'expression(',
+            "<script",
+            "javascript:",
+            "onerror=",
+            "onload=",
+            "<iframe",
+            "eval(",
+            "expression(",
         ]
 
         v_lower = v.lower()
@@ -149,10 +151,50 @@ class IngestResponse(BaseModel):
 
 def create_app() -> FastAPI:
     """Create and configure FastAPI application."""
+
+    def _clear_index_state(target_app: FastAPI) -> None:
+        target_app.state.chunks = None
+        target_app.state.vecs_n = None
+        target_app.state.bm = None
+        target_app.state.hnsw = None
+        target_app.state.index_ready = False
+
+    def _set_index_state(target_app: FastAPI, result) -> None:
+        if not result:
+            _clear_index_state(target_app)
+            return
+        chunks, vecs_n, bm, hnsw = result
+        target_app.state.chunks = chunks
+        target_app.state.vecs_n = vecs_n
+        target_app.state.bm = bm
+        target_app.state.hnsw = hnsw
+        target_app.state.index_ready = True
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        try:
+            logger.info("Loading index on startup...")
+            try:
+                result = ensure_index_ready(retries=2)
+                if result:
+                    _set_index_state(_app, result)
+                    logger.info("Index loaded: %d chunks", len(result[0]))
+                else:
+                    logger.warning("Index not ready at startup")
+            except Exception as exc:
+                logger.error("Failed to load index at startup: %s", exc)
+                _clear_index_state(_app)
+            yield
+        finally:
+            logger.info("Initiating graceful shutdown...")
+            _clear_index_state(_app)
+            logger.info("Graceful shutdown complete")
+
     app = FastAPI(
         title="Clockify RAG API",
         description="Production-ready RAG system with hybrid retrieval",
         version="5.9.1",
+        lifespan=lifespan,
     )
 
     # Add CORS middleware if enabled
@@ -166,30 +208,7 @@ def create_app() -> FastAPI:
             allow_headers=["*"],
         )
 
-    # Global state for index
-    app.state.chunks = None
-    app.state.vecs_n = None
-    app.state.bm = None
-    app.state.hnsw = None
-    app.state.index_ready = False
-
-    def _clear_index_state() -> None:
-        app.state.chunks = None
-        app.state.vecs_n = None
-        app.state.bm = None
-        app.state.hnsw = None
-        app.state.index_ready = False
-
-    def _set_index_state(result) -> None:
-        if not result:
-            _clear_index_state()
-            return
-        chunks, vecs_n, bm, hnsw = result
-        app.state.chunks = chunks
-        app.state.vecs_n = vecs_n
-        app.state.bm = bm
-        app.state.hnsw = hnsw
-        app.state.index_ready = True
+    _clear_index_state(app)
 
     def _require_api_key(req: Request) -> None:
         if config.API_AUTH_MODE != "api_key":
@@ -200,38 +219,6 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=401, detail="Missing API key")
         if api_key not in config.API_ALLOWED_KEYS:
             raise HTTPException(status_code=403, detail="Invalid API key")
-
-    @app.on_event("startup")
-    async def startup_event():
-        """Load index on startup."""
-        try:
-            logger.info("Loading index on startup...")
-            result = ensure_index_ready(retries=2)
-            if result:
-                _set_index_state(result)
-                logger.info(f"Index loaded: {len(result[0])} chunks")
-            else:
-                logger.warning("Index not ready at startup")
-        except Exception as e:
-            logger.error(f"Failed to load index at startup: {e}")
-            _clear_index_state()
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        """Graceful shutdown handler.
-
-        Performs cleanup tasks:
-        - Flushes any pending logs
-        - Closes database connections (if any)
-        - Saves metrics/cache (if configured)
-        - Allows in-flight requests to complete (handled by uvicorn)
-        """
-        logger.info("Initiating graceful shutdown...")
-
-        # Clear index from memory (helps with clean shutdown)
-        _clear_index_state()
-
-        logger.info("Graceful shutdown complete")
 
     # ========================================================================
     # Health Check Endpoint
@@ -251,18 +238,14 @@ def create_app() -> FastAPI:
         from pathlib import Path
 
         # Check index files exist (belt-and-suspenders with app.state)
-        index_files_exist = all(
-            Path(f).exists() for f in ["chunks.jsonl", "vecs_n.npy", "meta.jsonl", "bm25.json"]
-        )
+        index_files_exist = all(Path(f).exists() for f in ["chunks.jsonl", "vecs_n.npy", "meta.jsonl", "bm25.json"])
         index_ready = app.state.index_ready and index_files_exist
 
         # Check Ollama connectivity with short timeout (threadpool to avoid blocking)
         ollama_ok = False
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(
-                None, partial(check_ollama_connectivity, config.RAG_OLLAMA_URL, 2)
-            )
+            await loop.run_in_executor(None, partial(check_ollama_connectivity, config.RAG_OLLAMA_URL, 2))
             ollama_ok = True
         except Exception as e:
             # Ollama connectivity failure is acceptable for health check
@@ -331,9 +314,7 @@ def create_app() -> FastAPI:
         _require_api_key(raw_request)
 
         if not app.state.index_ready:
-            raise HTTPException(
-                status_code=503, detail="Index not ready. Run /v1/ingest first or wait for startup."
-            )
+            raise HTTPException(status_code=503, detail="Index not ready. Run /v1/ingest first or wait for startup.")
 
         try:
             start_time = time.time()
@@ -401,9 +382,7 @@ def create_app() -> FastAPI:
     # ========================================================================
 
     @app.post("/v1/ingest", response_model=IngestResponse)
-    async def trigger_ingest(
-        request: IngestRequest, background_tasks: BackgroundTasks
-    ) -> IngestResponse:
+    async def trigger_ingest(request: IngestRequest, background_tasks: BackgroundTasks) -> IngestResponse:
         """Trigger index build/rebuild.
 
         Starts a background task to build the index from the knowledge base.
@@ -430,12 +409,12 @@ def create_app() -> FastAPI:
                 logger.info(f"Starting ingest from {input_file}")
                 build(input_file, retries=2)
                 result = ensure_index_ready(retries=2)
-                _set_index_state(result)
+                _set_index_state(app, result)
                 duration_ms = (time.time() - started_at) * 1000
                 logger.info(f"Ingest completed successfully in {duration_ms:.1f} ms")
             except Exception as e:
                 logger.error(f"Ingest failed: {e}", exc_info=True)
-                _clear_index_state()
+                _clear_index_state(app)
 
         background_tasks.add_task(do_ingest)
 

@@ -23,14 +23,14 @@ from pathlib import Path
 # Check if FAISS is available (may not be in CI)
 try:
     import faiss
+
     FAISS_AVAILABLE = True
 except ImportError:
     FAISS_AVAILABLE = False
 
 # Skip all tests in this module if FAISS not available
 pytestmark = pytest.mark.skipif(
-    not FAISS_AVAILABLE,
-    reason="FAISS not installed (expected in CI, install via conda for M1 compatibility)"
+    not FAISS_AVAILABLE, reason="FAISS not installed (expected in CI, install via conda for M1 compatibility)"
 )
 
 # Import from package
@@ -219,7 +219,7 @@ class TestFAISSThreadSafety:
 
         def search_worker(thread_id):
             try:
-                query = medium_embeddings[thread_id:thread_id+1]
+                query = medium_embeddings[thread_id : thread_id + 1]
                 D, I = index.search(query, k=10)
                 results.append((thread_id, D, I))
             except Exception as e:
@@ -298,7 +298,7 @@ class TestFAISSSearchAccuracy:
 
         # Pick a random query
         query_idx = 42
-        query = medium_embeddings[query_idx:query_idx+1]
+        query = medium_embeddings[query_idx : query_idx + 1]
 
         # FAISS approximate search
         D_approx, I_approx = index.search(query, k=20)

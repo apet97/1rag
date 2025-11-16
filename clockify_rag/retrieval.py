@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 # ====== RETRIEVAL PROFILING ======
 # FIX (Error #15): Add thread-safe lock for concurrent access to profiling state
-_RETRIEVE_PROFILE_LOCK = __import__('threading').RLock()
+_RETRIEVE_PROFILE_LOCK = __import__("threading").RLock()
 RETRIEVE_PROFILE_LAST = {}
 
 
@@ -50,6 +50,7 @@ def get_retrieve_profile():
     """
     with _RETRIEVE_PROFILE_LOCK:
         return dict(RETRIEVE_PROFILE_LAST)
+
 
 # ====== PROMPTS ======
 _SYSTEM_PROMPT_TEMPLATE = """You are CAKE.com Internal Support for Clockify.
@@ -79,6 +80,7 @@ def get_system_prompt() -> str:
     """
     return _SYSTEM_PROMPT_TEMPLATE.format(refusal=config.REFUSAL_STR)
 
+
 USER_WRAPPER = """SNIPPETS:
 {snips}
 
@@ -97,6 +99,7 @@ QUESTION:
 
 PASSAGES:
 {passages}"""
+
 
 # ====== INPUT VALIDATION ======
 def validate_query_length(question: str, max_length: int = None) -> str:
@@ -132,6 +135,7 @@ def validate_query_length(question: str, max_length: int = None) -> str:
 
     return question
 
+
 # ====== QUERY EXPANSION ======
 QUERY_EXPANSIONS_ENV_VAR = "CLOCKIFY_QUERY_EXPANSIONS"
 _DEFAULT_QUERY_EXPANSION_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "query_expansions.json"
@@ -157,6 +161,7 @@ def reset_query_expansion_cache():
 
 def _resolve_query_expansion_path():
     import clockify_rag.config as config
+
     if _query_expansion_override is not None:
         return _query_expansion_override
     env_path = config.get_query_expansions_path()
@@ -167,6 +172,7 @@ def _resolve_query_expansion_path():
 
 def _read_query_expansion_file(path):
     import clockify_rag.config as config
+
     MAX_EXPANSION_FILE_SIZE = config.MAX_QUERY_EXPANSION_FILE_SIZE
     try:
         file_size = os.path.getsize(path)
@@ -258,6 +264,7 @@ def count_tokens(text: str, model: str = None) -> int:
     if "gpt" in model.lower():
         try:
             import tiktoken
+
             encoding = tiktoken.encoding_for_model(model)
             return len(encoding.encode(text))
         except (ImportError, KeyError):
@@ -269,7 +276,8 @@ def count_tokens(text: str, model: str = None) -> int:
     if "qwen" in model.lower():
         # Count CJK characters (Chinese, Japanese, Korean)
         import re
-        cjk_pattern = r'[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]'
+
+        cjk_pattern = r"[\u4e00-\u9fff\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]"
         cjk_chars = len(re.findall(cjk_pattern, text))
         non_cjk_chars = len(text) - cjk_chars
 
@@ -340,7 +348,7 @@ def expand_query(question: str) -> str:
     expanded_terms = []
 
     for term, synonyms in expansions.items():
-        if re.search(r'\b' + re.escape(term) + r'\b', q_lower):
+        if re.search(r"\b" + re.escape(term) + r"\b", q_lower):
             for syn in synonyms:
                 if syn not in expanded_terms:
                     expanded_terms.append(syn)
@@ -380,9 +388,15 @@ class DenseScoreStore:
 
     __slots__ = ("_length", "_full", "_vecs", "_qv", "_cache")
 
-    def __init__(self, length: int, *, full_scores: Optional[np.ndarray] = None,
-                 vecs: Optional[np.ndarray] = None, qv: Optional[np.ndarray] = None,
-                 initial: Optional[list] = None) -> None:
+    def __init__(
+        self,
+        length: int,
+        *,
+        full_scores: Optional[np.ndarray] = None,
+        vecs: Optional[np.ndarray] = None,
+        qv: Optional[np.ndarray] = None,
+        initial: Optional[list] = None,
+    ) -> None:
         self._length = int(length)
         self._full: Optional[np.ndarray] = None
         self._vecs = vecs
@@ -429,8 +443,9 @@ class DenseScoreStore:
         return self._materialize_full().copy()
 
 
-def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
-             faiss_index_path=None) -> Tuple[List[int], Dict[str, Any]]:
+def retrieve(
+    question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0, faiss_index_path=None
+) -> Tuple[List[int], Dict[str, Any]]:
     """Hybrid retrieval: dense + BM25 + dedup. Optionally uses FAISS/HNSW for fast K-NN.
 
     FIX (Error #5): Validates query length at entry point to prevent DoS attacks.
@@ -476,7 +491,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
         faiss_index = get_faiss_index(faiss_index_path)
         if faiss_index:
             # Only set nprobe for IVF indexes (not flat indexes)
-            if hasattr(faiss_index, 'nprobe'):
+            if hasattr(faiss_index, "nprobe"):
                 faiss_index.nprobe = config.ANN_NPROBE
             logger.info("info: ann=faiss status=loaded nprobe=%d", config.ANN_NPROBE)
         elif faiss_index_path:
@@ -599,8 +614,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
         dense_scores_store = DenseScoreStore(len(chunks), full_scores=dense_scores_full)
     else:
         dense_scores_store = DenseScoreStore(
-            len(chunks), vecs=vecs_n, qv=qv_n,
-            initial=list(zip(candidate_idx, dense_scores))
+            len(chunks), vecs=vecs_n, qv=qv_n, initial=list(zip(candidate_idx, dense_scores))
         )
 
     dense_total = n_chunks
@@ -639,7 +653,7 @@ def retrieve(question: str, chunks, vecs_n, bm, top_k=12, hnsw=None, retries=0,
         "dense": dense_scores_store,
         "bm25": bm_scores_full,
         "hybrid": hybrid_full,
-        "intent_metadata": intent_metadata  # OPTIMIZATION: intent classification metadata (or empty dict if disabled)
+        "intent_metadata": intent_metadata,  # OPTIMIZATION: intent classification metadata (or empty dict if disabled)
     }
 
 
@@ -661,10 +675,9 @@ def rerank_with_llm(
         return selected, {}, False, "disabled"
 
     # Build passage list
-    passages_text = "\n\n".join([
-        f"[id={chunks[i]['id']}]\n{chunks[i]['text'][:config.RERANK_SNIPPET_MAX_CHARS]}"
-        for i in selected
-    ])
+    passages_text = "\n\n".join(
+        [f"[id={chunks[i]['id']}]\n{chunks[i]['text'][:config.RERANK_SNIPPET_MAX_CHARS]}" for i in selected]
+    )
     if seed is None:
         seed = config.DEFAULT_SEED
     if num_ctx is None:
@@ -675,11 +688,11 @@ def rerank_with_llm(
         retries = config.DEFAULT_RETRIES
 
     from .api_client import chat_completion, ChatMessage, ChatCompletionOptions
-    
+
     messages: List[ChatMessage] = [
         {"role": "user", "content": RERANK_PROMPT.format(q=question, passages=passages_text)}
     ]
-    
+
     options: ChatCompletionOptions = {
         "temperature": 0,
         "seed": seed,
@@ -687,7 +700,7 @@ def rerank_with_llm(
         "num_predict": num_predict,
         "top_p": 0.9,
         "top_k": 40,
-        "repeat_penalty": 1.05
+        "repeat_penalty": 1.05,
     }
 
     rerank_scores = {}
@@ -697,7 +710,7 @@ def rerank_with_llm(
             model=config.RAG_CHAT_MODEL,
             options=options,
             timeout=(config.CHAT_CONNECT_T, config.RERANK_READ_T),
-            retries=retries
+            retries=retries,
         )
         resp = response
         msg = (resp.get("message") or {}).get("content", "").strip()
@@ -867,12 +880,12 @@ def ask_llm(
         retries = config.DEFAULT_RETRIES
 
     from .api_client import chat_completion, ChatMessage, ChatCompletionOptions
-    
+
     messages: List[ChatMessage] = [
         {"role": "system", "content": get_system_prompt()},
-        {"role": "user", "content": USER_WRAPPER.format(snips=snippets_block, q=question)}
+        {"role": "user", "content": USER_WRAPPER.format(snips=snippets_block, q=question)},
     ]
-    
+
     options: ChatCompletionOptions = {
         "temperature": 0,
         "seed": seed,
@@ -880,7 +893,7 @@ def ask_llm(
         "num_predict": num_predict,
         "top_p": 0.9,
         "top_k": 40,
-        "repeat_penalty": 1.05
+        "repeat_penalty": 1.05,
     }
 
     try:
@@ -889,7 +902,7 @@ def ask_llm(
             model=config.RAG_CHAT_MODEL,
             options=options,
             timeout=(config.CHAT_CONNECT_T, config.CHAT_READ_T),
-            retries=retries
+            retries=retries,
         )
         msg = (response.get("message") or {}).get("content")
         if msg:
@@ -909,7 +922,9 @@ def hybrid_score(bm25_score: float, dense_score: float, alpha: float = 0.5) -> f
 
 
 # ====== DYNAMIC PACKING ======
-def pack_snippets_dynamic(chunk_ids: list, chunks: dict, budget_tokens: int | None = None, target_util: float = 0.75) -> tuple:
+def pack_snippets_dynamic(
+    chunk_ids: list, chunks: dict, budget_tokens: int | None = None, target_util: float = 0.75
+) -> tuple:
     """Pack snippets with dynamic targeting. Returns (snippets, used_tokens, was_truncated)."""
     if budget_tokens is None:
         budget_tokens = config.CTX_TOKEN_BUDGET

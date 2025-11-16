@@ -103,23 +103,15 @@ def test_metrics_endpoint_tracks_pipeline(reset_metrics, patched_pipeline):
         assert response_ok.status_code == 200
 
         metrics_after_first = client.get("/v1/metrics").json()
-        assert (
-            metrics_after_first["counters"].get(MetricNames.QUERIES_TOTAL, 0)
-            == base_queries + 1
-        )
+        assert metrics_after_first["counters"].get(MetricNames.QUERIES_TOTAL, 0) == base_queries + 1
 
         # Second query triggers coverage refusal via patched pipeline
         response_refused = client.post("/v1/query", json={"question": "How do I track time?"})
         assert response_refused.status_code == 200
 
         metrics_after_second = client.get("/v1/metrics").json()
-        assert (
-            metrics_after_second["counters"].get(MetricNames.QUERIES_TOTAL, 0)
-            == base_queries + 2
-        )
-        refusals_total = _counter_total(
-            metrics_after_second["counters"], MetricNames.REFUSALS_TOTAL
-        )
+        assert metrics_after_second["counters"].get(MetricNames.QUERIES_TOTAL, 0) == base_queries + 2
+        refusals_total = _counter_total(metrics_after_second["counters"], MetricNames.REFUSALS_TOTAL)
         assert refusals_total >= 1
 
         # Latency histograms should record observations
@@ -129,9 +121,7 @@ def test_metrics_endpoint_tracks_pipeline(reset_metrics, patched_pipeline):
         assert MetricNames.RETRIEVAL_LATENCY in hist_stats
 
         # Rate limiter metrics should reflect allowed requests
-        allowed_total = _counter_total(
-            metrics_after_second["counters"], MetricNames.RATE_LIMIT_ALLOWED
-        )
+        allowed_total = _counter_total(metrics_after_second["counters"], MetricNames.RATE_LIMIT_ALLOWED)
         assert allowed_total >= 2
 
         # Prometheus format should be available and include key metrics

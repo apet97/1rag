@@ -59,9 +59,7 @@ async def test_ingest_then_query_succeeds(tmp_path, monkeypatch):
     async with LifespanManager(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            ingest_response = await client.post(
-                "/v1/ingest", json={"input_file": str(kb_path)}
-            )
+            ingest_response = await client.post("/v1/ingest", json={"input_file": str(kb_path)})
 
             assert ingest_response.status_code == 200
             assert build_calls == {"path": str(kb_path), "retries": 2}
@@ -75,9 +73,7 @@ async def test_ingest_then_query_succeeds(tmp_path, monkeypatch):
 
             assert app.state.index_ready is True
 
-            query_response = await client.post(
-                "/v1/query", json={"question": "How do I use this?"}
-            )
+            query_response = await client.post("/v1/query", json={"question": "How do I use this?"})
 
             assert query_response.status_code == 200
             assert query_response.json()["answer"] == "ready"
@@ -117,9 +113,7 @@ async def test_ingest_failure_clears_cached_state(tmp_path, monkeypatch):
     async with LifespanManager(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
-            ingest_response = await client.post(
-                "/v1/ingest", json={"input_file": str(kb_path)}
-            )
+            ingest_response = await client.post("/v1/ingest", json={"input_file": str(kb_path)})
 
             assert ingest_response.status_code == 200
             assert build_calls["count"] == 1
@@ -141,4 +135,3 @@ async def test_ingest_failure_clears_cached_state(tmp_path, monkeypatch):
             assert app.state.vecs_n is None
             assert app.state.bm is None
             assert app.state.hnsw is None
-

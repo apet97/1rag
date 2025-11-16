@@ -28,7 +28,7 @@ def _cleanup_thread_local_session():
 
     FIX (Error #3): Prevent session leaks in long-running processes with thread churn.
     """
-    if hasattr(_thread_local, 'session'):
+    if hasattr(_thread_local, "session"):
         try:
             _thread_local.session.close()
             logger.debug("Closed thread-local session on thread exit")
@@ -58,14 +58,20 @@ def _mount_retries(sess: requests.Session, retries: int):
     concurrency and reduced latency on concurrent queries (10-20% improvement).
     """
     from requests.adapters import HTTPAdapter
+
     backoff_factor = 0.5
 
     try:
         from urllib3.util.retry import Retry  # urllib3 v2
+
         retry_cls = Retry
         kwargs = dict(
-            total=retries, connect=retries, read=retries, status=retries,
-            backoff_factor=backoff_factor, raise_on_status=False,
+            total=retries,
+            connect=retries,
+            read=retries,
+            status=retries,
+            backoff_factor=backoff_factor,
+            raise_on_status=False,
             status_forcelist=[429, 500, 502, 503, 504],
             allowed_methods=frozenset({"GET", "POST"}),
             respect_retry_after_header=True,
@@ -74,10 +80,15 @@ def _mount_retries(sess: requests.Session, retries: int):
     except Exception:
         # older urllib3
         from urllib3.util import Retry as RetryOld
+
         retry_cls = RetryOld
         kwargs = dict(
-            total=retries, connect=retries, read=retries, status=retries,
-            backoff_factor=backoff_factor, raise_on_status=False,
+            total=retries,
+            connect=retries,
+            read=retries,
+            status=retries,
+            backoff_factor=backoff_factor,
+            raise_on_status=False,
             status_forcelist=[429, 500, 502, 503, 504],
             method_whitelist=frozenset({"GET", "POST"}),
         )
@@ -89,7 +100,7 @@ def _mount_retries(sess: requests.Session, retries: int):
     adapter = HTTPAdapter(
         max_retries=retry_strategy,
         pool_connections=10,  # Support up to 10 different hosts
-        pool_maxsize=20       # Allow 20 concurrent connections per host
+        pool_maxsize=20,  # Allow 20 concurrent connections per host
     )
     sess.mount("http://", adapter)
     sess.mount("https://", adapter)
@@ -119,10 +130,10 @@ def get_session(retries=0, use_thread_local=True) -> requests.Session:
         requests.Session instance (thread-local or global)
     """
     from .config import allow_proxies_enabled  # Import here to avoid circular import
-    
+
     if use_thread_local:
         # Thread-local session for safe parallel usage
-        if not hasattr(_thread_local, 'session'):
+        if not hasattr(_thread_local, "session"):
             _thread_local.session = requests.Session()
             _thread_local.session.trust_env = allow_proxies_enabled()
             _thread_local.retries = 0
@@ -190,6 +201,4 @@ def http_post_with_retries(url: str, json_payload: dict, retries=3, backoff=0.5,
         return r.json()
     except requests.exceptions.RequestException as e:
         # Adapter already handled retries, this is the final failure
-        raise requests.exceptions.RequestException(
-            f"HTTP POST to {url} failed after {retries} retries: {e}"
-        ) from e
+        raise requests.exceptions.RequestException(f"HTTP POST to {url} failed after {retries} retries: {e}") from e

@@ -153,10 +153,10 @@ def get_plugin(plugin_type: str, name: str) -> Optional[Any]:
         Plugin instance or None if not found
     """
     getters = {
-        'retriever': _registry.get_retriever,
-        'reranker': _registry.get_reranker,
-        'embedding': _registry.get_embedding,
-        'index': _registry.get_index,
+        "retriever": _registry.get_retriever,
+        "reranker": _registry.get_reranker,
+        "embedding": _registry.get_embedding,
+        "index": _registry.get_index,
     }
 
     getter = getters.get(plugin_type)

@@ -17,6 +17,7 @@ def test_chat_repl_json_output(monkeypatch, capsys):
 
     # Import build from indexing module
     import clockify_rag.indexing
+
     monkeypatch.setattr(clockify_rag.indexing, "build", lambda *_, **__: None)
 
     # Provide deterministic artifacts and retrieval response
@@ -33,6 +34,7 @@ def test_chat_repl_json_output(monkeypatch, capsys):
         }
 
     import clockify_rag.answer
+
     monkeypatch.setattr(clockify_rag.answer, "answer_once", fake_answer_once)
 
     # Simulate a single question followed by EOF to exit the REPL

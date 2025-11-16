@@ -23,11 +23,7 @@ from clockify_rag import (
 @pytest.fixture
 def sample_kb_path():
     """Path to the sample knowledge base."""
-    return os.path.join(
-        os.path.dirname(__file__),
-        "fixtures",
-        "sample_kb.md"
-    )
+    return os.path.join(os.path.dirname(__file__), "fixtures", "sample_kb.md")
 
 
 @pytest.fixture
@@ -46,6 +42,7 @@ def built_index(sample_kb_path, temp_build_dir):
 
     Returns (idx, temp_build_dir) tuple.
     """
+
     # Mock embedding function
     def mock_embed_batch(texts, normalize=False):
         n = len(texts)
@@ -69,8 +66,8 @@ def built_index(sample_kb_path, temp_build_dir):
 
     # Verify index structure
     assert "chunks" in idx, "Index should have chunks"
-    assert ("vecs_n" in idx or "vecs" in idx), "Index should have embeddings"
-    assert ("bm" in idx or "bm25" in idx), "Index should have BM25 index"
+    assert "vecs_n" in idx or "vecs" in idx, "Index should have embeddings"
+    assert "bm" in idx or "bm25" in idx, "Index should have BM25 index"
 
     # Normalize keys for consistency
     if "vecs_n" in idx and "vecs" not in idx:
@@ -86,6 +83,7 @@ class TestBuildPipeline:
 
     def test_build_creates_all_artifacts(self, sample_kb_path, temp_build_dir):
         """Test that build creates all required index files."""
+
         # Mock embeddings to avoid external dependencies
         def mock_embed_batch(texts, normalize=False):
             n = len(texts)

@@ -376,9 +376,24 @@ def query(
                 timing=timing,
                 refused=refused,
             )
+            chunk_ids = result.get("selected_chunk_ids")
+            sources = []
+
+            if chunk_ids:
+                for identifier in chunk_ids:
+                    sources.append(identifier if isinstance(identifier, str) else str(identifier))
+            elif selected_chunks:
+                for identifier in selected_chunks:
+                    if isinstance(identifier, dict) and identifier.get("id"):
+                        sources.append(str(identifier["id"]))
+                    elif isinstance(identifier, int) and 0 <= identifier < len(chunks):
+                        sources.append(str(chunks[identifier]["id"]))
+                    else:
+                        sources.append(str(identifier))
+
             payload["question"] = question
-            payload["sources"] = selected_chunks
-            payload["num_sources"] = len(selected_chunks)
+            payload["sources"] = sources
+            payload["num_sources"] = len(sources)
             console.print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             console.print()
@@ -453,9 +468,7 @@ def chat(
 
 @app.command()
 def eval(
-    questions_file: str = typer.Option(
-        "data/eval_questions.jsonl", "--questions", "-q", help="Questions JSONL file"
-    ),
+    questions_file: str = typer.Option("data/eval_questions.jsonl", "--questions", "-q", help="Questions JSONL file"),
     output_dir: str = typer.Option("var/reports", "--output", "-o", help="Output directory for reports"),
     sample_size: Optional[int] = typer.Option(None, "--sample", "-s", help="Sample size (default: all)"),
     metrics: Optional[str] = typer.Option(

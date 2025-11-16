@@ -26,6 +26,7 @@ def _load_st_encoder():
     global _ST_ENCODER
     if _ST_ENCODER is None:
         from sentence_transformers import SentenceTransformer
+
         _ST_ENCODER = SentenceTransformer("all-MiniLM-L6-v2")
         logger.debug("Loaded SentenceTransformer: all-MiniLM-L6-v2 (384-dim)")
     return _ST_ENCODER
@@ -40,7 +41,8 @@ def _load_cross_encoder():
     global _CROSS_ENCODER
     if _CROSS_ENCODER is None:
         from sentence_transformers import CrossEncoder
-        _CROSS_ENCODER = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-12-v2')
+
+        _CROSS_ENCODER = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-12-v2")
         logger.debug("Loaded CrossEncoder: ms-marco-MiniLM-L-12-v2 (for reranking)")
     return _CROSS_ENCODER
 
@@ -65,7 +67,7 @@ def rerank_cross_encoder(query: str, chunks: list, top_k: int = 6) -> list:
     model = _load_cross_encoder()
 
     # Create query-document pairs
-    pairs = [[query, chunk.get('text', '')] for chunk in chunks]
+    pairs = [[query, chunk.get("text", "")] for chunk in chunks]
 
     # Score all pairs (batch prediction is fast)
     scores = model.predict(pairs)
@@ -76,7 +78,9 @@ def rerank_cross_encoder(query: str, chunks: list, top_k: int = 6) -> list:
     # Return top_k
     result = [chunk for chunk, score in ranked[:top_k]]
 
-    logger.debug(f"[cross-encoder] Reranked {len(chunks)} → {len(result)} chunks (scores: {[f'{s:.3f}' for _, s in ranked[:top_k]]})")
+    logger.debug(
+        f"[cross-encoder] Reranked {len(chunks)} → {len(result)} chunks (scores: {[f'{s:.3f}' for _, s in ranked[:top_k]]})"
+    )
     return result
 
 
@@ -85,7 +89,7 @@ def embed_local_batch(texts: list, normalize: bool = True) -> np.ndarray:
     model = _load_st_encoder()
     vecs = []
     for i in range(0, len(texts), _ST_BATCH_SIZE):
-        batch = texts[i:i+_ST_BATCH_SIZE]
+        batch = texts[i : i + _ST_BATCH_SIZE]
         batch_vecs = model.encode(batch, normalize_embeddings=normalize, convert_to_numpy=True)
         vecs.append(batch_vecs.astype("float32"))
     return np.vstack(vecs) if vecs else np.zeros((0, config.EMB_DIM), dtype="float32")
@@ -134,7 +138,7 @@ def _embed_single_text(index: int, text: str, retries: int, total: int) -> tuple
     """
     # Use the API client for structured embedding requests
     from .api_client import create_embedding
-    
+
     try:
         # Validate embedding is not empty
         emb = create_embedding(
@@ -143,7 +147,7 @@ def _embed_single_text(index: int, text: str, retries: int, total: int) -> tuple
             timeout=(config.EMB_CONNECT_T, config.EMB_READ_T),
             retries=retries,
         )
-        
+
         if not emb or len(emb) == 0:
             raise EmbeddingError(f"Embedding chunk {index}: empty embedding returned (check Ollama API format)")
 
@@ -288,8 +292,7 @@ def load_embedding_cache() -> dict:
 
             valid_count = len(cache)
             logger.info(
-                f"[INFO] Cache loaded: {valid_count} valid embeddings "
-                f"(filtered {filtered_count} mismatched)"
+                f"[INFO] Cache loaded: {valid_count} valid embeddings " f"(filtered {filtered_count} mismatched)"
             )
 
             if filtered_count > 0:
@@ -326,7 +329,7 @@ def save_embedding_cache(cache: dict):
                     "embedding": embedding.tolist(),
                     "backend": config.EMB_BACKEND,  # Store backend for validation
                     "model": config.RAG_EMBED_MODEL if config.EMB_BACKEND == "ollama" else "all-MiniLM-L6-v2",
-                    "dim": int(len(embedding))  # Store dimension for validation
+                    "dim": int(len(embedding)),  # Store dimension for validation
                 }
                 f.write(json.dumps(entry) + "\n")
         # Ensure write hits disk before rename
@@ -346,19 +349,20 @@ def embed_query(question: str, retries=0) -> np.ndarray:
     else:
         # Use the API client approach for single embeddings too
         from .api_client import create_embedding
+
         try:
             embedding = create_embedding(
                 text=question,
                 model=config.RAG_EMBED_MODEL,
                 timeout=(config.EMB_CONNECT_T, config.EMB_READ_T),
-                retries=retries
+                retries=retries,
             )
             vec = np.array(embedding, dtype=np.float32)
         except Exception:
             # Fallback to the old method if API client fails
             vecs = embed_texts([question], retries=retries)
             vec = vecs[0]
-        
+
         # Normalize for cosine similarity
         norm = np.linalg.norm(vec)
         if norm > 0:

@@ -14,18 +14,8 @@ Example usage:
     register_plugin('my_retriever', MyRetriever())
 """
 
-from .interfaces import (
-    RetrieverPlugin,
-    RerankPlugin,
-    EmbeddingPlugin,
-    IndexPlugin
-)
-from .registry import (
-    PluginRegistry,
-    register_plugin,
-    get_plugin,
-    list_plugins
-)
+from .interfaces import RetrieverPlugin, RerankPlugin, EmbeddingPlugin, IndexPlugin
+from .registry import PluginRegistry, register_plugin, get_plugin, list_plugins
 
 __all__ = [
     # Interfaces

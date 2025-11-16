@@ -50,10 +50,7 @@ logger = logging.getLogger(__name__)
 
 
 def apply_mmr_diversification(
-    selected: List[int],
-    scores: Dict[str, Any],
-    vecs_n: np.ndarray,
-    pack_top: int
+    selected: List[int], scores: Dict[str, Any], vecs_n: np.ndarray, pack_top: int
 ) -> List[int]:
     """Apply Maximal Marginal Relevance diversification to selected chunks.
 
@@ -126,7 +123,7 @@ def apply_reranking(
     seed: int = DEFAULT_SEED,
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
-    retries: int = DEFAULT_RETRIES
+    retries: int = DEFAULT_RETRIES,
 ) -> Tuple[List[int], Dict, bool, str, float]:
     """Apply optional LLM reranking to MMR-selected chunks.
 
@@ -171,16 +168,17 @@ def extract_citations(text: str) -> List[str]:
     - Mixed: [id_123, 456, abc-def]
     """
     import re
+
     # Match brackets containing citation IDs (single or comma-separated)
     # First, find all bracketed content: [...]
-    bracket_pattern = r'\[([^\]]+)\]'
+    bracket_pattern = r"\[([^\]]+)\]"
     bracket_matches = re.findall(bracket_pattern, text)
 
     citations = []
     for match in bracket_matches:
         # Split by comma and extract individual IDs
         # Match alphanumeric IDs with underscores and hyphens
-        id_pattern = r'([a-zA-Z0-9_-]+)'
+        id_pattern = r"([a-zA-Z0-9_-]+)"
         ids = re.findall(id_pattern, match)
         citations.extend([id.strip() for id in ids if id.strip()])
 
@@ -215,7 +213,7 @@ def generate_llm_answer(
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
-    packed_ids: Optional[List] = None
+    packed_ids: Optional[List] = None,
 ) -> Tuple[str, float, Optional[int]]:
     """Generate answer from LLM given question and context with confidence scoring and citation validation.
 
@@ -232,7 +230,9 @@ def generate_llm_answer(
         - confidence: 0-100 score, or None if not provided/parsable
     """
     t0 = time.time()
-    raw_response = ask_llm(question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries).strip()
+    raw_response = ask_llm(
+        question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+    ).strip()
     timing = time.time() - t0
 
     # Parse JSON response with confidence
@@ -304,7 +304,9 @@ def generate_llm_answer(
 
             if invalid_cites:
                 if STRICT_CITATIONS:
-                    logger.warning(f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer")
+                    logger.warning(
+                        f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer"
+                    )
                     answer = REFUSAL_STR
                     confidence = None
                 else:
@@ -330,7 +332,7 @@ def answer_once(
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
-    faiss_index_path: Optional[str] = None
+    faiss_index_path: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Complete answer generation pipeline.
 
@@ -363,23 +365,26 @@ def answer_once(
             else:
                 normalized.append(item)
         return normalized
+
     metrics.increment_counter(MetricNames.QUERIES_TOTAL)
     question_preview = sanitize_for_log(question, max_length=200)
     question_hash = hashlib.sha256(question.encode("utf-8")).hexdigest()[:12]
-    logger.info(json.dumps({
-        "event": "rag.query.start",
-        "question_hash": question_hash,
-        "question_preview": question_preview,
-        "top_k": top_k,
-        "pack_top": pack_top,
-    }))
+    logger.info(
+        json.dumps(
+            {
+                "event": "rag.query.start",
+                "question_hash": question_hash,
+                "question_preview": question_preview,
+                "top_k": top_k,
+                "pack_top": pack_top,
+            }
+        )
+    )
 
     # Retrieve
     t0 = time.time()
     selected, scores = retrieve(
-        question, chunks, vecs_n, bm,
-        top_k=top_k, hnsw=hnsw, retries=retries,
-        faiss_index_path=faiss_index_path
+        question, chunks, vecs_n, bm, top_k=top_k, hnsw=hnsw, retries=retries, faiss_index_path=faiss_index_path
     )
     retrieve_time = time.time() - t0
 
@@ -390,12 +395,16 @@ def answer_once(
         total_time = time.time() - t_start
         metrics.observe_histogram(MetricNames.QUERY_LATENCY, total_time * 1000)
         metrics.observe_histogram(MetricNames.RETRIEVAL_LATENCY, retrieve_time * 1000)
-        logger.warning(json.dumps({
-            "event": "rag.query.coverage_failure",
-            "question_hash": question_hash,
-            "selected": len(selected),
-            "threshold": threshold,
-        }))
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "rag.query.coverage_failure",
+                    "question_hash": question_hash,
+                    "selected": len(selected),
+                    "threshold": threshold,
+                }
+            )
+        )
         return {
             "answer": REFUSAL_STR,
             "refused": True,
@@ -410,10 +419,7 @@ def answer_once(
                 "rerank_ms": 0,
                 "llm_ms": 0,
             },
-            "metadata": {
-                "retrieval_count": len(selected),
-                "coverage_check": "failed"
-            },
+            "metadata": {"retrieval_count": len(selected), "coverage_check": "failed"},
             "routing": get_routing_action(None, refused=True, critical=False),
         }
 
@@ -424,25 +430,34 @@ def answer_once(
 
     # Optional reranking
     mmr_selected, rerank_scores, rerank_applied, rerank_reason, rerank_time = apply_reranking(
-        question, chunks, mmr_selected, scores, use_rerank,
-        seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+        question,
+        chunks,
+        mmr_selected,
+        scores,
+        use_rerank,
+        seed=seed,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
+        retries=retries,
     )
 
     # Pack snippets
-    context_block, packed_ids, used_tokens = pack_snippets(
-        chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
-    )
+    context_block, packed_ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx)
 
     def _llm_failure(reason: str, error: Exception) -> Dict[str, Any]:
         total_time = time.time() - t_start
         metrics.increment_counter(MetricNames.ERRORS_TOTAL, labels={"type": reason})
         metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels={"reason": reason})
-        logger.error(json.dumps({
-            "event": "rag.query.failure",
-            "reason": reason,
-            "question_hash": question_hash,
-            "message": str(error),
-        }))
+        logger.error(
+            json.dumps(
+                {
+                    "event": "rag.query.failure",
+                    "reason": reason,
+                    "question_hash": question_hash,
+                    "message": str(error),
+                }
+            )
+        )
         metrics.observe_histogram(MetricNames.QUERY_LATENCY, total_time * 1000)
         metrics.observe_histogram(MetricNames.RETRIEVAL_LATENCY, retrieve_time * 1000)
         return {
@@ -475,9 +490,13 @@ def answer_once(
     # Generate answer
     try:
         answer, llm_time, confidence = generate_llm_answer(
-            question, context_block,
-            seed=seed, num_ctx=num_ctx, num_predict=num_predict,
-            retries=retries, packed_ids=packed_ids
+            question,
+            context_block,
+            seed=seed,
+            num_ctx=num_ctx,
+            num_predict=num_predict,
+            retries=retries,
+            packed_ids=packed_ids,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during answer generation: {exc}")
@@ -491,20 +510,24 @@ def answer_once(
     metrics.observe_histogram(MetricNames.RETRIEVAL_LATENCY, retrieve_time * 1000)
     metrics.observe_histogram(MetricNames.LLM_LATENCY, llm_time * 1000)
 
-    refused = (answer == REFUSAL_STR)
+    refused = answer == REFUSAL_STR
     if refused:
         metrics.increment_counter(MetricNames.ERRORS_TOTAL, labels={"type": "refused"})
         metrics.increment_counter(MetricNames.REFUSALS_TOTAL, labels={"reason": "llm"})
-    logger.info(json.dumps({
-        "event": "rag.query.complete",
-        "question_hash": question_hash,
-        "refused": refused,
-        "selected": len(selected),
-        "packed": len(packed_ids),
-        "confidence": confidence,
-        "total_ms": round(total_time * 1000, 2),
-        "llm_ms": round(llm_time * 1000, 2),
-    }))
+    logger.info(
+        json.dumps(
+            {
+                "event": "rag.query.complete",
+                "question_hash": question_hash,
+                "refused": refused,
+                "selected": len(selected),
+                "packed": len(packed_ids),
+                "confidence": confidence,
+                "total_ms": round(total_time * 1000, 2),
+                "llm_ms": round(llm_time * 1000, 2),
+            }
+        )
+    )
 
     # OPTIMIZATION (Analysis Section 9.1 #4): Confidence-based routing
     # Auto-escalate low-confidence queries to human review
@@ -533,7 +556,7 @@ def answer_once(
             "rerank_reason": rerank_reason,
             "source_chunk_ids": _normalize_chunk_ids(packed_ids),
         },
-        "routing": routing  # Add routing recommendation
+        "routing": routing,  # Add routing recommendation
     }
 
 

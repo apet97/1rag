@@ -39,27 +39,31 @@ def ensure_index_ready(retries=0) -> Tuple:
 
     artifacts_ok = True
     missing_files = []
-    for fname in [config.FILES["chunks"], config.FILES["emb"], config.FILES["meta"], config.FILES["bm25"], config.FILES["index_meta"]]:
+    for fname in [
+        config.FILES["chunks"],
+        config.FILES["emb"],
+        config.FILES["meta"],
+        config.FILES["bm25"],
+        config.FILES["index_meta"],
+    ]:
         if not os.path.exists(fname):
             artifacts_ok = False
             missing_files.append(fname)
 
     if not artifacts_ok:
-        logger.info(f"[rebuild] artifacts missing or invalid: building from knowledge_full.md... (missing: {', '.join(missing_files)})")
+        logger.info(
+            f"[rebuild] artifacts missing or invalid: building from knowledge_full.md... (missing: {', '.join(missing_files)})"
+        )
         if os.path.exists("knowledge_full.md"):
             try:
                 build("knowledge_full.md", retries=retries)
             except Exception as e:
                 log_and_raise(
-                    IndexLoadError,
-                    f"Failed to build index: {str(e)}",
-                    "check knowledge_full.md file and configuration"
+                    IndexLoadError, f"Failed to build index: {str(e)}", "check knowledge_full.md file and configuration"
                 )
         else:
             log_and_raise(
-                IndexLoadError,
-                "knowledge_full.md not found",
-                "provide a valid knowledge base file to build the index"
+                IndexLoadError, "knowledge_full.md not found", "provide a valid knowledge base file to build the index"
             )
 
     result = load_index()
@@ -73,20 +77,20 @@ def ensure_index_ready(retries=0) -> Tuple:
                 log_and_raise(
                     IndexLoadError,
                     f"Failed to rebuild index: {str(e)}",
-                    "check knowledge_full.md file and configuration"
+                    "check knowledge_full.md file and configuration",
                 )
         else:
             log_and_raise(
                 IndexLoadError,
                 "knowledge_full.md not found after validation failure",
-                "provide a valid knowledge base file to build the index"
+                "provide a valid knowledge base file to build the index",
             )
 
     if result is None:
         log_and_raise(
             IndexLoadError,
             "Failed to load artifacts after rebuild",
-            "the index may be corrupted; try deleting index files and rebuilding"
+            "the index may be corrupted; try deleting index files and rebuilding",
         )
 
     # Handle both dict (from library) and tuple (from test mocks) for backward compatibility
@@ -103,19 +107,39 @@ def ensure_index_ready(retries=0) -> Tuple:
         log_and_raise(
             TypeError,
             f"load_index() must return dict or tuple, got {type(result)}",
-            "contact support - this indicates a system error"
+            "contact support - this indicates a system error",
         )
 
     return chunks, vecs_n, bm, hnsw
 
 
-def chat_repl(top_k=12, pack_top=6, threshold=0.30, use_rerank=False, debug=False, seed=config.DEFAULT_SEED, num_ctx=config.DEFAULT_NUM_CTX, num_predict=config.DEFAULT_NUM_PREDICT, retries=0, use_json=False):
+def chat_repl(
+    top_k=12,
+    pack_top=6,
+    threshold=0.30,
+    use_rerank=False,
+    debug=False,
+    seed=config.DEFAULT_SEED,
+    num_ctx=config.DEFAULT_NUM_CTX,
+    num_predict=config.DEFAULT_NUM_PREDICT,
+    retries=0,
+    use_json=False,
+):
     """Stateless REPL loop - Task I. v4.1: JSON output support.
 
     OPTIMIZATION: Loads query cache from disk on startup and saves on exit for persistence.
     """
     # Task I: log config summary at startup
-    _log_config_summary(use_rerank=use_rerank, pack_top=pack_top, seed=seed, threshold=threshold, top_k=top_k, num_ctx=num_ctx, num_predict=num_predict, retries=retries)
+    _log_config_summary(
+        use_rerank=use_rerank,
+        pack_top=pack_top,
+        seed=seed,
+        threshold=threshold,
+        top_k=top_k,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
+        retries=retries,
+    )
 
     # Lazy build and startup sanity check
     chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=retries)
@@ -244,6 +268,7 @@ def warmup_on_startup():
     # Warm-up embedding (Rank 3: 50-100ms saved on first query)
     try:
         from .embedding import embed_texts
+
         embed_texts(["warmup query"], suppress_errors=True)
     except Exception as e:
         logger.warning(f"Embedding warmup failed: {e}")
@@ -264,6 +289,7 @@ def warmup_on_startup():
     if config.USE_ANN == "faiss":
         try:
             from .indexing import load_faiss_index
+
             _ = load_faiss_index()
             logger.debug("FAISS index preloaded")
         except Exception as e:
@@ -280,12 +306,24 @@ def setup_cli_args():
     """
     # Create parent parser for common flags shared across subcommands
     common_flags = argparse.ArgumentParser(add_help=False)
-    common_flags.add_argument("--emb-backend", choices=["local", "ollama"], default=config.EMB_BACKEND,
-                             help="Embedding backend: local (SentenceTransformer) or ollama (default local)")
-    common_flags.add_argument("--ann", choices=["faiss", "none"], default=config.USE_ANN,
-                             help="ANN index: faiss (IVFFlat) or none (full-scan, default faiss)")
-    common_flags.add_argument("--alpha", type=float, default=config.ALPHA_HYBRID,
-                             help="Hybrid scoring blend: alpha*BM25 + (1-alpha)*dense (default 0.5)")
+    common_flags.add_argument(
+        "--emb-backend",
+        choices=["local", "ollama"],
+        default=config.EMB_BACKEND,
+        help="Embedding backend: local (SentenceTransformer) or ollama (default local)",
+    )
+    common_flags.add_argument(
+        "--ann",
+        choices=["faiss", "none"],
+        default=config.USE_ANN,
+        help="ANN index: faiss (IVFFlat) or none (full-scan, default faiss)",
+    )
+    common_flags.add_argument(
+        "--alpha",
+        type=float,
+        default=config.ALPHA_HYBRID,
+        help="Hybrid scoring blend: alpha*BM25 + (1-alpha)*dense (default 0.5)",
+    )
 
     # Create parent parser for query-related flags shared by 'chat' and 'ask' subcommands
     # FIX (v5.10): Consolidate duplicate flag definitions to single source of truth
@@ -294,27 +332,38 @@ def setup_cli_args():
     query_flags.add_argument("--rerank", action="store_true", help="Enable LLM-based reranking")
     query_flags.add_argument("--topk", type=int, default=config.DEFAULT_TOP_K, help="Top-K candidates (default 15)")
     query_flags.add_argument("--pack", type=int, default=config.DEFAULT_PACK_TOP, help="Snippets to pack (default 8)")
-    query_flags.add_argument("--threshold", type=float, default=config.DEFAULT_THRESHOLD, help="Cosine threshold (default 0.25)")
+    query_flags.add_argument(
+        "--threshold", type=float, default=config.DEFAULT_THRESHOLD, help="Cosine threshold (default 0.25)"
+    )
     query_flags.add_argument("--seed", type=int, default=config.DEFAULT_SEED, help="Random seed for LLM (default 42)")
-    query_flags.add_argument("--num-ctx", type=int, default=config.DEFAULT_NUM_CTX, help=f"LLM context window (default {config.DEFAULT_NUM_CTX})")
-    query_flags.add_argument("--num-predict", type=int, default=config.DEFAULT_NUM_PREDICT, help="LLM max generation tokens (default 512)")
-    query_flags.add_argument("--retries", type=int, default=config.DEFAULT_RETRIES, help="Retries for transient errors (default 2)")
-    query_flags.add_argument("--no-expand", action="store_true",
-                             help="Disable query expansion (synonym substitution)")
-    query_flags.add_argument("--faiss-multiplier", type=int, default=config.FAISS_CANDIDATE_MULTIPLIER,
-                             help="FAISS candidate multiplier: retrieve top_k * N for reranking (default 3)")
+    query_flags.add_argument(
+        "--num-ctx",
+        type=int,
+        default=config.DEFAULT_NUM_CTX,
+        help=f"LLM context window (default {config.DEFAULT_NUM_CTX})",
+    )
+    query_flags.add_argument(
+        "--num-predict", type=int, default=config.DEFAULT_NUM_PREDICT, help="LLM max generation tokens (default 512)"
+    )
+    query_flags.add_argument(
+        "--retries", type=int, default=config.DEFAULT_RETRIES, help="Retries for transient errors (default 2)"
+    )
+    query_flags.add_argument("--no-expand", action="store_true", help="Disable query expansion (synonym substitution)")
+    query_flags.add_argument(
+        "--faiss-multiplier",
+        type=int,
+        default=config.FAISS_CANDIDATE_MULTIPLIER,
+        help="FAISS candidate multiplier: retrieve top_k * N for reranking (default 3)",
+    )
     query_flags.add_argument("--json", action="store_true", help="Output answer as JSON with metrics (v4.1)")
 
     ap = argparse.ArgumentParser(
-        prog="clockify_support_cli",
-        description="Clockify internal support chatbot (offline, stateless, closed-book)"
+        prog="clockify_support_cli", description="Clockify internal support chatbot (offline, stateless, closed-book)"
     )
 
     # Global logging and config arguments
-    ap.add_argument("--log", default="INFO", choices=["DEBUG", "INFO", "WARN"],
-                    help="Logging level (default INFO)")
-    ap.add_argument("--no-log", action="store_true",
-                    help="Disable query log file writes (privacy mode)")
+    ap.add_argument("--log", default="INFO", choices=["DEBUG", "INFO", "WARN"], help="Logging level (default INFO)")
+    ap.add_argument("--no-log", action="store_true", help="Disable query log file writes (privacy mode)")
     ap.add_argument(
         "--ollama-url",
         type=str,
@@ -324,14 +373,27 @@ def setup_cli_args():
             f"override with {config.DEFAULT_LOCAL_OLLAMA_URL} for local Ollama)"
         ),
     )
-    ap.add_argument("--gen-model", type=str, default=None,
-                    help="Generation model name (default from RAG_CHAT_MODEL env or qwen2.5:32b)")
-    ap.add_argument("--emb-model", type=str, default=None,
-                    help="Embedding model name (default from RAG_EMBED_MODEL env or nomic-embed-text:latest)")
-    ap.add_argument("--ctx-budget", type=int, default=None,
-                    help="Context token budget (default from CTX_BUDGET env or 12000)")
-    ap.add_argument("--query-expansions", type=str, default=None,
-                    help="Path to JSON query expansion overrides (default config/query_expansions.json or CLOCKIFY_QUERY_EXPANSIONS env)")
+    ap.add_argument(
+        "--gen-model",
+        type=str,
+        default=None,
+        help="Generation model name (default from RAG_CHAT_MODEL env or qwen2.5:32b)",
+    )
+    ap.add_argument(
+        "--emb-model",
+        type=str,
+        default=None,
+        help="Embedding model name (default from RAG_EMBED_MODEL env or nomic-embed-text:latest)",
+    )
+    ap.add_argument(
+        "--ctx-budget", type=int, default=None, help="Context token budget (default from CTX_BUDGET env or 12000)"
+    )
+    ap.add_argument(
+        "--query-expansions",
+        type=str,
+        default=None,
+        help="Path to JSON query expansion overrides (default config/query_expansions.json or CLOCKIFY_QUERY_EXPANSIONS env)",
+    )
     # Global-only flags
     ap.add_argument("--selftest", action="store_true", help="Run self-tests and exit (v4.1)")
     ap.add_argument("--profile", action="store_true", help="Enable cProfile performance profiling (Rank 29)")
@@ -341,7 +403,9 @@ def setup_cli_args():
     # Build subparser with common flags
     b = subparsers.add_parser("build", help="Build knowledge base", parents=[common_flags])
     b.add_argument("md_path", help="Path to knowledge_full.md")
-    b.add_argument("--retries", type=int, default=config.DEFAULT_RETRIES, help="Retries for transient errors (default 2)")
+    b.add_argument(
+        "--retries", type=int, default=config.DEFAULT_RETRIES, help="Retries for transient errors (default 2)"
+    )
 
     # Chat subparser with common flags and query flags
     c = subparsers.add_parser("chat", help="Start REPL", parents=[common_flags, query_flags])
@@ -386,9 +450,9 @@ def configure_logging_and_config(args):
     QUERY_LOG_DISABLED = query_log_disabled
 
     # Update globals from CLI args
-    config.EMB_BACKEND = getattr(args, 'emb_backend', config.EMB_BACKEND)
-    config.USE_ANN = getattr(args, 'ann', config.USE_ANN)
-    config.ALPHA_HYBRID = getattr(args, 'alpha', config.ALPHA_HYBRID)
+    config.EMB_BACKEND = getattr(args, "emb_backend", config.EMB_BACKEND)
+    config.USE_ANN = getattr(args, "ann", config.USE_ANN)
+    config.ALPHA_HYBRID = getattr(args, "alpha", config.ALPHA_HYBRID)
 
     # Update FAISS multiplier if provided in subcommand args
     if hasattr(args, "faiss_multiplier"):
@@ -397,10 +461,7 @@ def configure_logging_and_config(args):
     # Validate and set config from CLI args
     try:
         validate_and_set_config(
-            ollama_url=args.ollama_url,
-            gen_model=args.gen_model,
-            emb_model=args.emb_model,
-            ctx_budget=args.ctx_budget
+            ollama_url=args.ollama_url, gen_model=args.gen_model, emb_model=args.emb_model, ctx_budget=args.ctx_budget
         )
         validate_chunk_config()
         check_pytorch_mps()
@@ -426,7 +487,7 @@ def handle_ask_command(args):
         top_k=args.topk,
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
-        retries=getattr(args, "retries", 0)
+        retries=getattr(args, "retries", 0),
     )
     chunks, vecs_n, bm, hnsw = ensure_index_ready(retries=getattr(args, "retries", 0))
     result = answer_once(
@@ -442,7 +503,7 @@ def handle_ask_command(args):
         seed=args.seed,
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
-        retries=getattr(args, "retries", 0)
+        retries=getattr(args, "retries", 0),
     )
     metadata = dict(result.get("metadata") or {})
     if "confidence" not in metadata and result.get("confidence") is not None:
@@ -499,7 +560,13 @@ def handle_chat_command(args):
     # Determinism check
     if getattr(args, "det_check", False):
         # Load index once for determinism test
-        for fname in [config.FILES["chunks"], config.FILES["emb"], config.FILES["meta"], config.FILES["bm25"], config.FILES["index_meta"]]:
+        for fname in [
+            config.FILES["chunks"],
+            config.FILES["emb"],
+            config.FILES["meta"],
+            config.FILES["bm25"],
+            config.FILES["index_meta"],
+        ]:
             if not os.path.exists(fname):
                 logger.info("[rebuild] artifacts missing for det-check: building...")
                 if os.path.exists("knowledge_full.md"):
@@ -548,7 +615,7 @@ def handle_chat_command(args):
 
                 h1 = hashlib.md5(ans1.encode()).hexdigest()[:16]
                 h2 = hashlib.md5(ans2.encode()).hexdigest()[:16]
-                deterministic = (h1 == h2)
+                deterministic = h1 == h2
                 logger.info(f"[DETERMINISM] run1={h1} run2={h2} deterministic={deterministic}")
                 print(f'[DETERMINISM] run1={h1} run2={h2} deterministic={"true" if deterministic else "false"}')
                 sys.exit(0 if deterministic else 1)
@@ -570,5 +637,5 @@ def handle_chat_command(args):
         num_ctx=args.num_ctx,
         num_predict=args.num_predict,
         retries=getattr(args, "retries", 0),
-        use_json=getattr(args, "json", False)
+        use_json=getattr(args, "json", False),
     )

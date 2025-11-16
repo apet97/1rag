@@ -18,6 +18,7 @@ def fresh_metrics():
     collector = MetricsCollector()
     # Reset singleton state (if using global)
     import clockify_rag.metrics as metrics_module
+
     old_collector = metrics_module._METRICS
     metrics_module._METRICS = collector
     yield collector

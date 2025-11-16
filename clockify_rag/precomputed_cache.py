@@ -74,11 +74,12 @@ class PrecomputedCache:
             Normalized question string
         """
         import re
+
         q = question.lower().strip()
         # Remove punctuation except spaces
-        q = re.sub(r'[^\w\s]', '', q)
+        q = re.sub(r"[^\w\s]", "", q)
         # Normalize whitespace
-        q = ' '.join(q.split())
+        q = " ".join(q.split())
         return q
 
     def _hash_question(self, question: str) -> str:
@@ -90,7 +91,7 @@ class PrecomputedCache:
         Returns:
             MD5 hash hex string
         """
-        return hashlib.md5(question.encode('utf-8')).hexdigest()
+        return hashlib.md5(question.encode("utf-8")).hexdigest()
 
     def get(self, question: str, fuzzy: bool = True) -> Optional[Dict[str, Any]]:
         """Get precomputed answer for question.
@@ -137,7 +138,7 @@ class PrecomputedCache:
             cache_path: Path to JSON cache file
         """
         try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
+            with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 self.cache = data.get("cache", {})
                 logger.info(f"Loaded precomputed cache: {len(self.cache)} entries from {cache_path}")
@@ -161,13 +162,9 @@ class PrecomputedCache:
         # Ensure directory exists
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
 
-        data = {
-            "version": "1.0",
-            "count": len(self.cache),
-            "cache": self.cache
-        }
+        data = {"version": "1.0", "count": len(self.cache), "cache": self.cache}
 
-        with open(cache_path, 'w', encoding='utf-8') as f:
+        with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
 
         logger.info(f"Saved precomputed cache: {len(self.cache)} entries to {cache_path}")
@@ -186,12 +183,7 @@ class PrecomputedCache:
 
 
 def build_faq_cache(
-    questions: List[str],
-    chunks: List[Dict],
-    vecs_n,
-    bm: Dict,
-    output_path: str = "faq_cache.json",
-    **answer_kwargs
+    questions: List[str], chunks: List[Dict], vecs_n, bm: Dict, output_path: str = "faq_cache.json", **answer_kwargs
 ) -> PrecomputedCache:
     """Build precomputed cache from list of FAQ questions.
 
@@ -238,10 +230,10 @@ def load_faq_list(faq_file: str) -> List[str]:
         List of questions
     """
     questions = []
-    with open(faq_file, 'r', encoding='utf-8') as f:
+    with open(faq_file, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if line and not line.startswith('#'):
+            if line and not line.startswith("#"):
                 questions.append(line)
 
     return questions
