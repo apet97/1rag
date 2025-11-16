@@ -355,7 +355,9 @@ def create_app() -> FastAPI:
                         detail=f"Rate limit exceeded. Retry after {wait_seconds:.2f} seconds.",
                     )
 
-            result = answer_once(
+            loop = asyncio.get_running_loop()
+            answer_future = partial(
+                answer_once,
                 request.question,
                 app.state.chunks,
                 app.state.vecs_n,
@@ -365,6 +367,7 @@ def create_app() -> FastAPI:
                 threshold=request.threshold,
                 hnsw=app.state.hnsw,
             )
+            result = await loop.run_in_executor(None, answer_future)
 
             elapsed_ms = (time.time() - start_time) * 1000
 

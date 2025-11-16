@@ -159,7 +159,7 @@ def _resolve_query_expansion_path():
     import clockify_rag.config as config
     if _query_expansion_override is not None:
         return _query_expansion_override
-    env_path = getattr(config, 'CLOCKIFY_QUERY_EXPANSIONS', None)
+    env_path = config.get_query_expansions_path()
     if env_path:
         return pathlib.Path(env_path)
     return _DEFAULT_QUERY_EXPANSION_PATH

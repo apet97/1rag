@@ -125,6 +125,19 @@ def _get_bool_env(var_name: str, default: str = "1", legacy_keys: Optional[Itera
     return value.lower() not in {"0", "false", "no", "off", ""}
 
 
+def allow_proxies_enabled() -> bool:
+    """Return whether proxy usage is enabled (includes legacy USE_PROXY alias)."""
+
+    return _get_bool_env("ALLOW_PROXIES", "0", legacy_keys=("USE_PROXY",))
+
+
+def get_query_expansions_path() -> Optional[str]:
+    """Return the currently configured query expansion file path."""
+
+    value = _get_env_value("CLOCKIFY_QUERY_EXPANSIONS", None)
+    return value or None
+
+
 # ====== OLLAMA CONFIG ======
 _DEFAULT_RAG_OLLAMA_URL = "http://10.127.0.192:11434"
 DEFAULT_RAG_OLLAMA_URL = _DEFAULT_RAG_OLLAMA_URL
@@ -336,14 +349,14 @@ NLTK_AUTO_DOWNLOAD = _get_bool_env("NLTK_AUTO_DOWNLOAD", "1")
 
 # ====== QUERY EXPANSION CONFIG ======
 # Query expansion file path
-CLOCKIFY_QUERY_EXPANSIONS = _get_env_value("CLOCKIFY_QUERY_EXPANSIONS", None)
+CLOCKIFY_QUERY_EXPANSIONS = get_query_expansions_path()
 
 # Maximum query expansion file size (in bytes)
 MAX_QUERY_EXPANSION_FILE_SIZE = _parse_env_int("MAX_QUERY_EXPANSION_FILE_SIZE", 10485760, min_val=1024, max_val=104857600)  # 10MB default, 100MB max
 
 # ====== PROXY CONFIGURATION ======
 # Optional HTTP proxy support (disabled by default for security)
-ALLOW_PROXIES = _get_bool_env("ALLOW_PROXIES", "0", legacy_keys=("USE_PROXY",))  # Enable proxy usage when set to 1/true/yes
+ALLOW_PROXIES = allow_proxies_enabled()  # Enable proxy usage when set to 1/true/yes
 HTTP_PROXY = _get_env_value("HTTP_PROXY", "") or ""
 HTTPS_PROXY = _get_env_value("HTTPS_PROXY", "") or ""
 

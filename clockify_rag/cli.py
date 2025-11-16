@@ -17,12 +17,14 @@ from . import config
 from .indexing import build, load_index
 from .utils import _log_config_summary, validate_and_set_config, validate_chunk_config, check_pytorch_mps
 from .answer import answer_once, answer_to_json
-from .caching import get_query_cache
+from .caching import get_query_cache, get_rate_limiter, log_query
 from .retrieval import set_query_expansion_path, load_query_expansion_dict, QUERY_EXPANSIONS_ENV_VAR
 from .precomputed_cache import get_precomputed_cache
 from .api_client import get_llm_client, ChatCompletionOptions, ChatMessage
+from .http_utils import http_post_with_retries
 
 logger = logging.getLogger(__name__)
+QUERY_LOG_DISABLED = False
 
 
 def ensure_index_ready(retries=0) -> Tuple:
@@ -379,7 +381,9 @@ def configure_logging_and_config(args):
         logger.error("CONFIG ERROR: %s", exc)
         sys.exit(1)
 
+    global QUERY_LOG_DISABLED
     query_log_disabled = getattr(args, "no_log", False)
+    QUERY_LOG_DISABLED = query_log_disabled
 
     # Update globals from CLI args
     config.EMB_BACKEND = getattr(args, 'emb_backend', config.EMB_BACKEND)
@@ -440,7 +444,9 @@ def handle_ask_command(args):
         num_predict=args.num_predict,
         retries=getattr(args, "retries", 0)
     )
-    metadata = result.get("metadata", {})
+    metadata = dict(result.get("metadata") or {})
+    if "confidence" not in metadata and result.get("confidence") is not None:
+        metadata["confidence"] = result.get("confidence")
     timing = result.get("timing")
     routing = result.get("routing")
     selected_chunks = result.get("selected_chunks", [])
@@ -467,9 +473,29 @@ def handle_ask_command(args):
     else:
         print(ans)
 
+    if not getattr(args, "no_log", False) and not QUERY_LOG_DISABLED:
+        chunk_records: List[dict] = []
+        for idx in selected_chunks:
+            try:
+                chunk = chunks[idx]
+            except Exception:
+                chunk = {"id": str(idx)}
+            chunk_records.append(chunk)
+
+        latency_ms = (timing or {}).get("total_ms") if timing else 0.0
+        log_query(
+            args.question,
+            ans,
+            chunk_records,
+            float(latency_ms or 0.0),
+            refused=refused,
+            metadata=metadata,
+        )
+
 
 def handle_chat_command(args):
     """Handle chat command including determinism check."""
+    call_retries = getattr(args, "retries", 0)
     # Determinism check
     if getattr(args, "det_check", False):
         # Load index once for determinism test
@@ -486,7 +512,6 @@ def handle_chat_command(args):
                 seed = 42
                 np.random.seed(seed)
                 prompt = "What is Clockify?"
-                client = get_llm_client()
                 messages: List[ChatMessage] = [
                     {"role": "system", "content": "Determinism check"},
                     {"role": "user", "content": prompt},
@@ -497,24 +522,27 @@ def handle_chat_command(args):
                     "num_predict": config.DEFAULT_NUM_PREDICT,
                 }
 
-                resp1 = client.chat_completion(
-                    messages=messages,
-                    model=config.RAG_CHAT_MODEL,
-                    options=dict(options),
-                    stream=False,
+                payload = {
+                    "model": config.RAG_CHAT_MODEL,
+                    "messages": messages,
+                    "options": dict(options),
+                    "stream": False,
+                }
+                url = f"{config.RAG_OLLAMA_URL.rstrip('/')}/api/chat"
+                resp1 = http_post_with_retries(
+                    url,
+                    payload,
+                    retries=call_retries or config.DEFAULT_RETRIES,
                     timeout=(config.CHAT_CONNECT_T, config.CHAT_READ_T),
-                    retries=retries or config.DEFAULT_RETRIES,
                 )
                 ans1 = resp1.get("message", {}).get("content", "")
 
                 np.random.seed(seed)
-                resp2 = client.chat_completion(
-                    messages=messages,
-                    model=config.RAG_CHAT_MODEL,
-                    options=dict(options),
-                    stream=False,
+                resp2 = http_post_with_retries(
+                    url,
+                    payload,
+                    retries=call_retries or config.DEFAULT_RETRIES,
                     timeout=(config.CHAT_CONNECT_T, config.CHAT_READ_T),
-                    retries=retries or config.DEFAULT_RETRIES,
                 )
                 ans2 = resp2.get("message", {}).get("content", "")
 

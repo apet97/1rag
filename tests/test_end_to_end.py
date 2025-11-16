@@ -7,14 +7,15 @@ using a simple test document and mocked external dependencies.
 import json
 import tempfile
 from pathlib import Path
+from unittest import mock
 
+import numpy as np
 import pytest
 
 from clockify_rag.config import FILES
 from clockify_rag.chunking import build_chunks
 from clockify_rag.indexing import build, load_index
 from clockify_rag.answer import answer_once
-from clockify_rag.embedding import embed_local_batch
 
 
 def test_end_to_end_rag_pipeline():
@@ -46,8 +47,20 @@ If you encounter issues, try rebuilding the index or checking your configuration
         kb_path = kb_file.name
 
     try:
-        # Test 1: Build the index
-        build(kb_path)
+        def _fake_embed(texts, **_kwargs):
+            vectors = []
+            for text in texts:
+                seed = abs(hash(text)) % (2**32)
+                rng = np.random.default_rng(seed)
+                vectors.append(rng.standard_normal(32))
+            return np.array(vectors, dtype="float32")
+
+        with mock.patch("clockify_rag.embedding.embed_local_batch", _fake_embed), mock.patch(
+            "clockify_rag.embedding.embed_query",
+            lambda text, **kwargs: _fake_embed([text], **kwargs)[0],
+        ):
+            # Test 1: Build the index
+            build(kb_path)
         
         # Verify index files were created
         for file_key in ['chunks', 'emb', 'meta', 'bm25', 'index_meta']:

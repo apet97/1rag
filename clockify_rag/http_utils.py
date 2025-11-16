@@ -118,13 +118,13 @@ def get_session(retries=0, use_thread_local=True) -> requests.Session:
     Returns:
         requests.Session instance (thread-local or global)
     """
-    from .config import ALLOW_PROXIES  # Import here to avoid circular import
+    from .config import allow_proxies_enabled  # Import here to avoid circular import
     
     if use_thread_local:
         # Thread-local session for safe parallel usage
         if not hasattr(_thread_local, 'session'):
             _thread_local.session = requests.Session()
-            _thread_local.session.trust_env = ALLOW_PROXIES
+            _thread_local.session.trust_env = allow_proxies_enabled()
             _thread_local.retries = 0
             # FIX (Error #3): Register session for cleanup
             _sessions_registry.add(_thread_local.session)
@@ -142,7 +142,7 @@ def get_session(retries=0, use_thread_local=True) -> requests.Session:
         if REQUESTS_SESSION is None:
             REQUESTS_SESSION = requests.Session()
             # Set trust_env based on centralized config
-            REQUESTS_SESSION.trust_env = ALLOW_PROXIES
+            REQUESTS_SESSION.trust_env = allow_proxies_enabled()
             # FIX (Error #3): Register global session for cleanup
             _sessions_registry.add(REQUESTS_SESSION)
             if retries > 0:
