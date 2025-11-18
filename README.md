@@ -1,12 +1,29 @@
-# 1rag – Clockify Support CLI v5.8
+# 2rag – Production RAG System with Dual LLM Support
 
-**Status**: ✅ Production Ready (Optimized for Remote Ollama/Qwen Deployments)
-**Version**: 5.8 (Configuration Consolidation & Remote Ollama Optimization - 2025-11-08)
-**Date**: 2025-11-08
+**Status**: ✅ Production Ready
+**Version**: 6.0 (Zero-Config Release for Mac M1 Pro)
+**Date**: 2025-11-18
+**Repository**: [github.com/apet97/2rag](https://github.com/apet97/2rag)
 
-> **Recent**: Consolidated configuration to single source, improved remote Ollama resilience, optimized context budgets for Qwen 32B, enhanced thread safety, and hardened offline deployments. See [CHANGELOG_v5.8.md](CHANGELOG_v5.8.md) for details.
+## 🚀 Zero Configuration Required
 
-A local, stateless, closed-book Retrieval-Augmented Generation (RAG) chatbot for Clockify support documentation using Ollama.
+**Works out-of-box** – No `.env` file, no environment variables, no configuration needed!
+
+Default LLM endpoint: `http://10.127.0.192:11434` (company VPN)
+Default models: `qwen2.5:32b` (chat) + `nomic-embed-text:latest` (embeddings)
+
+```bash
+# Clone and run (4 commands)
+git clone https://github.com/apet97/2rag.git
+cd 2rag
+make dev     # Creates venv + installs deps
+make build   # Builds index (5-10 min, uses local embeddings)
+make chat    # Start chatting!
+```
+
+---
+
+A production-ready Retrieval-Augmented Generation (RAG) system for Clockify support documentation with dual LLM provider support (Ollama/qwen + GPT-OSS-20B).
 
 **New in v5.8**: 🎯 Config consolidation (single source of truth), 🌐 Remote Ollama resilience (retries: 0→2), 🚀 Qwen 32B optimization (context: 2800→6000 tokens), 🔒 Enhanced thread safety, 🔌 Offline-ready (NLTK gated downloads), 🛡️ Query logging security fixes
 **New in v5.5**: 🏗️ Removed 186 lines of duplicate code (cache/rate limiter), 📦 Reuse package implementations
@@ -26,14 +43,43 @@ A local, stateless, closed-book Retrieval-Augmented Generation (RAG) chatbot for
 
 ## Quick Start
 
-### 5-Step Setup
-1. **Clone + install** – `git clone https://github.com/apet97/1rag.git && cd 1rag`, create a virtual env, and run `pip install -e '.[dev]'` (or `pip install .` for runtime-only environments). The legacy `pip install -r requirements.txt` path now maps to `-e .`.
-2. **Configure** – copy `.env.example` to `.env`, set `RAG_OLLAMA_URL` (`http://10.127.0.1:11434` locally or `http://10.127.0.192:11434` on the VPN), and adjust timeouts/retries.
-3. **Validate workstation** – run `make deps-check` (pip check + targeted pytest) followed by `ragctl doctor --verbose` to confirm dependencies, index readiness, and Ollama connectivity.
-4. **Ingest / index** – `make ingest` builds chunks, embeddings, FAISS/BM25 artifacts, and `index.meta.json`.
-5. **Smoke test + run** – `make smoke` (mock client by default) followed by `python3 -m clockify_rag.cli_modern chat` or `uvicorn clockify_rag.api:app`.
+### 🎯 Zero-Config Path (Recommended)
 
-See `docs/CONFIGURATION.md` for every configurable parameter and `docs/OPERATIONS.md` for day-two operational procedures.
+**No environment variables needed!** Just run:
+
+```bash
+git clone https://github.com/apet97/2rag.git
+cd 2rag
+make dev      # Setup venv + install deps (2-3 min)
+make build    # Build index (5-10 min)
+make chat     # Start interactive CLI
+```
+
+**That's it!** The system uses these defaults automatically:
+- LLM endpoint: `http://10.127.0.192:11434` (company VPN)
+- Chat model: `qwen2.5:32b`
+- Embed model: `nomic-embed-text:latest`
+- Provider: `ollama`
+
+### 🔧 Optional Configuration
+
+**Only needed if you want to override defaults** (see `docs/CONFIGURATION.md`):
+
+```bash
+# Example: Use local Ollama instead of company VPN endpoint
+export RAG_OLLAMA_URL=http://127.0.0.1:11434
+
+# Example: Use GPT-OSS-20B instead of qwen
+export RAG_PROVIDER=gpt-oss
+```
+
+### 🧪 Validation
+
+```bash
+ragctl doctor --verbose   # Check system health
+make smoke                # Offline smoke test (mock client)
+make test                 # Run test suite
+```
 
 ### Installation
 
@@ -57,35 +103,77 @@ pip install -e '.[dev]'  # pulls rank-bm25, typer, httpx, etc.
 
 For detailed M1 installation instructions, see [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md).
 
-### Configure Ollama Endpoint
+### ⚙️ Advanced Configuration (Optional)
 
-**Remote Ollama (Company-Hosted, default)**:
-`RAG_OLLAMA_URL` now defaults to the VPN-backed host `http://10.127.0.192:11434`. Ensure you are on the corporate network (or VPN) before running queries.
+**Default LLM Endpoint**: `http://10.127.0.192:11434` (company VPN)
 
-```bash
-# Example: Using remote Ollama server
-export RAG_OLLAMA_URL=http://10.127.0.192:11434
+✅ **No configuration needed** – the default works out-of-box on the company network.
 
-# Or inline for a single command
-RAG_OLLAMA_URL=http://10.127.0.192:11434 python3 clockify_support_cli_final.py chat
-```
-
-**Local Ollama Override**:
+**Optional Overrides** (only set if you need different behavior):
 
 ```bash
+# Override 1: Use local Ollama instead of company VPN
 export RAG_OLLAMA_URL=http://127.0.0.1:11434
-```
 
-**Timeouts**: Remote endpoints may need higher read timeouts when accessed over VPN:
-
-```bash
-export RAG_OLLAMA_URL=http://10.127.0.192:11434
+# Override 2: Increase timeouts for slow networks
 export CHAT_READ_TIMEOUT=300
 export EMB_READ_TIMEOUT=180
-python3 clockify_support_cli_final.py chat
+
+# Override 3: Use different models
+export RAG_CHAT_MODEL=llama3:70b
+export RAG_EMBED_MODEL=mxbai-embed-large
 ```
 
-See [docs/CONFIGURATION.md](docs/CONFIGURATION.md) for the complete list of supported environment variables and defaults.
+📚 **Complete configuration reference**: See [docs/CONFIGURATION.md](docs/CONFIGURATION.md)
+
+### GPT-OSS-20B Integration (Optional)
+
+**NEW**: Support for OpenAI's `gpt-oss-20b` reasoning model with 128k context window.
+
+GPT-OSS-20B is OpenAI's open-weight 20B parameter reasoning model (~21B total params, ~3.6B active per token) optimized for complex reasoning and coding tasks. It provides a 128k token context window (vs qwen2.5:32b's 32k) and is served via the same Ollama-compatible API.
+
+**Enable GPT-OSS-20B**:
+
+```bash
+# Set provider to gpt-oss
+export RAG_PROVIDER=gpt-oss
+
+# Optional: Override defaults (shown values are defaults)
+export RAG_GPT_OSS_MODEL=gpt-oss-20b
+export RAG_GPT_OSS_TEMPERATURE=1.0  # OpenAI's recommended default
+export RAG_GPT_OSS_TOP_P=1.0        # OpenAI's recommended default
+export RAG_GPT_OSS_CTX_WINDOW=128000  # 128k tokens
+export RAG_GPT_OSS_CTX_BUDGET=16000   # 16k tokens for RAG context (vs 12k for qwen)
+export RAG_GPT_OSS_CHAT_TIMEOUT=180.0 # 180s timeout (vs 120s for qwen)
+
+# Run with GPT-OSS
+ragctl chat
+```
+
+**Key Differences from Qwen 2.5 32B**:
+
+| Feature | Qwen 2.5 32B (default) | GPT-OSS-20B |
+|---------|----------------------|-------------|
+| Context Window | 32k tokens | 128k tokens |
+| RAG Context Budget | 12k tokens | 16k tokens |
+| Default Temperature | 0.0 (deterministic) | 1.0 (OpenAI default) |
+| Default Top-P | 0.9 | 1.0 |
+| Chat Timeout | 120s | 180s |
+| Use Case | General QA | Complex reasoning, coding |
+
+**Quick Test**:
+```bash
+# Check configuration
+RAG_PROVIDER=gpt-oss ragctl doctor
+
+# Run a query
+RAG_PROVIDER=gpt-oss ragctl query "How do I set up SSO in Clockify?"
+```
+
+For deterministic RAG QA, you may prefer lower temperature:
+```bash
+export RAG_GPT_OSS_TEMPERATURE=0.7  # More deterministic than 1.0
+```
 
 ### Build Knowledge Base
 ```bash

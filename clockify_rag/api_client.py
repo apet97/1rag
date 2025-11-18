@@ -19,6 +19,12 @@ from .config import (
     RAG_OLLAMA_URL,
     RAG_CHAT_MODEL,
     RAG_EMBED_MODEL,
+    RAG_PROVIDER,
+    RAG_GPT_OSS_MODEL,
+    RAG_GPT_OSS_TEMPERATURE,
+    RAG_GPT_OSS_TOP_P,
+    RAG_GPT_OSS_CTX_WINDOW,
+    RAG_GPT_OSS_CHAT_TIMEOUT,
     EMB_BACKEND,
     EMB_DIM_LOCAL,
     EMB_DIM_OLLAMA,
@@ -554,6 +560,123 @@ class OllamaAPIClient(BaseLLMClient):
             return False
 
 
+class GptOssAPIClient(OllamaAPIClient):
+    """Client for OpenAI's gpt-oss-20b reasoning model via Ollama-compatible API.
+
+    GPT-OSS-20B is OpenAI's open-weight 20B reasoning model with:
+    - 128k token context window (vs qwen2.5:32b's 32k)
+    - ~21B total params, ~3.6B active per token (MoE architecture)
+    - Optimized for reasoning and coding tasks
+    - Served via same Ollama-compatible endpoint
+
+    Differences from standard OllamaAPIClient:
+    - Default sampling: temperature=1.0, top_p=1.0 (OpenAI's recommendations)
+    - Context window: 128k tokens (num_ctx=128000)
+    - Chat timeout: 180s (vs 120s) to allow for reasoning traces
+    - Model: gpt-oss-20b (configurable via RAG_GPT_OSS_MODEL)
+    """
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        gen_model: Optional[str] = None,
+        emb_model: Optional[str] = None,
+        chat_connect_timeout: Optional[float] = None,
+        chat_read_timeout: Optional[float] = None,
+        emb_connect_timeout: Optional[float] = None,
+        emb_read_timeout: Optional[float] = None,
+        rerank_read_timeout: Optional[float] = None,
+        retries: Optional[int] = None,
+    ):
+        """Initialize GPT-OSS client with gpt-oss-specific defaults.
+
+        Args:
+            base_url: Base URL for Ollama-compatible API (same as Ollama)
+            gen_model: Generation model name (defaults to RAG_GPT_OSS_MODEL)
+            emb_model: Embedding model name (uses same as Ollama)
+            chat_connect_timeout: Chat connection timeout
+            chat_read_timeout: Chat read timeout (defaults to 180s for gpt-oss)
+            emb_connect_timeout: Embedding connection timeout
+            emb_read_timeout: Embedding read timeout
+            rerank_read_timeout: Reranking timeout
+            retries: Number of retries
+        """
+        # Override gen_model default to gpt-oss-20b if not specified
+        if gen_model is None:
+            gen_model = RAG_GPT_OSS_MODEL
+
+        # Override chat_read_timeout to 180s for gpt-oss if not specified
+        if chat_read_timeout is None:
+            chat_read_timeout = RAG_GPT_OSS_CHAT_TIMEOUT
+
+        # Call parent constructor with gpt-oss defaults
+        super().__init__(
+            base_url=base_url,
+            gen_model=gen_model,
+            emb_model=emb_model,
+            chat_connect_timeout=chat_connect_timeout,
+            chat_read_timeout=chat_read_timeout,
+            emb_connect_timeout=emb_connect_timeout,
+            emb_read_timeout=emb_read_timeout,
+            rerank_read_timeout=rerank_read_timeout,
+            retries=retries,
+        )
+
+        logger.info(
+            "Initialized GptOssAPIClient: model=%s, base_url=%s, ctx_window=%d, chat_timeout=%.1fs",
+            self.gen_model,
+            self.base_url,
+            RAG_GPT_OSS_CTX_WINDOW,
+            self.chat_read_timeout,
+        )
+
+    def chat_completion(
+        self,
+        messages: List[ChatMessage],
+        model: Optional[str] = None,
+        options: Optional[ChatCompletionOptions] = None,
+        stream: bool = False,
+        timeout: Optional[tuple] = None,
+        retries: Optional[int] = None,
+    ) -> ChatCompletionResponse:
+        """Make a chat completion request with gpt-oss-specific defaults.
+
+        Overrides OllamaAPIClient.chat_completion to use:
+        - temperature=1.0 (vs 0.0 for qwen)
+        - top_p=1.0 (vs 0.9 for qwen)
+        - num_ctx=128000 (vs 32768 for qwen)
+
+        Args:
+            messages: List of chat messages
+            model: Model to use (defaults to gpt-oss-20b)
+            options: Generation options (uses gpt-oss defaults if None)
+            stream: Whether to stream the response
+            timeout: (connect, read) timeout tuple
+            retries: Number of retries
+
+        Returns:
+            Chat completion response
+        """
+        model = model or self.gen_model
+
+        # Use gpt-oss-specific defaults if options not provided
+        if options is None:
+            options = {
+                "temperature": RAG_GPT_OSS_TEMPERATURE,  # 1.0 (OpenAI's default)
+                "top_p": RAG_GPT_OSS_TOP_P,  # 1.0 (OpenAI's default)
+                "seed": DEFAULT_SEED,  # 42 (deterministic)
+                "num_ctx": RAG_GPT_OSS_CTX_WINDOW,  # 128000 (128k context)
+                "num_predict": DEFAULT_NUM_PREDICT,  # 512 (same as qwen)
+                "top_k": 40,  # Standard default
+                "repeat_penalty": 1.05,  # Standard default
+            }
+
+        # Call parent implementation with gpt-oss-tuned options
+        return super().chat_completion(
+            messages=messages, model=model, options=options, stream=stream, timeout=timeout, retries=retries
+        )
+
+
 class MockLLMClient(BaseLLMClient):
     """Deterministic, in-memory LLM client for tests and offline workflows."""
 
@@ -716,15 +839,26 @@ def get_ollama_client() -> BaseLLMClient:
 
 
 def get_llm_client() -> BaseLLMClient:
-    """Get the configured LLM client (real or mock)."""
+    """Get the configured LLM client based on RAG_PROVIDER.
+
+    Returns:
+        - MockLLMClient if RAG_LLM_CLIENT=mock/test
+        - GptOssAPIClient if RAG_PROVIDER=gpt-oss
+        - OllamaAPIClient otherwise (default)
+    """
     global _LLM_CLIENT
     if _LLM_CLIENT is not None:
         return _LLM_CLIENT
+
     client_pref = get_llm_client_mode()
     if client_pref in {"mock", "test"}:
         logger.info("Using MockLLMClient (RAG_LLM_CLIENT=%s)", client_pref or "mock")
         _LLM_CLIENT = MockLLMClient()
+    elif RAG_PROVIDER == "gpt-oss":
+        logger.info("Using GptOssAPIClient (RAG_PROVIDER=gpt-oss, model=%s)", RAG_GPT_OSS_MODEL)
+        _LLM_CLIENT = GptOssAPIClient()
     else:
+        logger.info("Using OllamaAPIClient (RAG_PROVIDER=%s, model=%s)", RAG_PROVIDER, RAG_CHAT_MODEL)
         _LLM_CLIENT = OllamaAPIClient()
     return _LLM_CLIENT
 

@@ -133,6 +133,12 @@ def get_query_expansions_path() -> Optional[str]:
 
 
 # ====== OLLAMA CONFIG ======
+# 🚀 ZERO CONFIGURATION REQUIRED
+# Default LLM base URL is hardcoded below - works out-of-box with NO env vars!
+# Only set RAG_OLLAMA_URL environment variable if you want to override the default.
+# Default: Company VPN endpoint at http://10.127.0.192:11434
+# Override example: RAG_OLLAMA_URL=http://127.0.0.1:11434 (for local Ollama)
+
 _DEFAULT_RAG_OLLAMA_URL = "http://10.127.0.192:11434"
 DEFAULT_RAG_OLLAMA_URL = _DEFAULT_RAG_OLLAMA_URL
 DEFAULT_LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
@@ -153,6 +159,49 @@ RAG_EMBED_MODEL = _get_env_value(
     legacy_keys=("EMB_MODEL", "EMBED_MODEL"),
 )
 
+# ====== PROVIDER SELECTION (GPT-OSS-20B Integration) ======
+# RAG_PROVIDER: Select LLM backend ("ollama" or "gpt-oss")
+# - "ollama": Use standard Ollama with qwen2.5:32b (default)
+# - "gpt-oss": Use OpenAI's gpt-oss-20b reasoning model (128k context)
+RAG_PROVIDER = _get_env_value("RAG_PROVIDER", default="ollama").lower()
+
+# ====== GPT-OSS-20B CONFIG ======
+# GPT-OSS-20B: OpenAI's open-weight 20B reasoning model
+# - 128k context window (vs qwen2.5:32b's 32k)
+# - ~21B total params, ~3.6B active per token (MoE architecture)
+# - Optimized for reasoning and coding tasks
+# - Served via Ollama-compatible API at same endpoint
+
+# Model name for GPT-OSS (when RAG_PROVIDER=gpt-oss)
+RAG_GPT_OSS_MODEL = _get_env_value("RAG_GPT_OSS_MODEL", default="gpt-oss-20b")
+
+# Sampling parameters for GPT-OSS
+# OpenAI recommends temperature=1.0, top_p=1.0 for optimal reasoning
+# For RAG QA, you may prefer slightly lower temperature (e.g., 0.7) for more deterministic answers
+RAG_GPT_OSS_TEMPERATURE = _parse_env_float("RAG_GPT_OSS_TEMPERATURE", 1.0, min_val=0.0, max_val=2.0)
+RAG_GPT_OSS_TOP_P = _parse_env_float("RAG_GPT_OSS_TOP_P", 1.0, min_val=0.0, max_val=1.0)
+
+# Context window and budget for GPT-OSS
+# GPT-OSS has 128k token context window (vs qwen's 32k)
+# We can use more context for retrieval while still leaving room for generation
+RAG_GPT_OSS_CTX_WINDOW = _parse_env_int(
+    "RAG_GPT_OSS_CTX_WINDOW", 128000, min_val=4096, max_val=200000
+)  # 128k tokens
+
+# Context budget for RAG snippets when using GPT-OSS
+# Allocate ~12.5% of 128k context (16k tokens) for snippets, leaving room for:
+# - System instructions (~500 tokens)
+# - User question (~100 tokens)
+# - Response generation (~2k tokens)
+# - Safety margin for tokenization variance
+RAG_GPT_OSS_CTX_BUDGET = _parse_env_int(
+    "RAG_GPT_OSS_CTX_BUDGET", 16000, min_val=1000, max_val=100000
+)  # 16k tokens for snippets
+
+# Timeout settings for GPT-OSS (reasoning models may take longer)
+# Chat timeout increased to 180s (vs 120s for qwen) to allow for reasoning traces
+RAG_GPT_OSS_CHAT_TIMEOUT = _parse_env_float("RAG_GPT_OSS_CHAT_TIMEOUT", 180.0, min_val=10.0, max_val=600.0)
+
 _INITIAL_RAG_LLM_CLIENT = _get_env_value("RAG_LLM_CLIENT", default="")
 
 
@@ -164,6 +213,7 @@ class LLMSettings:
     chat_model: str
     embed_model: str
     client_mode: str
+    provider: str  # "ollama" or "gpt-oss"
 
 
 def get_llm_client_mode(default: str = "") -> str:
@@ -179,14 +229,52 @@ def get_llm_client_mode(default: str = "") -> str:
 
 
 def current_llm_settings(default_client_mode: str = "") -> LLMSettings:
-    """Return a dataclass capturing the current Ollama + model configuration."""
+    """Return a dataclass capturing the current LLM configuration.
+
+    When RAG_PROVIDER=gpt-oss, returns gpt-oss-specific settings.
+    Otherwise, returns standard Ollama settings (default).
+    """
+    provider = RAG_PROVIDER
+
+    # Select model based on provider
+    if provider == "gpt-oss":
+        chat_model = RAG_GPT_OSS_MODEL
+    else:
+        chat_model = RAG_CHAT_MODEL
 
     return LLMSettings(
         base_url=RAG_OLLAMA_URL,
-        chat_model=RAG_CHAT_MODEL,
+        chat_model=chat_model,
         embed_model=RAG_EMBED_MODEL,
         client_mode=get_llm_client_mode(default_client_mode),
+        provider=provider,
     )
+
+
+def get_context_budget() -> int:
+    """Get the appropriate context budget based on active provider.
+
+    Returns:
+        Context budget in tokens:
+        - GPT-OSS: 16000 tokens (~12.5% of 128k context)
+        - Ollama/default: 12000 tokens (~36% of 32k context)
+    """
+    if RAG_PROVIDER == "gpt-oss":
+        return RAG_GPT_OSS_CTX_BUDGET
+    return CTX_TOKEN_BUDGET
+
+
+def get_context_window() -> int:
+    """Get the appropriate context window size based on active provider.
+
+    Returns:
+        Context window size in tokens:
+        - GPT-OSS: 128000 tokens (128k)
+        - Ollama/default: 32768 tokens (32k)
+    """
+    if RAG_PROVIDER == "gpt-oss":
+        return RAG_GPT_OSS_CTX_WINDOW
+    return DEFAULT_NUM_CTX
 
 
 # Backwards-compatible aliases (legacy code/tests expect these names)
