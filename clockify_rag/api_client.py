@@ -896,22 +896,13 @@ def get_fallback_client() -> Optional[BaseLLMClient]:
     # Create fallback client based on configured provider
     try:
         if RAG_FALLBACK_PROVIDER == "gpt-oss":
-            logger.info(
-                "Creating fallback client: GptOssAPIClient (model=%s)",
-                RAG_FALLBACK_MODEL
-            )
+            logger.info("Creating fallback client: GptOssAPIClient (model=%s)", RAG_FALLBACK_MODEL)
             _FALLBACK_CLIENT = GptOssAPIClient()
         elif RAG_FALLBACK_PROVIDER == "ollama":
-            logger.info(
-                "Creating fallback client: OllamaAPIClient (model=%s)",
-                RAG_FALLBACK_MODEL
-            )
+            logger.info("Creating fallback client: OllamaAPIClient (model=%s)", RAG_FALLBACK_MODEL)
             _FALLBACK_CLIENT = OllamaAPIClient()
         else:
-            logger.warning(
-                "Unknown fallback provider: %s (expected 'ollama' or 'gpt-oss')",
-                RAG_FALLBACK_PROVIDER
-            )
+            logger.warning("Unknown fallback provider: %s (expected 'ollama' or 'gpt-oss')", RAG_FALLBACK_PROVIDER)
             return None
 
         return _FALLBACK_CLIENT
@@ -971,10 +962,7 @@ def chat_completion(
 
         # Log fallback event
         logger.warning(
-            "Primary LLM unavailable (%s), falling back to %s (model=%s)",
-            e,
-            RAG_FALLBACK_PROVIDER,
-            RAG_FALLBACK_MODEL
+            "Primary LLM unavailable (%s), falling back to %s (model=%s)", e, RAG_FALLBACK_PROVIDER, RAG_FALLBACK_MODEL
         )
 
         # Use fallback model if no specific model was requested
@@ -989,18 +977,10 @@ def chat_completion(
                 timeout=timeout,
                 retries=retries,
             )
-            logger.info(
-                "Fallback successful: %s answered with model=%s",
-                RAG_FALLBACK_PROVIDER,
-                fallback_model
-            )
+            logger.info("Fallback successful: %s answered with model=%s", RAG_FALLBACK_PROVIDER, fallback_model)
             return response
         except Exception as fallback_error:
-            logger.error(
-                "Fallback also failed (%s): %s",
-                RAG_FALLBACK_PROVIDER,
-                fallback_error
-            )
+            logger.error("Fallback also failed (%s): %s", RAG_FALLBACK_PROVIDER, fallback_error)
             # Re-raise the original error with context about fallback failure
             raise LLMUnavailableError(
                 f"Both primary and fallback LLM unavailable. "
@@ -1123,10 +1103,7 @@ def validate_models(log_warnings: bool = True) -> Dict[str, Any]:
         # Check if all required models are available
         chat_ok = result["chat_model"]["available"]
         embed_ok = result["embed_model"]["available"]
-        fallback_ok = (
-            result["fallback_model"]["available"]
-            or not RAG_FALLBACK_ENABLED
-        )
+        fallback_ok = result["fallback_model"]["available"] or not RAG_FALLBACK_ENABLED
 
         result["all_required_available"] = chat_ok and embed_ok and fallback_ok
 
@@ -1136,19 +1113,19 @@ def validate_models(log_warnings: bool = True) -> Dict[str, Any]:
                 logger.warning(
                     "Chat model '%s' not found on server. Available models: %s",
                     RAG_CHAT_MODEL,
-                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else ""),
                 )
             if not embed_ok:
                 logger.warning(
                     "Embedding model '%s' not found on server. Available models: %s",
                     RAG_EMBED_MODEL,
-                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else ""),
                 )
             if RAG_FALLBACK_ENABLED and not fallback_ok:
                 logger.warning(
                     "Fallback model '%s' not found on server (fallback enabled). Available models: %s",
                     RAG_FALLBACK_MODEL,
-                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else ""),
                 )
 
         return result

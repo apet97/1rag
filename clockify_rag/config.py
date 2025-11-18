@@ -184,9 +184,7 @@ RAG_GPT_OSS_TOP_P = _parse_env_float("RAG_GPT_OSS_TOP_P", 1.0, min_val=0.0, max_
 # Context window and budget for GPT-OSS
 # GPT-OSS has 128k token context window (vs qwen's 32k)
 # We can use more context for retrieval while still leaving room for generation
-RAG_GPT_OSS_CTX_WINDOW = _parse_env_int(
-    "RAG_GPT_OSS_CTX_WINDOW", 128000, min_val=4096, max_val=200000
-)  # 128k tokens
+RAG_GPT_OSS_CTX_WINDOW = _parse_env_int("RAG_GPT_OSS_CTX_WINDOW", 128000, min_val=4096, max_val=200000)  # 128k tokens
 
 # Context budget for RAG snippets when using GPT-OSS
 # Allocate ~12.5% of 128k context (16k tokens) for snippets, leaving room for:
@@ -545,9 +543,7 @@ def validate_config() -> dict:
 
     # Check URL format
     if not RAG_OLLAMA_URL.startswith(("http://", "https://")):
-        errors.append(
-            f"RAG_OLLAMA_URL must start with http:// or https://, got: {RAG_OLLAMA_URL}"
-        )
+        errors.append(f"RAG_OLLAMA_URL must start with http:// or https://, got: {RAG_OLLAMA_URL}")
 
     # Check fallback configuration
     if RAG_FALLBACK_ENABLED:
@@ -560,8 +556,7 @@ def validate_config() -> dict:
 
         if RAG_PROVIDER == "gpt-oss" and RAG_FALLBACK_PROVIDER == "gpt-oss":
             warnings.append(
-                "Both primary and fallback are set to gpt-oss. "
-                "Consider setting fallback to 'ollama' for redundancy."
+                "Both primary and fallback are set to gpt-oss. " "Consider setting fallback to 'ollama' for redundancy."
             )
 
     # Check timeout settings
@@ -579,14 +574,10 @@ def validate_config() -> dict:
 
     # Check retrieval parameters
     if DEFAULT_TOP_K < DEFAULT_PACK_TOP:
-        errors.append(
-            f"DEFAULT_TOP_K ({DEFAULT_TOP_K}) must be >= DEFAULT_PACK_TOP ({DEFAULT_PACK_TOP})"
-        )
+        errors.append(f"DEFAULT_TOP_K ({DEFAULT_TOP_K}) must be >= DEFAULT_PACK_TOP ({DEFAULT_PACK_TOP})")
 
     if DEFAULT_THRESHOLD < 0.0 or DEFAULT_THRESHOLD > 1.0:
-        errors.append(
-            f"DEFAULT_THRESHOLD ({DEFAULT_THRESHOLD}) must be between 0.0 and 1.0"
-        )
+        errors.append(f"DEFAULT_THRESHOLD ({DEFAULT_THRESHOLD}) must be between 0.0 and 1.0")
 
     # Check context budget
     if CTX_TOKEN_BUDGET <= 0:

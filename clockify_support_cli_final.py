@@ -36,6 +36,7 @@ from typing import Any
 
 # Third-party imports
 import numpy as np
+
 # Package imports
 import clockify_rag.config as config
 from clockify_rag.caching import get_query_cache, get_rate_limiter, QueryCache, RateLimiter, log_query
@@ -48,7 +49,7 @@ from clockify_rag.cli import (
     handle_ask_command,
     handle_chat_command,
     chat_repl,
-    warmup_on_startup
+    warmup_on_startup,
 )
 from clockify_rag.api_client import get_llm_client
 
@@ -84,6 +85,7 @@ def run_selftest() -> bool:
     print("-" * 70)
 
     from clockify_rag.config import validate_config
+
     config_result = validate_config()
 
     # Print config snapshot
@@ -93,7 +95,7 @@ def run_selftest() -> bool:
     print(f"  Chat Model:       {snapshot['chat_model']}")
     print(f"  Embed Model:      {snapshot['embed_model']}")
     print(f"  Fallback Enabled: {snapshot['fallback_enabled']}")
-    if snapshot['fallback_enabled']:
+    if snapshot["fallback_enabled"]:
         print(f"  Fallback Provider: {snapshot['fallback_provider']}")
         print(f"  Fallback Model:    {snapshot['fallback_model']}")
     print(f"  Chat Timeout:     {snapshot['chat_timeout']}s")
@@ -106,20 +108,20 @@ def run_selftest() -> bool:
     print()
 
     # Print warnings and errors
-    if config_result['warnings']:
+    if config_result["warnings"]:
         print("  ⚠️  WARNINGS:")
-        for warning in config_result['warnings']:
+        for warning in config_result["warnings"]:
             print(f"    • {warning}")
         print()
 
-    if config_result['errors']:
+    if config_result["errors"]:
         print("  ❌ ERRORS:")
-        for error in config_result['errors']:
+        for error in config_result["errors"]:
             print(f"    • {error}")
         print()
         ok = False
 
-    if config_result['valid']:
+    if config_result["valid"]:
         print("  ✅ Configuration validation passed")
     else:
         print("  ❌ Configuration validation failed")
@@ -145,6 +147,7 @@ def run_selftest() -> bool:
 
         # Check server connectivity and model availability
         from clockify_rag.api_client import validate_models
+
         try:
             model_result = validate_models(log_warnings=False)
 
@@ -161,7 +164,9 @@ def run_selftest() -> bool:
                 print(f"     • Embed model ({config.RAG_EMBED_MODEL}): {'✅' if embed_available else '❌ MISSING'}")
 
                 if config.RAG_FALLBACK_ENABLED:
-                    print(f"     • Fallback model ({config.RAG_FALLBACK_MODEL}): {'✅' if fallback_available else '⚠️  MISSING'}")
+                    print(
+                        f"     • Fallback model ({config.RAG_FALLBACK_MODEL}): {'✅' if fallback_available else '⚠️  MISSING'}"
+                    )
 
                 if not model_result["all_required_available"]:
                     print()
@@ -229,6 +234,7 @@ def run_selftest() -> bool:
         print("-" * 70)
         try:
             from clockify_rag.cli import ensure_index_ready
+
             ensure_index_ready(retries=0)
             print("  ✅ Retrieval path OK")
         except Exception as e:
@@ -247,6 +253,8 @@ def run_selftest() -> bool:
     print("=" * 70)
 
     return ok
+
+
 from clockify_rag.error_handlers import print_system_health
 
 # Re-export config constants and functions for backward compatibility with tests
@@ -279,6 +287,7 @@ QUERY_CACHE = get_query_cache()
 
 # ====== MAIN ENTRY POINT ======
 
+
 def main():
     """Main entry point - delegates to CLI module for all functionality."""
     global QUERY_LOG_DISABLED
@@ -307,7 +316,7 @@ def main():
             handle_ask_command(args)
         elif args.cmd == "chat":
             handle_chat_command(args)
-    
+
     except KeyboardInterrupt:
         logger.info("Operation interrupted by user")
         sys.exit(1)
@@ -315,6 +324,7 @@ def main():
         logger.error(f"Fatal error in main: {e}")
         logger.debug("Full traceback:", exc_info=True)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     # Rank 29: cProfile profiling support
