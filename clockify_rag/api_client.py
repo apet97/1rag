@@ -25,6 +25,9 @@ from .config import (
     RAG_GPT_OSS_TOP_P,
     RAG_GPT_OSS_CTX_WINDOW,
     RAG_GPT_OSS_CHAT_TIMEOUT,
+    RAG_FALLBACK_ENABLED,
+    RAG_FALLBACK_PROVIDER,
+    RAG_FALLBACK_MODEL,
     EMB_BACKEND,
     EMB_DIM_LOCAL,
     EMB_DIM_OLLAMA,
@@ -816,6 +819,7 @@ class MockLLMClient(BaseLLMClient):
 
 # Global client instance for backward compatibility
 _LLM_CLIENT: Optional[BaseLLMClient] = None
+_FALLBACK_CLIENT: Optional[BaseLLMClient] = None
 
 
 def set_llm_client(client: Optional[BaseLLMClient]) -> None:
@@ -825,8 +829,10 @@ def set_llm_client(client: Optional[BaseLLMClient]) -> None:
 
 
 def reset_llm_client() -> None:
-    """Reset the cached LLM client (next access will re-instantiate)."""
+    """Reset the cached LLM client and fallback client (next access will re-instantiate)."""
+    global _FALLBACK_CLIENT
     set_llm_client(None)
+    _FALLBACK_CLIENT = None
 
 
 def get_ollama_client() -> BaseLLMClient:
@@ -863,6 +869,57 @@ def get_llm_client() -> BaseLLMClient:
     return _LLM_CLIENT
 
 
+def get_fallback_client() -> Optional[BaseLLMClient]:
+    """Get the fallback LLM client for automatic failover.
+
+    Returns:
+        - None if fallback is disabled or primary provider is already the fallback
+        - GptOssAPIClient if RAG_FALLBACK_PROVIDER=gpt-oss
+        - OllamaAPIClient if RAG_FALLBACK_PROVIDER=ollama
+    """
+    global _FALLBACK_CLIENT
+
+    # Return cached fallback client if available
+    if _FALLBACK_CLIENT is not None:
+        return _FALLBACK_CLIENT
+
+    # Check if fallback is enabled
+    if not RAG_FALLBACK_ENABLED:
+        logger.debug("Fallback disabled (RAG_FALLBACK_ENABLED=false)")
+        return None
+
+    # Don't create fallback if primary is already the fallback provider
+    if RAG_PROVIDER == RAG_FALLBACK_PROVIDER:
+        logger.debug("Primary provider (%s) is same as fallback provider, no fallback needed", RAG_PROVIDER)
+        return None
+
+    # Create fallback client based on configured provider
+    try:
+        if RAG_FALLBACK_PROVIDER == "gpt-oss":
+            logger.info(
+                "Creating fallback client: GptOssAPIClient (model=%s)",
+                RAG_FALLBACK_MODEL
+            )
+            _FALLBACK_CLIENT = GptOssAPIClient()
+        elif RAG_FALLBACK_PROVIDER == "ollama":
+            logger.info(
+                "Creating fallback client: OllamaAPIClient (model=%s)",
+                RAG_FALLBACK_MODEL
+            )
+            _FALLBACK_CLIENT = OllamaAPIClient()
+        else:
+            logger.warning(
+                "Unknown fallback provider: %s (expected 'ollama' or 'gpt-oss')",
+                RAG_FALLBACK_PROVIDER
+            )
+            return None
+
+        return _FALLBACK_CLIENT
+    except Exception as e:
+        logger.error("Failed to create fallback client: %s", e)
+        return None
+
+
 def chat_completion(
     messages: List[ChatMessage],
     model: Optional[str] = None,
@@ -871,7 +928,11 @@ def chat_completion(
     timeout: Optional[tuple] = None,
     retries: Optional[int] = None,
 ) -> ChatCompletionResponse:
-    """Global function to make chat completion requests.
+    """Global function to make chat completion requests with automatic fallback.
+
+    Attempts to complete the chat using the primary LLM client. If the primary
+    client is unavailable (connection error, timeout), automatically falls back
+    to the configured fallback provider (if enabled).
 
     Args:
         messages: List of chat messages
@@ -883,16 +944,68 @@ def chat_completion(
 
     Returns:
         Chat completion response
+
+    Raises:
+        LLMUnavailableError: If both primary and fallback are unavailable
+        LLMError: For other LLM-related errors
     """
     client = get_llm_client()
-    return client.chat_completion(
-        messages=messages,
-        model=model,
-        options=options,
-        stream=stream,
-        timeout=timeout,
-        retries=retries,
-    )
+
+    try:
+        return client.chat_completion(
+            messages=messages,
+            model=model,
+            options=options,
+            stream=stream,
+            timeout=timeout,
+            retries=retries,
+        )
+    except LLMUnavailableError as e:
+        # Try fallback if enabled and available
+        fallback_client = get_fallback_client()
+
+        if fallback_client is None:
+            # No fallback available, re-raise the original error
+            logger.debug("No fallback client available, re-raising LLMUnavailableError")
+            raise
+
+        # Log fallback event
+        logger.warning(
+            "Primary LLM unavailable (%s), falling back to %s (model=%s)",
+            e,
+            RAG_FALLBACK_PROVIDER,
+            RAG_FALLBACK_MODEL
+        )
+
+        # Use fallback model if no specific model was requested
+        fallback_model = model or RAG_FALLBACK_MODEL
+
+        try:
+            response = fallback_client.chat_completion(
+                messages=messages,
+                model=fallback_model,
+                options=options,
+                stream=stream,
+                timeout=timeout,
+                retries=retries,
+            )
+            logger.info(
+                "Fallback successful: %s answered with model=%s",
+                RAG_FALLBACK_PROVIDER,
+                fallback_model
+            )
+            return response
+        except Exception as fallback_error:
+            logger.error(
+                "Fallback also failed (%s): %s",
+                RAG_FALLBACK_PROVIDER,
+                fallback_error
+            )
+            # Re-raise the original error with context about fallback failure
+            raise LLMUnavailableError(
+                f"Both primary and fallback LLM unavailable. "
+                f"Primary: {e}. Fallback ({RAG_FALLBACK_PROVIDER}): {fallback_error}"
+            ) from e
 
 
 def create_embedding(
@@ -923,3 +1036,124 @@ def check_ollama_health() -> bool:
     """
     client = get_llm_client()
     return client.check_health()
+
+
+def validate_models(log_warnings: bool = True) -> Dict[str, Any]:
+    """Validate that required models are available on the LLM server.
+
+    Checks if the configured chat model, embedding model, and fallback model
+    are available on the server. This helps catch configuration issues early.
+
+    Args:
+        log_warnings: Whether to log warnings for missing models (default: True)
+
+    Returns:
+        Dictionary with validation results:
+        {
+            "server_reachable": bool,
+            "models_available": List[str],  # All available model names
+            "chat_model": {
+                "name": str,
+                "available": bool,
+                "required": bool,
+            },
+            "embed_model": {
+                "name": str,
+                "available": bool,
+                "required": bool,
+            },
+            "fallback_model": {
+                "name": str,
+                "available": bool,
+                "required": bool,
+            },
+            "all_required_available": bool,
+        }
+    """
+    result = {
+        "server_reachable": False,
+        "models_available": [],
+        "chat_model": {
+            "name": RAG_CHAT_MODEL,
+            "available": False,
+            "required": True,
+        },
+        "embed_model": {
+            "name": RAG_EMBED_MODEL,
+            "available": False,
+            "required": True,
+        },
+        "fallback_model": {
+            "name": RAG_FALLBACK_MODEL,
+            "available": False,
+            "required": RAG_FALLBACK_ENABLED,
+        },
+        "all_required_available": False,
+    }
+
+    try:
+        # Try to list models from the server
+        client = get_llm_client()
+        models = client.list_models()
+
+        if not models:
+            if log_warnings:
+                logger.warning("Server responded but returned no models")
+            return result
+
+        result["server_reachable"] = True
+
+        # Extract model names (handle both dict and string formats)
+        model_names = []
+        for model in models:
+            if isinstance(model, dict):
+                name = model.get("name") or model.get("model")
+                if name:
+                    model_names.append(name)
+            elif isinstance(model, str):
+                model_names.append(model)
+
+        result["models_available"] = model_names
+
+        # Check if required models are available
+        result["chat_model"]["available"] = RAG_CHAT_MODEL in model_names
+        result["embed_model"]["available"] = RAG_EMBED_MODEL in model_names
+        result["fallback_model"]["available"] = RAG_FALLBACK_MODEL in model_names
+
+        # Check if all required models are available
+        chat_ok = result["chat_model"]["available"]
+        embed_ok = result["embed_model"]["available"]
+        fallback_ok = (
+            result["fallback_model"]["available"]
+            or not RAG_FALLBACK_ENABLED
+        )
+
+        result["all_required_available"] = chat_ok and embed_ok and fallback_ok
+
+        # Log warnings for missing required models
+        if log_warnings:
+            if not chat_ok:
+                logger.warning(
+                    "Chat model '%s' not found on server. Available models: %s",
+                    RAG_CHAT_MODEL,
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                )
+            if not embed_ok:
+                logger.warning(
+                    "Embedding model '%s' not found on server. Available models: %s",
+                    RAG_EMBED_MODEL,
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                )
+            if RAG_FALLBACK_ENABLED and not fallback_ok:
+                logger.warning(
+                    "Fallback model '%s' not found on server (fallback enabled). Available models: %s",
+                    RAG_FALLBACK_MODEL,
+                    ", ".join(model_names[:5]) + ("..." if len(model_names) > 5 else "")
+                )
+
+        return result
+
+    except Exception as e:
+        if log_warnings:
+            logger.warning("Failed to validate models: %s", e)
+        return result
