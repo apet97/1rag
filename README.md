@@ -73,12 +73,31 @@ export RAG_OLLAMA_URL=http://127.0.0.1:11434
 export RAG_PROVIDER=gpt-oss
 ```
 
-### 🧪 Validation
+### 🧪 Validation & Health Check
 
+**Configuration Doctor** (validates config, checks connectivity, verifies models):
 ```bash
-ragctl doctor --verbose   # Check system health
+# Quick check (CI-safe, no real network calls)
+python3 clockify_support_cli_final.py --selftest
+
+# Full check with real network connectivity (requires VPN)
+RAG_REAL_OLLAMA_TESTS=1 python3 clockify_support_cli_final.py --selftest
+
+# Or via make:
+make selftest             # CI-safe mode (mock client)
+```
+
+The doctor command validates:
+- ✅ Configuration (URLs, timeouts, fallback settings)
+- ✅ Model endpoint connectivity (optional with RAG_REAL_OLLAMA_TESTS=1)
+- ✅ Required models availability (qwen2.5:32b, nomic-embed-text, gpt-oss:20b)
+- ✅ Index artifacts presence
+- ✅ Retrieval path smoke test (in strict mode)
+
+**Test Suite**:
+```bash
 make smoke                # Offline smoke test (mock client)
-make test                 # Run test suite
+make test                 # Full test suite with coverage
 ```
 
 ### Installation
@@ -175,6 +194,48 @@ For deterministic RAG QA, you may prefer lower temperature:
 export RAG_GPT_OSS_TEMPERATURE=0.7  # More deterministic than 1.0
 ```
 
+### 🛡️ Automatic LLM Fallback (Production Resilience)
+
+**NEW**: Automatic failover from primary LLM to fallback model on connection/timeout errors.
+
+By default, the system automatically falls back to `gpt-oss:20b` when the primary model (`qwen2.5:32b`) is unavailable due to:
+- Connection errors (e.g., VPN disconnected, Ollama server down)
+- Timeout errors (e.g., slow network, overloaded server)
+- 5xx server errors
+
+**Default Behavior** (enabled out-of-box):
+```bash
+# No configuration needed - fallback is enabled by default:
+# Primary: ollama/qwen2.5:32b (default)
+# Fallback: gpt-oss:20b (automatic on primary failure)
+
+make chat  # Will auto-fallback to gpt-oss:20b if qwen is unavailable
+```
+
+**Customization**:
+```bash
+# Disable fallback (fail fast)
+export RAG_FALLBACK_ENABLED=false
+
+# Change fallback model
+export RAG_FALLBACK_MODEL=llama3:70b
+
+# Change fallback provider
+export RAG_FALLBACK_PROVIDER=ollama
+export RAG_FALLBACK_MODEL=llama3:70b
+```
+
+**Behavior**:
+- ✅ Primary succeeds → uses primary model
+- ⚠️ Primary unavailable → logs warning, falls back to secondary
+- ❌ Both unavailable → returns error to user
+
+**Monitoring**: Fallback events are logged with clear warnings:
+```
+WARNING: Primary LLM unavailable (qwen2.5:32b), falling back to gpt-oss:20b
+INFO: Fallback successful: gpt-oss answered with model=gpt-oss:20b
+```
+
 ### Build Knowledge Base
 ```bash
 # One-time setup: build the vector index
@@ -195,8 +256,14 @@ python3 clockify_support_cli_final.py chat --debug
 # Single query (supports --rerank/--json/--topk/--pack)
 python3 clockify_support_cli_final.py ask "How do I track time in Clockify?" --rerank --json
 
-# Run self-tests (uses configured RAG_OLLAMA_URL)
+# Run self-tests and configuration doctor (CI-safe, no real network calls)
 python3 clockify_support_cli_final.py --selftest
+
+# Run self-tests with real network connectivity checks (requires VPN)
+RAG_REAL_OLLAMA_TESTS=1 python3 clockify_support_cli_final.py --selftest
+
+# Run in strict mode (fails on warnings)
+SELFTEST_STRICT=1 RAG_REAL_OLLAMA_TESTS=1 python3 clockify_support_cli_final.py --selftest
 ```
 
 > `ragctl query --json` and `clockify_support_cli_final.py ask --json` emit the same schema as `/v1/query`, including `metadata`, `routing`, and `timing` fields so scripts can automate routing decisions.
