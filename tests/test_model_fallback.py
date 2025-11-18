@@ -138,6 +138,64 @@ def test_chat_completion_fallback_on_timeout(mock_get_session, enable_fallback):
 
 
 @patch("clockify_rag.api_client.get_session")
+def test_chat_completion_fallback_on_5xx_error(mock_get_session, enable_fallback):
+    """Test that chat_completion falls back when primary model returns 5xx server error."""
+    # Mock primary client to raise HTTPError with 503 status
+    primary_session = Mock()
+    primary_session.trust_env = False
+    primary_response = Mock()
+    primary_response.status_code = 503
+    http_error = requests.exceptions.HTTPError("503 Service Unavailable")
+    http_error.response = primary_response
+    primary_session.post.side_effect = http_error
+
+    # Mock fallback client to succeed
+    fallback_session = Mock()
+    fallback_session.trust_env = False
+    fallback_response = Mock()
+    fallback_response.json.return_value = {
+        "message": {"role": "assistant", "content": "Fallback after 5xx"},
+        "model": "gpt-oss:20b",
+    }
+    fallback_response.raise_for_status = Mock()
+    fallback_session.post.return_value = fallback_response
+
+    mock_get_session.side_effect = [primary_session, fallback_session]
+
+    messages = [{"role": "user", "content": "test question"}]
+
+    # Should succeed with fallback
+    response = chat_completion(messages=messages)
+    assert response["message"]["content"] == "Fallback after 5xx"
+    assert response["model"] == "gpt-oss:20b"
+
+
+@patch("clockify_rag.api_client.get_session")
+def test_chat_completion_no_fallback_on_4xx_error(mock_get_session, enable_fallback):
+    """Test that chat_completion does NOT fall back on 4xx client errors."""
+    # Mock primary client to raise HTTPError with 404 status
+    primary_session = Mock()
+    primary_session.trust_env = False
+    primary_response = Mock()
+    primary_response.status_code = 404
+    http_error = requests.exceptions.HTTPError("404 Not Found")
+    http_error.response = primary_response
+    primary_session.post.side_effect = http_error
+
+    mock_get_session.return_value = primary_session
+
+    messages = [{"role": "user", "content": "test question"}]
+
+    # Should raise LLMError (not LLMUnavailableError) since 4xx is a client error
+    from clockify_rag.exceptions import LLMError
+
+    with pytest.raises(LLMError) as exc_info:
+        chat_completion(messages=messages)
+
+    assert "404" in str(exc_info.value)
+
+
+@patch("clockify_rag.api_client.get_session")
 def test_chat_completion_no_fallback_when_disabled(mock_get_session, disable_fallback):
     """Test that chat_completion raises error when fallback is disabled."""
     primary_session = Mock()

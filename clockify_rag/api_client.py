@@ -289,14 +289,26 @@ class OllamaAPIClient(BaseLLMClient):
             raise LLMUnavailableError(f"Chat completion connection error for model {model}") from e
         except requests.exceptions.HTTPError as e:
             status = getattr(e.response, "status_code", getattr(response, "status_code", "unknown"))
-            logger.error(
-                "Chat completion HTTP error model=%s host=%s status=%s: %s",
-                model,
-                self.base_url,
-                status,
-                e,
-            )
-            raise LLMError(f"Chat completion HTTP error (status {status})") from e
+            # Treat 5xx server errors as unavailable (triggers fallback)
+            # Treat 4xx client errors as permanent failures (no fallback)
+            if isinstance(status, int) and 500 <= status < 600:
+                logger.error(
+                    "Chat completion server error (5xx) model=%s host=%s status=%s: %s",
+                    model,
+                    self.base_url,
+                    status,
+                    e,
+                )
+                raise LLMUnavailableError(f"Chat completion server error (status {status})") from e
+            else:
+                logger.error(
+                    "Chat completion HTTP error model=%s host=%s status=%s: %s",
+                    model,
+                    self.base_url,
+                    status,
+                    e,
+                )
+                raise LLMError(f"Chat completion HTTP error (status {status})") from e
         except ValueError as e:
             logger.error(
                 "Chat completion invalid JSON model=%s host=%s: %s",
