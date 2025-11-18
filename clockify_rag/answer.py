@@ -33,7 +33,6 @@ from .config import (
     STRICT_CITATIONS,
     get_llm_client_mode,
     get_context_budget,
-    get_context_window,
 )
 from .retrieval import (
     retrieve,

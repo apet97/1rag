@@ -5,14 +5,12 @@ import requests
 from unittest.mock import Mock, patch
 
 from clockify_rag.api_client import (
-    OllamaAPIClient,
     GptOssAPIClient,
     chat_completion,
     get_fallback_client,
     validate_models,
     reset_llm_client,
 )
-from clockify_rag import config
 import clockify_rag.api_client as api_client_module
 from clockify_rag.exceptions import LLMUnavailableError
 
