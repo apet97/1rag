@@ -21,7 +21,7 @@ A local, stateless, closed-book Retrieval-Augmented Generation (RAG) chatbot for
 |----------|--------|-------|
 | **Linux** | ✅ Full Support | Recommended for production |
 | **macOS Intel** | ✅ Full Support | Uses IVFFlat FAISS index |
-| **macOS Apple Silicon (M1/M2/M3)** | ✅ **Full Support** | See [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) |
+| **macOS Apple Silicon (M1/M2/M3)** | ✅ **Full Support** | See [docs/M1_COMPATIBILITY.md](docs/M1_COMPATIBILITY.md) |
 | **Windows** | ⚠️ WSL2 Recommended | Native support via WSL2 |
 
 ## Documentation
@@ -30,9 +30,9 @@ A local, stateless, closed-book Retrieval-Augmented Generation (RAG) chatbot for
 
 **Quick links by role:**
 - **New users**: [START_HERE.md](START_HERE.md) → [SUPPORT_CLI_QUICKSTART.md](SUPPORT_CLI_QUICKSTART.md)
-- **Developers**: [ARCHITECTURE.md](docs/ARCHITECTURE.md) → [CLAUDE.md](CLAUDE.md) → [TESTING.md](TESTING.md)
-- **DevOps/SRE**: [PRODUCTION_GUIDE.md](PRODUCTION_GUIDE.md) → [SMOKE_TEST_RUNBOOK.md](SMOKE_TEST_RUNBOOK.md)
-- **macOS ARM64**: [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) → [docs/INSTALL_macOS_ARM64.md](docs/INSTALL_macOS_ARM64.md)
+- **Developers**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) → [CLAUDE.md](CLAUDE.md) → [TESTING.md](TESTING.md)
+- **DevOps/SRE**: [docs/PRODUCTION_GUIDE.md](docs/PRODUCTION_GUIDE.md) → [docs/SMOKE_TEST_RUNBOOK.md](docs/SMOKE_TEST_RUNBOOK.md)
+- **macOS ARM64**: [docs/M1_COMPATIBILITY.md](docs/M1_COMPATIBILITY.md) → [docs/INSTALL_macOS_ARM64.md](docs/INSTALL_macOS_ARM64.md)
 
 ## Quick Start
 
@@ -65,7 +65,7 @@ conda install -c conda-forge sentence-transformers
 pip install -e '.[dev]'  # pulls rank-bm25, typer, httpx, etc.
 ```
 
-For detailed M1 installation instructions, see [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md).
+For detailed M1 installation instructions, see [docs/M1_COMPATIBILITY.md](docs/M1_COMPATIBILITY.md).
 
 ### Configure Ollama Endpoint
 

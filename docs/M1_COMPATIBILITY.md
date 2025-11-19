@@ -12,7 +12,7 @@ The Clockify RAG CLI is fully compatible with Apple Silicon (M1/M2/M3) Macs. Thi
 
 ### Prerequisites
 - macOS 12.3 or later (required for PyTorch MPS acceleration)
-- Python 3.9+ (native ARM64 build recommended)
+- Python 3.11 or 3.12 (native ARM64 build recommended; 3.13 experimental, 3.14+ not supported)
 - Homebrew (ARM64 version)
 
 ### Verify Native ARM Python
@@ -368,6 +368,67 @@ python3 clockify_support_cli_final.py chat
 ```
 
 **Note**: The default `127.0.0.1` (localhost) configuration is VPN-safe and works in most VPN environments. Only configure remote endpoints if Ollama runs on a different machine.
+
+## Known Warnings (macOS M1 Pro)
+
+The following warnings are **expected and safe** on macOS M1 systems. They do NOT impact core RAG functionality (remote Qwen via Ollama):
+
+### 1. FAISS Missing Warning
+
+```
+INFO: FAISS wheels are not published for macOS arm64; install via conda:
+  conda install -c conda-forge faiss-cpu
+```
+
+**Impact**: Core RAG works fine without FAISS. The system falls back to linear search for vector similarity, which is acceptable for corpora <100K chunks.
+
+**Optional Fix**: Install FAISS via conda if you need faster vector search:
+```bash
+conda install -c conda-forge faiss-cpu=1.8.0
+```
+
+### 2. PyTorch/SentenceTransformers Missing Warning
+
+```
+WARNING: Optional dependencies not installed: torch
+Some tests may be skipped. Install with: pip install -e '.[embeddings]'
+```
+
+**Impact**: Core RAG works with remote Ollama embeddings only. Local embeddings (via SentenceTransformers) are optional.
+
+**Optional Fix**: Install local embedding support:
+```bash
+pip install -e '.[embeddings]'
+```
+
+### 3. Pydantic v1 / Python 3.14 Warning (if using Python 3.14)
+
+```
+UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+```
+
+**Impact**: This warning appears if you force Python 3.14, which is **not officially supported**. Downgrade to Python 3.11 or 3.12 to avoid this.
+
+**Required Fix**: Use a supported Python version:
+```bash
+# Install Python 3.12 via Homebrew
+brew install python@3.12
+
+# Create new venv with supported Python
+python3.12 -m venv venv
+source venv/bin/activate
+pip install -e .
+```
+
+### Summary of Acceptable vs Critical Warnings
+
+| Warning | M1 Pro | Linux CI | Impact | Action |
+|---------|--------|----------|--------|--------|
+| FAISS missing | ✅ Expected | ❌ Should install | None (fallback works) | Optional: install via conda |
+| torch missing | ✅ Expected | ✅ Expected | None (remote embeddings work) | Optional: install `[embeddings]` extra |
+| Pydantic 3.14 | ⚠️ If using 3.14 | ⚠️ If using 3.14 | May cause errors | Required: use Python 3.11-3.12 |
+
+**When to worry**: Only worry if you see errors (tracebacks, import failures), not warnings. All warnings listed above are documented and safe.
 
 ## Additional Resources
 

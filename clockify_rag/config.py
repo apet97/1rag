@@ -1,5 +1,15 @@
 """Configuration constants for Clockify RAG system."""
 
+import sys
+
+# Runtime guard: Fail fast on Python 3.14+ (Pydantic v1 / LangChain compatibility)
+if sys.version_info >= (3, 14):
+    raise RuntimeError(
+        f"Python {sys.version.split()[0]} is not supported for this project. "
+        "Use Python 3.11-3.13 (3.11/3.12 strongly recommended) due to "
+        "Pydantic v1 / LangChain compatibility issues."
+    )
+
 import logging
 import os
 from dataclasses import dataclass

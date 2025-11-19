@@ -7,7 +7,7 @@ name = "clockify-rag"
 version = "5.9.1"
 description = "Production-ready RAG system with Apple Silicon support, hybrid retrieval, and modular architecture"
 readme = "README.md"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11,<3.14"
 license = { text = "MIT" }
 authors = [
     { name = "Clockify Team", email = "support@clockify.me" }
@@ -30,6 +30,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS",
     "Operating System :: POSIX :: Linux",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -49,9 +50,7 @@ dependencies = [
     "tiktoken>=0.5.0,<0.7.0",
     "nltk>=3.8.0,<4.0.0",
 
-    # Embeddings and retrieval
-    "sentence-transformers>=2.6.0,<3.0.0",
-    "torch>=2.3.0,<2.6.0",  # Metal/MPS stable window for macOS
+    # Retrieval (BM25 only - for core functionality)
     "rank-bm25>=0.2.2,<0.3.0",
 
     # LangChain integrations (remote-first Ollama design)
@@ -85,6 +84,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Local embeddings (optional - core RAG works with remote Ollama only)
+embeddings = [
+    "sentence-transformers>=2.6.0,<3.0.0",
+    "torch>=2.3.0,<2.6.0",  # Metal/MPS stable window for macOS
+]
 eval = [
     "ragas>=0.1.14",
     "datasets>=2.19.0",
@@ -119,7 +123,7 @@ ragctl = "clockify_rag.cli_modern:app"
 
 [tool.black]
 line-length = 120
-target-version = ["py311", "py312"]
+target-version = ["py311", "py312", "py313"]
 include = '\.pyi?$'
 extend-exclude = '''
 /(
