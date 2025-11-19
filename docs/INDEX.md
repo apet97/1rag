@@ -12,7 +12,7 @@ Start here for quick setup and usage:
 | [README.md](../README.md) | Main project overview | All users | ✅ Current |
 | [QUICKSTART.md](../QUICKSTART.md) | v1.0 quick start (5-10 min) | New users | ✅ Current |
 | [SUPPORT_CLI_QUICKSTART.md](../SUPPORT_CLI_QUICKSTART.md) | v2.0 quick start (5 min) | New users | ✅ Current |
-| [SMOKE_TEST_RUNBOOK.md](../SMOKE_TEST_RUNBOOK.md) | Pre-deployment verification | DevOps/QA | ✅ Current |
+| [SMOKE_TEST_RUNBOOK.md](SMOKE_TEST_RUNBOOK.md) | Pre-deployment verification | DevOps/QA | ✅ Current |
 
 ## 🏗️ Architecture & Design (Current)
 
@@ -42,13 +42,14 @@ Production deployment and configuration:
 
 | Document | Purpose | Audience | Status |
 |----------|---------|----------|--------|
-| [PRODUCTION_GUIDE.md](../PRODUCTION_GUIDE.md) | Production deployment guide | DevOps | ✅ Current |
-| [DEPLOYMENT.md](../DEPLOYMENT.md) | Deployment procedures | DevOps | ✅ Current |
+| [PRODUCTION_GUIDE.md](PRODUCTION_GUIDE.md) | Production deployment guide | DevOps | ✅ Current |
+| [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment procedures | DevOps | ✅ Current |
 | [CONFIG.md](CONFIG.md) | Configuration reference | Ops/Developers | ✅ Current |
 | [CONFIGURATION.md](CONFIGURATION.md) | Configuration guide | Ops/Developers | ✅ Current |
 | [OPERATIONS.md](OPERATIONS.md) | Operations runbook | SRE/DevOps | ✅ Current |
 | [RUNBOOK.md](RUNBOOK.md) | Operational runbook | SRE/DevOps | ✅ Current |
 | [RAG_PROD_CHECKLIST.md](RAG_PROD_CHECKLIST.md) | Production readiness checklist | DevOps/QA | ✅ Current |
+| [SMOKE_TEST_RUNBOOK.md](SMOKE_TEST_RUNBOOK.md) | Pre-deployment smoke tests | DevOps/QA | ✅ Current |
 
 ## 🔧 Technical Details (Current)
 
@@ -69,9 +70,19 @@ Platform-specific installation and configuration:
 
 | Document | Purpose | Audience | Status |
 |----------|---------|----------|--------|
-| [M1_COMPATIBILITY.md](../M1_COMPATIBILITY.md) | Apple Silicon compatibility | macOS users | ✅ Current |
+| [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) | Apple Silicon compatibility | macOS users | ✅ Current |
 | [INSTALL_macOS_ARM64.md](INSTALL_macOS_ARM64.md) | macOS ARM64 installation | macOS users | ✅ Current |
 | [CI_CD_M1_RECOMMENDATIONS.md](../CI_CD_M1_RECOMMENDATIONS.md) | M1 CI/CD recommendations | DevOps | ✅ Current |
+
+## 🔧 Dependency Management & Hygiene (Current)
+
+Dependency management and package hygiene:
+
+| Document | Purpose | Audience | Status |
+|----------|---------|----------|--------|
+| [DEPENDENCY_HYGIENE_SUMMARY.md](DEPENDENCY_HYGIENE_SUMMARY.md) | Dependency decisions summary | Developers/DevOps | ✅ Current |
+| [DEPENDENCY_HYGIENE_PLAN.md](DEPENDENCY_HYGIENE_PLAN.md) | Dependency hygiene strategy | Architects/Leads | ✅ Current |
+| [DEPENDENCY_HYGIENE_EXECUTIVE_SUMMARY.md](DEPENDENCY_HYGIENE_EXECUTIVE_SUMMARY.md) | Executive summary | Management | ✅ Current |
 
 ## 📊 Analysis & Audits (Historical Reference)
 
@@ -169,13 +180,13 @@ Other reference documents:
 4. For Claude: [CLAUDE.md](../CLAUDE.md)
 
 ### I'm DevOps/SRE
-1. Production Guide: [PRODUCTION_GUIDE.md](../PRODUCTION_GUIDE.md)
-2. Deployment: [DEPLOYMENT.md](../DEPLOYMENT.md)
+1. Production Guide: [PRODUCTION_GUIDE.md](PRODUCTION_GUIDE.md)
+2. Deployment: [DEPLOYMENT.md](DEPLOYMENT.md)
 3. Operations: [OPERATIONS.md](OPERATIONS.md)
-4. Smoke Tests: [SMOKE_TEST_RUNBOOK.md](../SMOKE_TEST_RUNBOOK.md)
+4. Smoke Tests: [SMOKE_TEST_RUNBOOK.md](SMOKE_TEST_RUNBOOK.md)
 
 ### I'm on macOS ARM64
-1. Compatibility: [M1_COMPATIBILITY.md](../M1_COMPATIBILITY.md)
+1. Compatibility: [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md)
 2. Installation: [INSTALL_macOS_ARM64.md](INSTALL_macOS_ARM64.md)
 
 ---
@@ -198,3 +209,5 @@ This index should be updated when:
 - Major version changes occur
 
 Last updated: 2025-11-19
+
+**Note**: Hygiene documentation (PRODUCTION_GUIDE, M1_COMPATIBILITY, SMOKE_TEST_RUNBOOK, and DEPENDENCY_HYGIENE_* files) have been moved from repository root to docs/ directory for better organization.

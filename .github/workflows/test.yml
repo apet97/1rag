@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-14]  # macos-14 = M1 runners (ARM64)
-        python-version: ["3.11"]  # Focus on 3.11 for speed
+        python-version: ["3.11", "3.12"]  # Test both supported versions
 
     steps:
     - name: Checkout code
@@ -37,6 +37,18 @@ jobs:
     - name: Install project (runtime + dev extras)
       run: |
         pip install -e ".[dev]"
+
+    - name: Verify environment (non-strict)
+      run: |
+        python scripts/verify_env.py --json | python -m json.tool | head -30
+        echo "✓ Environment verification passed"
+      continue-on-error: false
+
+    - name: Verify environment (strict mode)
+      run: |
+        python scripts/verify_env.py --strict --json
+        echo "✓ Environment verification passed (strict)"
+      continue-on-error: true  # Allow to fail for now until all optional deps are in CI
 
     - name: Run tests with pytest
       env:

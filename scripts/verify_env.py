@@ -10,22 +10,20 @@ Checks:
 - Disk space
 
 Usage:
-    python scripts/verify_env.py
-    python scripts/verify_env.py --strict  # Exit with error on warnings
+    python scripts/verify_env.py                # Human-readable output
+    python scripts/verify_env.py --json         # JSON output for automation
+    python scripts/verify_env.py --strict       # Treat optional deps as required
+    python scripts/verify_env.py --json --strict  # Combined mode
 """
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
 
-
-def check_python_version() -> tuple[bool, str]:
-    """Check Python version is 3.8+."""
-    version = sys.version_info
-    if version.major == 3 and version.minor >= 8:
-        return True, f"Python {version.major}.{version.minor}.{version.micro}"
-    return False, f"Python {version.major}.{version.minor} (need 3.8+)"
+# Import centralized check functions
+from clockify_rag.env_checks import check_packages, check_python_version
 
 
 def check_env_vars() -> tuple[bool, list[str]]:
@@ -73,46 +71,6 @@ def check_ollama_connectivity() -> tuple[bool, str]:
         return False, f"Error: {e}"
 
 
-def check_packages() -> tuple[bool, list[str]]:
-    """Check required Python packages."""
-    required = [
-        "numpy",
-        "httpx",
-        "langchain_ollama",  # Production requirement
-    ]
-    optional = [
-        "faiss",
-        "torch",
-        "sentence_transformers",
-    ]
-
-    missing_required = []
-    missing_optional = []
-
-    for pkg in required:
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing_required.append(pkg)
-
-    for pkg in optional:
-        try:
-            __import__(pkg)
-        except ImportError:
-            missing_optional.append(pkg)
-
-    messages = []
-    if missing_required:
-        messages.append(f"Missing REQUIRED: {', '.join(missing_required)}")
-    if missing_optional:
-        messages.append(f"Missing optional: {', '.join(missing_optional)}")
-
-    if not missing_required and not missing_optional:
-        messages.append("All packages installed")
-
-    return len(missing_required) == 0, messages
-
-
 def check_index_artifacts() -> tuple[bool, list[str]]:
     """Check if index artifacts exist."""
     required_files = [
@@ -155,57 +113,209 @@ def check_disk_space() -> tuple[bool, str]:
         return False, f"Could not check disk space: {e}"
 
 
-def main(strict: bool = False) -> int:
-    """Run all checks and print results."""
+def run_all_checks(strict: bool = False) -> dict:
+    """Run all checks and return results as a structured dict.
+
+    Args:
+        strict: If True, treat optional package gaps as failures
+
+    Returns:
+        Dict with all check results and metadata
+    """
+    results = {
+        "python": {},
+        "packages": {},
+        "env_vars": {},
+        "ollama": {},
+        "index": {},
+        "disk": {},
+        "overall": {},
+        "strict_mode": strict,
+    }
+
+    all_passed = True
+
+    # Python version check
+    try:
+        py_ok, py_messages = check_python_version()
+        results["python"]["ok"] = py_ok
+        results["python"]["messages"] = py_messages
+        results["python"]["version"] = sys.version.split()[0]
+
+        # Determine tier
+        version = sys.version_info
+        if (version.major, version.minor) in [(3, 11), (3, 12)]:
+            results["python"]["tier"] = "supported"
+        elif version.major == 3 and version.minor == 13:
+            results["python"]["tier"] = "experimental"
+        else:
+            results["python"]["tier"] = "unsupported"
+
+        if not py_ok:
+            all_passed = False
+    except Exception as e:
+        results["python"]["ok"] = False
+        results["python"]["messages"] = [f"Error: {e}"]
+        all_passed = False
+
+    # Package check
+    try:
+        pkg_ok, pkg_messages = check_packages()
+
+        # Extract missing packages from messages
+        missing_required = []
+        missing_optional = []
+        for msg in pkg_messages:
+            if "Missing REQUIRED" in msg:
+                # Parse out the package names
+                parts = msg.split(":")
+                if len(parts) > 1:
+                    missing_required = [p.strip() for p in parts[1].split(",")]
+            elif "Optional dependencies" in msg:
+                # Next messages will have optional package details
+                pass
+            elif msg.strip().startswith("- "):
+                # This is an optional package description
+                # Extract package name (first word after "- ")
+                parts = msg.strip().split()
+                if len(parts) > 1:
+                    # Try to extract package name from description
+                    for part in parts:
+                        if part.lower() in ["faiss", "torch", "sentencetransformers", "sentence_transformers"]:
+                            missing_optional.append(part)
+                            break
+
+        results["packages"]["ok"] = pkg_ok
+        results["packages"]["messages"] = pkg_messages
+        results["packages"]["missing_required"] = missing_required
+        results["packages"]["missing_optional"] = missing_optional
+
+        # In strict mode, optional gaps are failures
+        if strict and missing_optional:
+            results["packages"]["strict_violation"] = True
+            all_passed = False
+        elif not pkg_ok:
+            all_passed = False
+    except Exception as e:
+        results["packages"]["ok"] = False
+        results["packages"]["messages"] = [f"Error: {e}"]
+        all_passed = False
+
+    # Env vars check
+    try:
+        env_ok, env_messages = check_env_vars()
+        results["env_vars"]["ok"] = env_ok
+        results["env_vars"]["messages"] = env_messages
+        if not env_ok:
+            all_passed = False
+    except Exception as e:
+        results["env_vars"]["ok"] = False
+        results["env_vars"]["messages"] = [f"Error: {e}"]
+        all_passed = False
+
+    # Ollama check
+    try:
+        ollama_ok, ollama_msg = check_ollama_connectivity()
+        results["ollama"]["ok"] = ollama_ok
+        results["ollama"]["message"] = ollama_msg
+        # Don't fail overall on Ollama connectivity (may not have VPN)
+    except Exception as e:
+        results["ollama"]["ok"] = False
+        results["ollama"]["message"] = f"Error: {e}"
+
+    # Index check
+    try:
+        index_ok, index_messages = check_index_artifacts()
+        results["index"]["ok"] = index_ok
+        results["index"]["messages"] = index_messages
+        # Don't fail overall on missing index (can be built)
+    except Exception as e:
+        results["index"]["ok"] = False
+        results["index"]["messages"] = [f"Error: {e}"]
+
+    # Disk space check
+    try:
+        disk_ok, disk_msg = check_disk_space()
+        results["disk"]["ok"] = disk_ok
+        results["disk"]["message"] = disk_msg
+        if not disk_ok:
+            all_passed = False
+    except Exception as e:
+        results["disk"]["ok"] = False
+        results["disk"]["message"] = f"Error: {e}"
+        all_passed = False
+
+    # Overall status
+    results["overall"]["ok"] = all_passed
+    results["overall"]["strict_ok"] = all_passed  # Same as overall in this context
+
+    return results
+
+
+def print_human_readable(results: dict) -> None:
+    """Print results in human-readable format."""
+    strict = results.get("strict_mode", False)
+
     print("=" * 60)
     print("RAG Environment Verification")
+    if strict:
+        print("(STRICT MODE: Optional dependencies treated as required)")
     print("=" * 60)
     print()
 
-    checks = [
-        ("Python Version", check_python_version),
-        ("Environment Variables", check_env_vars),
-        ("Ollama Connectivity", check_ollama_connectivity),
-        ("Python Packages", check_packages),
-        ("Index Artifacts", check_index_artifacts),
-        ("Disk Space", check_disk_space),
-    ]
+    # Python Version
+    print("[Python Version]")
+    py_data = results["python"]
+    icon = "✅" if py_data.get("ok") else "❌"
+    for msg in py_data.get("messages", []):
+        print(f"  {icon} {msg}")
+    print()
 
-    all_passed = True
-    warnings = []
+    # Packages
+    print("[Python Packages]")
+    pkg_data = results["packages"]
+    icon = "✅" if pkg_data.get("ok") else "❌"
 
-    for name, check_fn in checks:
-        print(f"[{name}]")
-        try:
-            passed, message = check_fn()
+    if strict and pkg_data.get("strict_violation"):
+        print(f"  ❌ STRICT MODE: Missing optional dependencies are treated as fatal")
 
-            if passed:
-                icon = "✅"
-            else:
-                icon = "❌"
-                all_passed = False
+    for msg in pkg_data.get("messages", []):
+        print(f"  {icon if 'REQUIRED' in msg or 'Missing' in msg else 'ℹ️'} {msg}")
+    print()
 
-            if isinstance(message, list):
-                for msg in message:
-                    print(f"  {icon} {msg}")
-                    if not passed or (strict and "warning" in msg.lower()):
-                        warnings.append((name, msg))
-            else:
-                print(f"  {icon} {message}")
-                if not passed:
-                    warnings.append((name, message))
-        except Exception as e:
-            print(f"  ❌ Error: {e}")
-            all_passed = False
-            warnings.append((name, str(e)))
+    # Env Vars
+    print("[Environment Variables]")
+    env_data = results["env_vars"]
+    for msg in env_data.get("messages", []):
+        print(f"  ℹ️  {msg}")
+    print()
 
-        print()
+    # Ollama
+    print("[Ollama Connectivity]")
+    ollama_data = results["ollama"]
+    icon = "✅" if ollama_data.get("ok") else "❌"
+    print(f"  {icon} {ollama_data.get('message', 'No data')}")
+    print()
+
+    # Index
+    print("[Index Artifacts]")
+    index_data = results["index"]
+    icon = "✅" if index_data.get("ok") else "ℹ️"
+    for msg in index_data.get("messages", []):
+        print(f"  {icon} {msg}")
+    print()
+
+    # Disk
+    print("[Disk Space]")
+    disk_data = results["disk"]
+    icon = "✅" if disk_data.get("ok") else "❌"
+    print(f"  {icon} {disk_data.get('message', 'No data')}")
+    print()
 
     print("=" * 60)
 
-    if all_passed:
-        print("✅ All checks passed! System ready.")
-        return 0
+    if results["overall"]["ok"]:
+        print("✅ All critical checks passed! System ready.")
     else:
         print("❌ Some checks failed. See above for details.")
         print()
@@ -214,16 +324,51 @@ def main(strict: bool = False) -> int:
         print("  - Build index: make build")
         print("  - Check VPN connection for Ollama endpoint")
         print("  - Set ENVIRONMENT=dev for development mode")
-        return 1
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Verify RAG environment")
+def print_json(results: dict) -> None:
+    """Print results in JSON format."""
+    # Ensure all data is JSON-serializable
+    print(json.dumps(results, indent=2))
+
+
+def main() -> int:
+    """Run all checks and print results."""
+    parser = argparse.ArgumentParser(
+        description="Verify RAG environment (Python version, packages, connectivity)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/verify_env.py                # Human-readable output
+  python scripts/verify_env.py --json         # JSON output for CI/automation
+  python scripts/verify_env.py --strict       # Treat optional deps as required
+  python scripts/verify_env.py --json --strict  # Combined mode
+        """
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output results in JSON format (for automation/CI)",
+    )
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Treat warnings as errors",
+        help="Treat missing optional dependencies as failures",
     )
     args = parser.parse_args()
 
-    sys.exit(main(strict=args.strict))
+    # Run all checks
+    results = run_all_checks(strict=args.strict)
+
+    # Print results
+    if args.json:
+        print_json(results)
+    else:
+        print_human_readable(results)
+
+    # Exit code based on overall status
+    return 0 if results["overall"]["ok"] else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
