@@ -90,12 +90,17 @@ def check_llm_client() -> Tuple[bool, str]:
     """Check that LLM client can be instantiated."""
     try:
         from .llm_client import get_llm_client
+        from . import config
 
         client = get_llm_client(temperature=0.0)
         logger.info(f"✓ LLM client instantiated: {type(client).__name__}")
         logger.info(f"  Model: {client.model}")
+        logger.info(f"  Base URL: {config.RAG_OLLAMA_URL}")
         logger.info(f"  Temperature: {client.temperature}")
-        logger.info(f"  Streaming: disabled (enforced in factory)")
+        logger.info(f"  Timeout: {config.OLLAMA_TIMEOUT}s")
+        # Note: streaming=False is set at client creation time in llm_client.py
+        # We don't access client.streaming attribute as it may not be exposed
+        logger.info(f"  Streaming: disabled (configured at client creation)")
         return True, "LLM client ready"
     except Exception as e:
         return False, f"Failed to create LLM client: {e}"

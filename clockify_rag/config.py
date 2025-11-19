@@ -325,6 +325,11 @@ DEFAULT_TOP_K = _parse_env_int("DEFAULT_TOP_K", 15, min_val=1, max_val=100)  # W
 # Typical chunk size: ~400 tokens → 15 chunks = ~6000 tokens, leaving room for prompt and response
 RETRIEVAL_K = DEFAULT_TOP_K  # Backward compatibility and semantic clarity
 
+# Maximum top_k to prevent context overflow (hard ceiling for user-supplied values)
+# With typical chunk size of ~400 tokens, 50 chunks = ~20K tokens, which would overflow
+# even large models. This cap protects against accidental or malicious large requests.
+MAX_TOP_K = _parse_env_int("MAX_TOP_K", 50, min_val=1, max_val=200)
+
 DEFAULT_PACK_TOP = _parse_env_int(
     "DEFAULT_PACK_TOP", 8, min_val=1, max_val=50
 )  # Was 6, now 8 (more snippets in context)

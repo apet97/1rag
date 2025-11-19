@@ -20,8 +20,39 @@ Document Sources → Ingestion → Chunking → Embedding → Indexing → Query
 
 ## Production Configuration
 
+### Critical Dependencies
+
+**IMPORTANT**: The system requires `langchain-ollama` in production environments.
+
+```bash
+# Production (REQUIRED)
+pip install langchain-ollama
+
+# Development (optional fallback)
+pip install langchain-community
+```
+
+**Why this matters:**
+- `langchain-ollama` is the newer, better-maintained package for Ollama integration
+- `langchain-community` is deprecated for new deployments
+- Production deployments **MUST NOT** rely on silent fallback to legacy packages
+
+**Environment Control:**
+```bash
+# Set ENVIRONMENT to control import behavior
+export ENVIRONMENT=production  # Fail fast if langchain-ollama missing
+export ENVIRONMENT=dev         # Allow fallback to langchain-community (not recommended)
+export ENVIRONMENT=ci          # Same as production (fail fast)
+
+# Alternative: APP_ENV (checked if ENVIRONMENT not set)
+export APP_ENV=production
+```
+
 ### Required Environment Variables
 ```bash
+# Environment Type (CRITICAL)
+ENVIRONMENT=production                   # Controls dependency enforcement (prod/ci/dev)
+
 # Ollama Configuration
 OLLAMA_URL=http://your-ollama-host:11434  # Your Ollama endpoint
 GEN_MODEL=qwen2.5:32b                     # Generation model

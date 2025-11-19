@@ -24,6 +24,16 @@ A local, stateless, closed-book Retrieval-Augmented Generation (RAG) chatbot for
 | **macOS Apple Silicon (M1/M2/M3)** | ✅ **Full Support** | See [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) |
 | **Windows** | ⚠️ WSL2 Recommended | Native support via WSL2 |
 
+## Documentation
+
+📚 **Complete documentation index**: [docs/INDEX.md](docs/INDEX.md)
+
+**Quick links by role:**
+- **New users**: [START_HERE.md](START_HERE.md) → [SUPPORT_CLI_QUICKSTART.md](SUPPORT_CLI_QUICKSTART.md)
+- **Developers**: [ARCHITECTURE.md](docs/ARCHITECTURE.md) → [CLAUDE.md](CLAUDE.md) → [TESTING.md](TESTING.md)
+- **DevOps/SRE**: [PRODUCTION_GUIDE.md](PRODUCTION_GUIDE.md) → [SMOKE_TEST_RUNBOOK.md](SMOKE_TEST_RUNBOOK.md)
+- **macOS ARM64**: [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) → [docs/INSTALL_macOS_ARM64.md](docs/INSTALL_macOS_ARM64.md)
+
 ## Quick Start
 
 ### 5-Step Setup

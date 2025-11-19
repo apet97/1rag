@@ -472,6 +472,14 @@ def retrieve(
     if top_k is None:
         top_k = config.DEFAULT_TOP_K
 
+    # Enforce hard ceiling to prevent context overflow (safety cap for user-supplied values)
+    # This protects against accidental or malicious large requests that would blow up context
+    if top_k > config.MAX_TOP_K:
+        logger.warning(
+            f"top_k={top_k} exceeds MAX_TOP_K={config.MAX_TOP_K}, clamping to MAX_TOP_K"
+        )
+        top_k = config.MAX_TOP_K
+
     # OPTIMIZATION: Classify query intent for specialized retrieval strategy (if enabled)
     intent_metadata = {}
     if config.USE_INTENT_CLASSIFICATION:

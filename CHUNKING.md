@@ -91,3 +91,49 @@ All chunks are validated for:
 - Size constraints (not exceeding maximum)
 - Content quality (non-empty with meaningful text)
 - Metadata completeness
+
+## Retrieval Configuration and Context Management
+
+The chunking configuration works in tandem with retrieval parameters to prevent context overflow:
+
+### Key Constants
+
+```bash
+DEFAULT_TOP_K=15      # Number of chunks to retrieve (default)
+MAX_TOP_K=50          # Hard ceiling to prevent context overflow
+DEFAULT_PACK_TOP=8    # Number of chunks to pack into final context
+CTX_TOKEN_BUDGET=12000  # Token budget for snippet packing
+```
+
+### Relationship Between Chunking and Retrieval
+
+- **Chunk Size** (CHUNK_CHARS=1600): ~400 tokens per chunk (at 4 chars/token)
+- **Retrieval Fan-out** (DEFAULT_TOP_K=15): 15 chunks × 400 tokens = ~6000 tokens
+- **Context Budget** (CTX_TOKEN_BUDGET=12000): Allows 2x safety margin for larger chunks
+- **Hard Cap** (MAX_TOP_K=50): 50 chunks × 400 tokens = ~20K tokens (would overflow most models)
+
+### Safety Mechanisms
+
+1. **DEFAULT_TOP_K**: Configurable default via `DEFAULT_TOP_K` env var, used when no explicit top_k provided
+2. **MAX_TOP_K**: Hard ceiling enforced in `retrieve()` function, prevents context overflow from user input
+3. **RETRIEVAL_K**: Backward-compatible alias for DEFAULT_TOP_K
+4. **Automatic Clamping**: Values exceeding MAX_TOP_K are automatically clamped with a warning
+
+### Configuration Examples
+
+```bash
+# Conservative (small models, limited memory)
+export DEFAULT_TOP_K=10
+export MAX_TOP_K=30
+export CTX_TOKEN_BUDGET=6000
+
+# Aggressive (large models, internal use)
+export DEFAULT_TOP_K=20
+export MAX_TOP_K=100
+export CTX_TOKEN_BUDGET=20000
+
+# Default (balanced for Qwen 32B with 32K context window)
+export DEFAULT_TOP_K=15
+export MAX_TOP_K=50
+export CTX_TOKEN_BUDGET=12000
+```

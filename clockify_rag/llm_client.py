@@ -10,20 +10,46 @@ the corporate Ollama instance. Designed for VPN environments with:
 """
 
 import logging
+import os
 from typing import Optional
 
 import httpx
 
-# Use langchain-ollama (newer package, better maintained)
-try:
-    from langchain_ollama import ChatOllama
-except ImportError:
-    # Fallback to langchain-community for older installations
-    from langchain_community.chat_models import ChatOllama  # type: ignore
-
 from .config import RAG_OLLAMA_URL, LLM_MODEL, OLLAMA_TIMEOUT
 
 logger = logging.getLogger(__name__)
+
+# Import strategy: Prefer langchain-ollama (newer, better maintained)
+# In production, fail fast if not available. In dev, allow fallback with warning.
+_ENV = os.getenv("ENVIRONMENT", os.getenv("APP_ENV", "dev")).lower()
+_IS_PROD = _ENV in ("prod", "production", "ci")
+
+try:
+    from langchain_ollama import ChatOllama
+    _USING_FALLBACK = False
+except ImportError as e:
+    if _IS_PROD:
+        # PRODUCTION: Fail fast with clear error message
+        raise ImportError(
+            "langchain-ollama is required in production but not installed. "
+            "Install with: pip install langchain-ollama\n"
+            "Set ENVIRONMENT=dev to allow fallback to langchain-community (not recommended)."
+        ) from e
+    else:
+        # DEVELOPMENT: Allow fallback but log clear warning
+        logger.warning(
+            "langchain-ollama not found, falling back to langchain-community.chat_models.ChatOllama. "
+            "This is only allowed in DEV mode. "
+            "For production, install langchain-ollama: pip install langchain-ollama"
+        )
+        try:
+            from langchain_community.chat_models import ChatOllama  # type: ignore
+            _USING_FALLBACK = True
+        except ImportError as e2:
+            raise ImportError(
+                "Neither langchain-ollama nor langchain-community is available. "
+                "Install langchain-ollama: pip install langchain-ollama"
+            ) from e2
 
 
 def get_llm_client(temperature: float = 0.0) -> ChatOllama:

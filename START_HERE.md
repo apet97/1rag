@@ -56,6 +56,28 @@ That's it! You're done.
 
 ---
 
+## Verification & Smoke Tests
+
+Before deploying or after changes, verify the system:
+
+```bash
+# Quick environment check (30 seconds)
+python scripts/verify_env.py
+
+# Sanity check (requires VPN/Ollama)
+python -m clockify_rag.sanity_check
+
+# Smoke test (offline, uses mock LLM)
+python scripts/smoke_rag.py
+
+# Full smoke suite (5-10 min, requires VPN)
+./scripts/smoke.sh
+```
+
+**For detailed procedures**, see **SMOKE_TEST_RUNBOOK.md**.
+
+---
+
 ## 5-Minute Documentation
 
 ### For v2.0 (Recommended)

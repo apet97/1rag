@@ -114,21 +114,48 @@ def ensure_index_ready(retries=0) -> Tuple:
 
 
 def chat_repl(
-    top_k=12,
-    pack_top=6,
-    threshold=0.30,
+    top_k=None,
+    pack_top=None,
+    threshold=None,
     use_rerank=False,
     debug=False,
-    seed=config.DEFAULT_SEED,
-    num_ctx=config.DEFAULT_NUM_CTX,
-    num_predict=config.DEFAULT_NUM_PREDICT,
-    retries=0,
+    seed=None,
+    num_ctx=None,
+    num_predict=None,
+    retries=None,
     use_json=False,
 ):
     """Stateless REPL loop - Task I. v4.1: JSON output support.
 
     OPTIMIZATION: Loads query cache from disk on startup and saves on exit for persistence.
+
+    Args:
+        top_k: Number of chunks to retrieve (None = use config.DEFAULT_TOP_K)
+        pack_top: Number of chunks to pack into context (None = use config.DEFAULT_PACK_TOP)
+        threshold: Minimum similarity threshold (None = use config.DEFAULT_THRESHOLD)
+        use_rerank: Enable LLM-based reranking
+        debug: Enable debug output
+        seed: Random seed for LLM (None = use config.DEFAULT_SEED)
+        num_ctx: Context window size (None = use config.DEFAULT_NUM_CTX)
+        num_predict: Max tokens to predict (None = use config.DEFAULT_NUM_PREDICT)
+        retries: Number of retries for LLM calls (None = use config.DEFAULT_RETRIES)
+        use_json: Enable JSON output format
     """
+    # Apply config defaults for None values
+    if top_k is None:
+        top_k = config.DEFAULT_TOP_K
+    if pack_top is None:
+        pack_top = config.DEFAULT_PACK_TOP
+    if threshold is None:
+        threshold = config.DEFAULT_THRESHOLD
+    if seed is None:
+        seed = config.DEFAULT_SEED
+    if num_ctx is None:
+        num_ctx = config.DEFAULT_NUM_CTX
+    if num_predict is None:
+        num_predict = config.DEFAULT_NUM_PREDICT
+    if retries is None:
+        retries = config.DEFAULT_RETRIES
     # Task I: log config summary at startup
     _log_config_summary(
         use_rerank=use_rerank,
