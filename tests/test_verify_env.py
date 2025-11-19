@@ -38,10 +38,12 @@ class TestVerifyEnvOptionalDeps:
 
         monkeypatch.setattr(env_checks, "_try_import", mock_try_import)
 
-        passed, messages = env_checks.check_packages()
+        passed, messages, missing_required, missing_optional = env_checks.check_packages()
 
         # Should pass (all required present)
         assert passed is True
+        assert missing_required == []
+        assert len(missing_optional) > 0  # Optional packages missing
 
         # Should contain success message
         messages_str = " ".join(messages)
@@ -58,10 +60,11 @@ class TestVerifyEnvOptionalDeps:
 
         monkeypatch.setattr(env_checks, "_try_import", mock_try_import)
 
-        passed, messages = env_checks.check_packages()
+        passed, messages, missing_required, missing_optional = env_checks.check_packages()
 
         # Should fail (required dep missing)
         assert passed is False
+        assert "numpy" in missing_required
 
         # Should contain error message
         messages_str = " ".join(messages)
@@ -93,10 +96,17 @@ class TestVerifyEnvOptionalDeps:
 
         monkeypatch.setattr(env_checks, "_try_import", mock_try_import)
 
-        passed, messages = env_checks.check_packages()
+        passed, messages, missing_required, missing_optional = env_checks.check_packages()
 
         # Should pass (only optional missing)
         assert passed is True
+        assert missing_required == []
+        assert len(missing_optional) > 0
+
+        # Verify that missing_optional contains expected packages
+        assert "faiss" in missing_optional
+        assert "torch" in missing_optional
+        assert "sentence_transformers" in missing_optional
 
         # Should mention optional deps
         messages_str = " ".join(messages)
@@ -117,10 +127,12 @@ class TestVerifyEnvOptionalDeps:
 
         monkeypatch.setattr(env_checks, "_try_import", mock_try_import)
 
-        passed, messages = env_checks.check_packages()
+        passed, messages, missing_required, missing_optional = env_checks.check_packages()
 
         # Should pass
         assert passed is True
+        assert missing_required == []
+        assert missing_optional == []
 
         # Should indicate all packages installed
         messages_str = " ".join(messages)
@@ -232,7 +244,7 @@ class TestVerifyEnvCLI:
         assert "python" in data
         assert "packages" in data
         assert "overall" in data
-        assert "strict_mode" in data
+        assert "strict_mode" in data["overall"]
 
         # Check python section structure
         assert "ok" in data["python"]
@@ -266,11 +278,11 @@ class TestVerifyEnvCLI:
             pytest.fail(f"Invalid JSON in strict mode: {result.stdout}")
 
         # Verify strict_mode flag is set
-        assert data.get("strict_mode") is True
+        assert data["overall"]["strict_mode"] is True
 
         # If there are any optional deps missing, overall.ok should be False in strict mode
         # (but we can't guarantee what's installed, so just check the flag is processed)
-        assert "strict_mode" in data
+        assert "strict_mode" in data["overall"]
 
     def test_cli_normal_vs_strict_mode_exit_codes(self, verify_env_script):
         """Test that strict mode can produce different exit codes than normal mode."""
@@ -295,8 +307,8 @@ class TestVerifyEnvCLI:
         data_strict = json.loads(result_strict.stdout)
 
         # Verify flags are set correctly
-        assert data_normal.get("strict_mode") is False
-        assert data_strict.get("strict_mode") is True
+        assert data_normal["overall"]["strict_mode"] is False
+        assert data_strict["overall"]["strict_mode"] is True
 
         # If optional deps are missing, strict should be more restrictive
         # (exit codes might differ)
@@ -318,3 +330,111 @@ class TestVerifyEnvCLI:
         assert "usage:" in result.stdout.lower() or "verify" in result.stdout.lower()
         assert "--json" in result.stdout
         assert "--strict" in result.stdout
+
+    def test_cli_normal_mode_with_optional_missing_via_hook(self, verify_env_script):
+        """Test normal mode with ENV_CHECKS_TEST_MODE=force_missing_optional."""
+        import os
+
+        env = os.environ.copy()
+        env["ENV_CHECKS_TEST_MODE"] = "force_missing_optional"
+
+        result = subprocess.run(
+            [sys.executable, verify_env_script],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+        # Should pass in normal mode (optional missing is OK)
+        assert result.returncode == 0, f"Expected exit code 0, got {result.returncode}\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        assert "Optional dependencies" in result.stdout or "optional" in result.stdout.lower()
+
+    def test_cli_strict_mode_with_optional_missing_via_hook(self, verify_env_script):
+        """Test strict mode with ENV_CHECKS_TEST_MODE=force_missing_optional."""
+        import os
+
+        env = os.environ.copy()
+        env["ENV_CHECKS_TEST_MODE"] = "force_missing_optional"
+
+        result = subprocess.run(
+            [sys.executable, verify_env_script, "--strict"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+        # Should fail in strict mode (optional missing is fatal)
+        assert result.returncode == 1, f"Expected exit code 1, got {result.returncode}\nstdout: {result.stdout}"
+        assert "strict" in result.stdout.lower() or "STRICT" in result.stdout
+
+    def test_cli_json_mode_with_optional_missing_via_hook(self, verify_env_script):
+        """Test JSON mode with ENV_CHECKS_TEST_MODE=force_missing_optional."""
+        import os
+
+        env = os.environ.copy()
+        env["ENV_CHECKS_TEST_MODE"] = "force_missing_optional"
+
+        result = subprocess.run(
+            [sys.executable, verify_env_script, "--json"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+        # Should parse as valid JSON
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            pytest.fail(f"Invalid JSON output: {e}\nOutput: {result.stdout}")
+
+        # Verify structure
+        assert "overall" in data
+        assert "strict_mode" in data["overall"]
+        assert data["overall"]["strict_mode"] is False  # Not in strict mode
+
+        # Verify packages data
+        assert "packages" in data
+        assert "missing_required" in data["packages"]
+        assert "missing_optional" in data["packages"]
+        assert len(data["packages"]["missing_optional"]) > 0, "Expected missing optional packages"
+
+        # In normal mode, should pass even with optional missing
+        assert data["overall"]["ok"] is True
+
+    def test_cli_json_strict_mode_with_optional_missing_via_hook(self, verify_env_script):
+        """Test JSON strict mode with ENV_CHECKS_TEST_MODE=force_missing_optional."""
+        import os
+
+        env = os.environ.copy()
+        env["ENV_CHECKS_TEST_MODE"] = "force_missing_optional"
+
+        result = subprocess.run(
+            [sys.executable, verify_env_script, "--json", "--strict"],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=30,
+        )
+
+        # Should parse as valid JSON
+        try:
+            data = json.loads(result.stdout)
+        except json.JSONDecodeError as e:
+            pytest.fail(f"Invalid JSON output: {e}\nOutput: {result.stdout}")
+
+        # Verify structure
+        assert "overall" in data
+        assert "strict_mode" in data["overall"]
+        assert data["overall"]["strict_mode"] is True  # In strict mode
+
+        # Verify packages data
+        assert "packages" in data
+        assert "missing_optional" in data["packages"]
+        assert len(data["packages"]["missing_optional"]) > 0, "Expected missing optional packages"
+
+        # In strict mode, should fail with optional missing
+        assert data["overall"]["strict_ok"] is False
+        assert result.returncode == 1

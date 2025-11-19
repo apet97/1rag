@@ -98,7 +98,7 @@ def check_llm_client() -> Tuple[bool, str]:
         logger.info(f"  Timeout: {config.OLLAMA_TIMEOUT}s")
         # Note: streaming=False is set at client creation time in llm_client.py
         # We don't access client.streaming attribute as it may not be exposed
-        logger.info(f"  Streaming: disabled (configured at client creation)")
+        logger.info("  Streaming: disabled (configured at client creation)")
         return True, "LLM client ready"
     except Exception as e:
         return False, f"Failed to create LLM client: {e}"

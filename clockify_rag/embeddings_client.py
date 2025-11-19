@@ -156,7 +156,7 @@ def embed_query(text: str) -> np.ndarray:
     if not text:
         raise ValueError("Cannot embed empty text")
 
-    logger.debug(f"Embedding query via remote Ollama")
+    logger.debug("Embedding query via remote Ollama")
     client = get_embedding_client()
 
     try:

@@ -10,6 +10,7 @@ Used by scripts/verify_env.py and tests/test_verify_env.py.
 from __future__ import annotations
 
 import importlib
+import os
 import sys
 from typing import List, Tuple
 
@@ -18,27 +19,21 @@ SUPPORTED_MIN = (3, 11)
 SUPPORTED_MAX_EXCLUSIVE = (3, 14)  # i.e. up to 3.13
 RECOMMENDED = [(3, 11), (3, 12)]
 
+# Test mode hook (set ENV_CHECKS_TEST_MODE environment variable in tests)
+TEST_MODE = os.getenv("ENV_CHECKS_TEST_MODE")
+
 # Required packages (must be installed for core RAG functionality)
-# These packages are critical: the system cannot start without them.
+# The system cannot start without these - all are needed for production deployment.
 REQUIRED_PACKAGES = [
-    # Core numerical operations (vectors, embeddings, similarity calculations)
-    "numpy",
-    # HTTP client for Ollama API communication (required for remote-first architecture)
-    "httpx",
-    # LangChain Ollama integration (required for LLM and embedding calls)
-    "langchain_ollama",
-    # BM25 retrieval (required for hybrid search - keyword component)
-    "rank_bm25",
-    # LangChain core (required for document processing and chains)
-    "langchain",
-    # Tokenization (required for context budget calculations and chunking)
-    "tiktoken",
-    # FastAPI (required for API server mode)
-    "fastapi",
-    # Typer (required for CLI commands)
-    "typer",
-    # Pydantic (required for config validation and API models)
-    "pydantic",
+    "numpy",              # Core numerical operations (vectors, embeddings, similarity calculations)
+    "httpx",              # HTTP client for Ollama API communication (remote-first architecture)
+    "langchain_ollama",   # LangChain Ollama integration (required for LLM and embedding calls)
+    "rank_bm25",          # BM25 retrieval (required for hybrid search - keyword component)
+    "langchain",          # LangChain core (required for document processing and chains)
+    "tiktoken",           # Tokenization (required for context budget calculations and chunking)
+    "fastapi",            # API server (required - all deployments use the REST API)
+    "typer",              # CLI commands (required - management and diagnostics require CLI)
+    "pydantic",           # Config validation and API models (required by FastAPI and config system)
 ]
 
 # Optional packages (enhance functionality but not strictly required)
@@ -67,7 +62,23 @@ def _try_import(module_name: str) -> bool:
 
     Returns:
         True if import succeeded, False if ImportError raised
+
+    Note:
+        Respects ENV_CHECKS_TEST_MODE for testing:
+        - "force_missing_optional": Forces optional packages to fail
+        - "force_missing_required": Forces required packages to fail
     """
+    # Test hook for CLI tests
+    if TEST_MODE == "force_missing_optional":
+        # Force optional packages to appear missing
+        optional_names = [pkg if isinstance(pkg, str) else pkg[0] for pkg in OPTIONAL_PACKAGES]
+        if module_name in optional_names:
+            return False
+    elif TEST_MODE == "force_missing_required":
+        # Force required packages to appear missing
+        if module_name in REQUIRED_PACKAGES:
+            return False
+
     try:
         importlib.import_module(module_name)
         return True
@@ -114,13 +125,15 @@ def check_python_version() -> Tuple[bool, List[str]]:
         return False, messages
 
 
-def check_packages() -> Tuple[bool, List[str]]:
+def check_packages() -> Tuple[bool, List[str], List[str], List[str]]:
     """Check required and optional Python packages.
 
     Returns:
-        Tuple of (success: bool, messages: List[str])
-        - success: True if all required packages present, False otherwise
+        Tuple of (ok: bool, messages: List[str], missing_required: List[str], missing_optional: List[str])
+        - ok: True if all required packages present, False otherwise
         - messages: Human-readable status messages for all packages
+        - missing_required: List of missing required package names
+        - missing_optional: List of missing optional package names
     """
     missing_required = []
     missing_optional = []
@@ -130,12 +143,13 @@ def check_packages() -> Tuple[bool, List[str]]:
         if not _try_import(pkg):
             missing_required.append(pkg)
 
-    # Check optional packages
-    for pkg, desc in OPTIONAL_PACKAGES:
-        if not _try_import(pkg):
-            missing_optional.append((pkg, desc))
+    # Check optional packages (extract package name from tuple)
+    for pkg_info in OPTIONAL_PACKAGES:
+        pkg_name = pkg_info if isinstance(pkg_info, str) else pkg_info[0]
+        if not _try_import(pkg_name):
+            missing_optional.append(pkg_name)
 
-    # Build result messages
+    # Build human-readable messages
     messages = []
 
     if missing_required:
@@ -143,12 +157,15 @@ def check_packages() -> Tuple[bool, List[str]]:
 
     if missing_optional:
         messages.append("ℹ️  Optional dependencies not installed (core RAG works without these):")
-        for pkg, desc in missing_optional:
-            messages.append(f"  - {desc}")
+        # Add detailed descriptions for optional packages
+        for pkg_info in OPTIONAL_PACKAGES:
+            pkg_name, pkg_desc = pkg_info if isinstance(pkg_info, tuple) else (pkg_info, pkg_info)
+            if pkg_name in missing_optional:
+                messages.append(f"  - {pkg_desc}")
 
     if not missing_required and not missing_optional:
         messages.append("✅ All packages installed (including optional)")
     elif not missing_required:
         messages.append("✅ All required packages installed")
 
-    return len(missing_required) == 0, messages
+    return len(missing_required) == 0, messages, missing_required, missing_optional

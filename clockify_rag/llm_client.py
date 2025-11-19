@@ -11,7 +11,6 @@ the corporate Ollama instance. Designed for VPN environments with:
 
 import logging
 import os
-from typing import Optional
 
 import httpx
 

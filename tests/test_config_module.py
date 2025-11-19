@@ -236,8 +236,6 @@ def test_check_remote_models_returns_empty_on_connection_error(monkeypatch: pyte
 
 def test_check_remote_models_parses_valid_response(monkeypatch: pytest.MonkeyPatch):
     """Verify that valid /api/tags response is parsed correctly."""
-    import requests
-
     cfg = _load_config_module(monkeypatch)
 
     class MockResponse:
@@ -261,8 +259,6 @@ def test_check_remote_models_parses_valid_response(monkeypatch: pytest.MonkeyPat
 
 def test_select_best_model_prefers_primary(monkeypatch: pytest.MonkeyPatch):
     """Verify that primary model is selected when available."""
-    import requests
-
     cfg = _load_config_module(monkeypatch)
 
     class MockResponse:
@@ -285,8 +281,6 @@ def test_select_best_model_prefers_primary(monkeypatch: pytest.MonkeyPatch):
 
 def test_select_best_model_falls_back_to_secondary(monkeypatch: pytest.MonkeyPatch):
     """Verify that fallback model is selected if primary is unavailable."""
-    import requests
-
     cfg = _load_config_module(monkeypatch)
 
     class MockResponse:
@@ -323,8 +317,6 @@ def test_select_best_model_returns_primary_on_timeout(monkeypatch: pytest.Monkey
 
 def test_select_best_model_returns_primary_if_neither_available(monkeypatch: pytest.MonkeyPatch):
     """Verify that primary model is returned if neither model is available (graceful fallback)."""
-    import requests
-
     cfg = _load_config_module(monkeypatch)
 
     class MockResponse:
@@ -346,8 +338,6 @@ def test_select_best_model_returns_primary_if_neither_available(monkeypatch: pyt
 
 def test_llm_model_is_selected_at_module_load(monkeypatch: pytest.MonkeyPatch):
     """Verify that LLM_MODEL is selected/initialized at module import time."""
-    import requests
-
     class MockResponse:
         def raise_for_status(self):
             pass

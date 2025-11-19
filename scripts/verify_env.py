@@ -131,10 +131,11 @@ def run_all_checks(strict: bool = False) -> dict:
         "index": {},
         "disk": {},
         "overall": {},
-        "strict_mode": strict,
     }
 
-    all_passed = True
+    # Track base_ok (required checks only) and strict_ok separately
+    base_ok = True
+    strict_ok = True
 
     # Python version check
     try:
@@ -153,66 +154,47 @@ def run_all_checks(strict: bool = False) -> dict:
             results["python"]["tier"] = "unsupported"
 
         if not py_ok:
-            all_passed = False
+            base_ok = False
     except Exception as e:
         results["python"]["ok"] = False
         results["python"]["messages"] = [f"Error: {e}"]
-        all_passed = False
+        base_ok = False
 
-    # Package check
+    # Package check - now uses structured data from check_packages()
     try:
-        pkg_ok, pkg_messages = check_packages()
-
-        # Extract missing packages from messages
-        missing_required = []
-        missing_optional = []
-        for msg in pkg_messages:
-            if "Missing REQUIRED" in msg:
-                # Parse out the package names
-                parts = msg.split(":")
-                if len(parts) > 1:
-                    missing_required = [p.strip() for p in parts[1].split(",")]
-            elif "Optional dependencies" in msg:
-                # Next messages will have optional package details
-                pass
-            elif msg.strip().startswith("- "):
-                # This is an optional package description
-                # Extract package name (first word after "- ")
-                parts = msg.strip().split()
-                if len(parts) > 1:
-                    # Try to extract package name from description
-                    for part in parts:
-                        if part.lower() in ["faiss", "torch", "sentencetransformers", "sentence_transformers"]:
-                            missing_optional.append(part)
-                            break
+        pkg_ok, pkg_messages, missing_required, missing_optional = check_packages()
 
         results["packages"]["ok"] = pkg_ok
         results["packages"]["messages"] = pkg_messages
         results["packages"]["missing_required"] = missing_required
         results["packages"]["missing_optional"] = missing_optional
 
-        # In strict mode, optional gaps are failures
-        if strict and missing_optional:
-            results["packages"]["strict_violation"] = True
-            all_passed = False
+        # Base check: only required packages matter
+        if not pkg_ok:
+            base_ok = False
+
+        # Strict check: both required and optional packages matter
+        if strict and (not pkg_ok or missing_optional):
+            strict_ok = False
         elif not pkg_ok:
-            all_passed = False
+            strict_ok = False
     except Exception as e:
         results["packages"]["ok"] = False
         results["packages"]["messages"] = [f"Error: {e}"]
-        all_passed = False
+        results["packages"]["missing_required"] = []
+        results["packages"]["missing_optional"] = []
+        base_ok = False
+        strict_ok = False
 
     # Env vars check
     try:
         env_ok, env_messages = check_env_vars()
         results["env_vars"]["ok"] = env_ok
         results["env_vars"]["messages"] = env_messages
-        if not env_ok:
-            all_passed = False
+        # Env vars are informational - don't fail base_ok
     except Exception as e:
         results["env_vars"]["ok"] = False
         results["env_vars"]["messages"] = [f"Error: {e}"]
-        all_passed = False
 
     # Ollama check
     try:
@@ -240,22 +222,25 @@ def run_all_checks(strict: bool = False) -> dict:
         results["disk"]["ok"] = disk_ok
         results["disk"]["message"] = disk_msg
         if not disk_ok:
-            all_passed = False
+            base_ok = False
+            strict_ok = False
     except Exception as e:
         results["disk"]["ok"] = False
         results["disk"]["message"] = f"Error: {e}"
-        all_passed = False
+        base_ok = False
+        strict_ok = False
 
     # Overall status
-    results["overall"]["ok"] = all_passed
-    results["overall"]["strict_ok"] = all_passed  # Same as overall in this context
+    results["overall"]["ok"] = base_ok
+    results["overall"]["strict_ok"] = strict_ok
+    results["overall"]["strict_mode"] = strict
 
     return results
 
 
 def print_human_readable(results: dict) -> None:
     """Print results in human-readable format."""
-    strict = results.get("strict_mode", False)
+    strict = results.get("overall", {}).get("strict_mode", False)
 
     print("=" * 60)
     print("RAG Environment Verification")
@@ -277,8 +262,8 @@ def print_human_readable(results: dict) -> None:
     pkg_data = results["packages"]
     icon = "✅" if pkg_data.get("ok") else "❌"
 
-    if strict and pkg_data.get("strict_violation"):
-        print(f"  ❌ STRICT MODE: Missing optional dependencies are treated as fatal")
+    if strict and pkg_data.get("missing_optional"):
+        print("  ⚠️  STRICT MODE: Missing optional dependencies are treated as fatal")
 
     for msg in pkg_data.get("messages", []):
         print(f"  {icon if 'REQUIRED' in msg or 'Missing' in msg else 'ℹ️'} {msg}")
@@ -315,10 +300,21 @@ def print_human_readable(results: dict) -> None:
 
     print("=" * 60)
 
-    if results["overall"]["ok"]:
-        print("✅ All critical checks passed! System ready.")
+    overall = results["overall"]
+    if strict:
+        if overall["strict_ok"]:
+            print("✅ All checks passed (strict mode)! System ready.")
+        else:
+            print("❌ Strict mode checks failed. See above for details.")
+            if overall["ok"]:
+                print("   (Base checks passed - only optional dependencies missing)")
     else:
-        print("❌ Some checks failed. See above for details.")
+        if overall["ok"]:
+            print("✅ All critical checks passed! System ready.")
+        else:
+            print("❌ Some checks failed. See above for details.")
+
+    if not overall["ok"] or (strict and not overall["strict_ok"]):
         print()
         print("Common fixes:")
         print("  - Install packages: pip install -e .[dev]")
@@ -367,8 +363,13 @@ Examples:
     else:
         print_human_readable(results)
 
-    # Exit code based on overall status
-    return 0 if results["overall"]["ok"] else 1
+    # Exit code based on strict mode
+    if args.strict:
+        # In strict mode, use strict_ok
+        return 0 if results["overall"]["strict_ok"] else 1
+    else:
+        # In normal mode, use base ok (required checks only)
+        return 0 if results["overall"]["ok"] else 1
 
 
 if __name__ == "__main__":
