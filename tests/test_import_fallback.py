@@ -23,6 +23,7 @@ def test_prod_mode_fails_without_langchain_ollama():
                 # Force reimport to trigger the import logic
                 import importlib
                 import clockify_rag.llm_client as llm_module
+
                 importlib.reload(llm_module)
 
             # Verify error message is helpful
@@ -38,6 +39,7 @@ def test_dev_mode_allows_fallback():
         try:
             import importlib
             import clockify_rag.llm_client as llm_module
+
             # Reload to ensure environment is respected
             importlib.reload(llm_module)
             # Should not raise, either using langchain-ollama or falling back
@@ -53,6 +55,7 @@ def test_ci_mode_is_treated_as_prod():
             with pytest.raises(ImportError) as exc_info:
                 import importlib
                 import clockify_rag.llm_client as llm_module
+
                 importlib.reload(llm_module)
 
             assert "langchain-ollama is required in production" in str(exc_info.value)
@@ -69,6 +72,7 @@ def test_app_env_fallback():
             with pytest.raises(ImportError) as exc_info:
                 import importlib
                 import clockify_rag.llm_client as llm_module
+
                 importlib.reload(llm_module)
 
             assert "langchain-ollama is required in production" in str(exc_info.value)

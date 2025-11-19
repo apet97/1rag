@@ -42,18 +42,14 @@ def test_scenario_primary_available():
             timeout=5.0,
         )
 
-        assert (
-            selected == "qwen2.5:32b"
-        ), f"Expected primary model, got {selected}"
+        assert selected == "qwen2.5:32b", f"Expected primary model, got {selected}"
         logger.info(f"  ✓ Correctly selected primary: {selected}")
         return True
 
 
 def test_scenario_fallback_only():
     """Scenario B: Only fallback model available → select fallback (with warning)."""
-    logger.info(
-        "\n[Scenario B] Only fallback available (gpt-oss:20b, primary qwen2.5:32b missing)"
-    )
+    logger.info("\n[Scenario B] Only fallback available (gpt-oss:20b, primary qwen2.5:32b missing)")
 
     from clockify_rag.config import _select_best_model
 
@@ -68,18 +64,14 @@ def test_scenario_fallback_only():
             timeout=5.0,
         )
 
-        assert (
-            selected == "gpt-oss:20b"
-        ), f"Expected fallback model, got {selected}"
+        assert selected == "gpt-oss:20b", f"Expected fallback model, got {selected}"
         logger.info(f"  ✓ Correctly selected fallback: {selected}")
         return True
 
 
 def test_scenario_connection_timeout():
     """Scenario C: Connection timeout → use primary (assume VPN down, will reconnect)."""
-    logger.info(
-        "\n[Scenario C] Connection timeout (simulating VPN down or Ollama slow)"
-    )
+    logger.info("\n[Scenario C] Connection timeout (simulating VPN down or Ollama slow)")
 
     from clockify_rag.config import _select_best_model
 
@@ -95,20 +87,14 @@ def test_scenario_connection_timeout():
             timeout=5.0,
         )
 
-        assert (
-            selected == "qwen2.5:32b"
-        ), f"Expected primary on timeout, got {selected}"
-        logger.info(
-            f"  ✓ Correctly used primary on timeout: {selected} (assumes VPN will reconnect)"
-        )
+        assert selected == "qwen2.5:32b", f"Expected primary on timeout, got {selected}"
+        logger.info(f"  ✓ Correctly used primary on timeout: {selected} (assumes VPN will reconnect)")
         return True
 
 
 def test_scenario_connection_error():
     """Scenario D: Connection error → use primary (server offline)."""
-    logger.info(
-        "\n[Scenario D] Connection error (simulating Ollama offline or firewall block)"
-    )
+    logger.info("\n[Scenario D] Connection error (simulating Ollama offline or firewall block)")
 
     from clockify_rag.config import _select_best_model
 
@@ -124,20 +110,14 @@ def test_scenario_connection_error():
             timeout=5.0,
         )
 
-        assert (
-            selected == "qwen2.5:32b"
-        ), f"Expected primary on error, got {selected}"
-        logger.info(
-            f"  ✓ Correctly used primary on connection error: {selected}"
-        )
+        assert selected == "qwen2.5:32b", f"Expected primary on error, got {selected}"
+        logger.info(f"  ✓ Correctly used primary on connection error: {selected}")
         return True
 
 
 def test_scenario_neither_available():
     """Scenario E: Neither model available → use primary anyway (best effort)."""
-    logger.info(
-        "\n[Scenario E] Neither model available (both missing from Ollama)"
-    )
+    logger.info("\n[Scenario E] Neither model available (both missing from Ollama)")
 
     from clockify_rag.config import _select_best_model
 
@@ -152,18 +132,14 @@ def test_scenario_neither_available():
             timeout=5.0,
         )
 
-        assert (
-            selected == "qwen2.5:32b"
-        ), f"Expected primary anyway, got {selected}"
+        assert selected == "qwen2.5:32b", f"Expected primary anyway, got {selected}"
         logger.info(f"  ✓ Correctly used primary as last resort: {selected}")
         return True
 
 
 def test_scenario_empty_list():
     """Scenario F: Empty model list (Ollama online but no models) → use primary."""
-    logger.info(
-        "\n[Scenario F] Ollama online but no models installed (empty list)"
-    )
+    logger.info("\n[Scenario F] Ollama online but no models installed (empty list)")
 
     from clockify_rag.config import _select_best_model
 
@@ -178,12 +154,8 @@ def test_scenario_empty_list():
             timeout=5.0,
         )
 
-        assert (
-            selected == "qwen2.5:32b"
-        ), f"Expected primary on empty list, got {selected}"
-        logger.info(
-            f"  ✓ Correctly used primary when no models available: {selected}"
-        )
+        assert selected == "qwen2.5:32b", f"Expected primary on empty list, got {selected}"
+        logger.info(f"  ✓ Correctly used primary when no models available: {selected}")
         return True
 
 

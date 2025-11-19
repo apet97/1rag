@@ -248,9 +248,7 @@ def _check_remote_models(base_url: str, timeout: float = 5.0) -> list:
         return []
 
 
-def _select_best_model(
-    primary: str, fallback: str, base_url: str, timeout: float = 5.0
-) -> str:
+def _select_best_model(primary: str, fallback: str, base_url: str, timeout: float = 5.0) -> str:
     """Select the best available LLM model (primary or fallback).
 
     Smart selection with VPN resilience:
@@ -306,9 +304,7 @@ def get_llm_model() -> str:
     """
     global _LLM_MODEL_CACHE
     if _LLM_MODEL_CACHE is None:
-        _LLM_MODEL_CACHE = _select_best_model(
-            RAG_CHAT_MODEL, RAG_CHAT_FALLBACK_MODEL, RAG_OLLAMA_URL, timeout=5.0
-        )
+        _LLM_MODEL_CACHE = _select_best_model(RAG_CHAT_MODEL, RAG_CHAT_FALLBACK_MODEL, RAG_OLLAMA_URL, timeout=5.0)
     return _LLM_MODEL_CACHE
 
 

@@ -104,8 +104,9 @@ def check_disk_space() -> tuple[bool, str]:
     """Check available disk space."""
     try:
         import shutil
+
         total, used, free = shutil.disk_usage(".")
-        free_gb = free / (1024 ** 3)
+        free_gb = free / (1024**3)
         if free_gb < 1:
             return False, f"Only {free_gb:.1f}GB free (need at least 1GB)"
         return True, f"{free_gb:.1f}GB free"
@@ -343,7 +344,7 @@ Examples:
   python scripts/verify_env.py --json         # JSON output for CI/automation
   python scripts/verify_env.py --strict       # Treat optional deps as required
   python scripts/verify_env.py --json --strict  # Combined mode
-        """
+        """,
     )
     parser.add_argument(
         "--json",

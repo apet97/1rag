@@ -322,9 +322,7 @@ def prompt_user(
             if section and section not in title:
                 label += f" — {section}"
             preview = chunk.preview(args.preview_width)
-            print(
-                f"[{idx}] score={score:.2f} id={chunk.id}\n    {label}\n    {preview}"
-            )
+            print(f"[{idx}] score={score:.2f} id={chunk.id}\n    {label}\n    {preview}")
     else:
         print("\nNo heuristic matches found. Enter chunk IDs manually or type 'skip'.")
 
@@ -334,8 +332,8 @@ def prompt_user(
         default_prompt = "none"
 
     print(
-        "Commands: enter comma/space separated numbers or chunk IDs, \"show <id>\" to preview,"
-        " \"skip\" to leave empty, or press Enter to accept the default."
+        'Commands: enter comma/space separated numbers or chunk IDs, "show <id>" to preview,'
+        ' "skip" to leave empty, or press Enter to accept the default.'
     )
 
     candidate_map: Dict[str, str] = {}
@@ -483,9 +481,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dataset_records = load_jsonl(args.dataset)
     chunks, chunk_lookup = load_chunks(args.chunks)
 
-    print(
-        f"Loaded {len(dataset_records)} evaluation queries and {len(chunks)} chunks."
-    )
+    print(f"Loaded {len(dataset_records)} evaluation queries and {len(chunks)} chunks.")
 
     updated = 0
     for idx, entry in enumerate(dataset_records, 1):
@@ -502,17 +498,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             entry["relevant_chunk_ids"] = []
         updated += 1
         if args.auto:
-            print(
-                f"[{idx}/{len(dataset_records)}] {entry.get('query')!r} → {selected_ids}"
-            )
+            print(f"[{idx}/{len(dataset_records)}] {entry.get('query')!r} → {selected_ids}")
 
     output_path = determine_output_path(args.dataset, args.output)
-    populated_count = sum(
-        1 for record in dataset_records if record.get("relevant_chunk_ids")
-    )
-    print(
-        f"Processed {updated} queries. {populated_count} now have relevant chunk IDs."
-    )
+    populated_count = sum(1 for record in dataset_records if record.get("relevant_chunk_ids"))
+    print(f"Processed {updated} queries. {populated_count} now have relevant chunk IDs.")
 
     if args.dry_run:
         print("Dry run requested; skipping write.")

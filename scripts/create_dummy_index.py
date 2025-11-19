@@ -46,10 +46,7 @@ def main() -> None:
 
     bm = build_bm25(chunks)
 
-    vecs = np.array([
-        np.roll(np.eye(config.EMB_DIM, dtype="float32")[0], idx)
-        for idx in range(len(chunks))
-    ])
+    vecs = np.array([np.roll(np.eye(config.EMB_DIM, dtype="float32")[0], idx) for idx in range(len(chunks))])
     if vecs.shape[1] < config.EMB_DIM:
         raise RuntimeError("Failed to create dummy embeddings with correct dimension")
 

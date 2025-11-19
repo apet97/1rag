@@ -26,6 +26,7 @@ _IS_PROD = _ENV in ("prod", "production", "ci")
 
 try:
     from langchain_ollama import OllamaEmbeddings
+
     _USING_FALLBACK = False
 except ImportError as e:
     if _IS_PROD:
@@ -44,6 +45,7 @@ except ImportError as e:
         )
         try:
             from langchain_community.embeddings import OllamaEmbeddings  # type: ignore
+
             _USING_FALLBACK = True
         except ImportError as e2:
             raise ImportError(

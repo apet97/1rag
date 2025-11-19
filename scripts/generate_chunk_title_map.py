@@ -56,9 +56,7 @@ def main():
         encoding="utf-8",
     )
 
-    print(
-        f"Wrote mapping for {len(title_map)} titles to {output_path}"
-    )
+    print(f"Wrote mapping for {len(title_map)} titles to {output_path}")
 
 
 if __name__ == "__main__":

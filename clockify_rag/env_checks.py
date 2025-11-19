@@ -44,9 +44,18 @@ REQUIRED_PACKAGES = [
 # Optional packages (enhance functionality but not strictly required)
 # The core RAG service works without these in "remote-first" mode.
 OPTIONAL_PACKAGES = [
-    ("faiss", "FAISS (vector indexing) - install via conda on M1: conda install -c conda-forge faiss-cpu. Provides faster vector search; falls back to linear search if missing."),
-    ("torch", "PyTorch (local embeddings) - install with: pip install -e .[embeddings]. Required for local embedding generation; not needed if using remote Ollama."),
-    ("sentence_transformers", "SentenceTransformers (local embeddings) - install with: pip install -e .[embeddings]. Required for local embedding generation; not needed if using remote Ollama."),
+    (
+        "faiss",
+        "FAISS (vector indexing) - install via conda on M1: conda install -c conda-forge faiss-cpu. Provides faster vector search; falls back to linear search if missing.",
+    ),
+    (
+        "torch",
+        "PyTorch (local embeddings) - install with: pip install -e .[embeddings]. Required for local embedding generation; not needed if using remote Ollama.",
+    ),
+    (
+        "sentence_transformers",
+        "SentenceTransformers (local embeddings) - install with: pip install -e .[embeddings]. Required for local embedding generation; not needed if using remote Ollama.",
+    ),
 ]
 
 

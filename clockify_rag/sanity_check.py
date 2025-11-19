@@ -32,9 +32,7 @@ def check_config() -> Tuple[bool, str]:
         # Validate Ollama URL
         if not config.RAG_OLLAMA_URL:
             errors.append("RAG_OLLAMA_URL is empty")
-        elif not config.RAG_OLLAMA_URL.startswith("http://") and not config.RAG_OLLAMA_URL.startswith(
-            "https://"
-        ):
+        elif not config.RAG_OLLAMA_URL.startswith("http://") and not config.RAG_OLLAMA_URL.startswith("https://"):
             errors.append(f"RAG_OLLAMA_URL has invalid format: {config.RAG_OLLAMA_URL}")
 
         # Validate timeout

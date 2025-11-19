@@ -20,8 +20,15 @@ class TestVerifyEnvOptionalDeps:
         # Mock successful imports for required deps
         # Include all packages from REQUIRED_PACKAGES in env_checks.py
         required_packages = [
-            "numpy", "httpx", "langchain_ollama", "rank_bm25",
-            "langchain", "tiktoken", "fastapi", "typer", "pydantic"
+            "numpy",
+            "httpx",
+            "langchain_ollama",
+            "rank_bm25",
+            "langchain",
+            "tiktoken",
+            "fastapi",
+            "typer",
+            "pydantic",
         ]
 
         def mock_try_import(name):
@@ -42,6 +49,7 @@ class TestVerifyEnvOptionalDeps:
 
     def test_required_deps_missing(self, monkeypatch):
         """Test when required dependencies are missing."""
+
         # Mock failed imports for required deps
         def mock_try_import(name):
             if name == "numpy":
@@ -63,8 +71,15 @@ class TestVerifyEnvOptionalDeps:
         """Test that missing optional deps show helpful messaging."""
         # Mock: required deps present, optional deps missing
         required_packages = [
-            "numpy", "httpx", "langchain_ollama", "rank_bm25",
-            "langchain", "tiktoken", "fastapi", "typer", "pydantic"
+            "numpy",
+            "httpx",
+            "langchain_ollama",
+            "rank_bm25",
+            "langchain",
+            "tiktoken",
+            "fastapi",
+            "typer",
+            "pydantic",
         ]
 
         def mock_try_import(name):
@@ -91,14 +106,11 @@ class TestVerifyEnvOptionalDeps:
         assert "core RAG" in messages_str.lower() or "works without" in messages_str.lower()
 
         # Should provide installation hints
-        assert (
-            "install" in messages_str.lower()
-            or "conda" in messages_str.lower()
-            or "pip" in messages_str.lower()
-        )
+        assert "install" in messages_str.lower() or "conda" in messages_str.lower() or "pip" in messages_str.lower()
 
     def test_all_deps_present(self, monkeypatch):
         """Test when all dependencies (required + optional) are present."""
+
         # Mock successful imports for all deps
         def mock_try_import(name):
             return True
@@ -183,6 +195,7 @@ class TestVerifyEnvCLI:
         """Test CLI in normal mode when all required deps are present."""
         # Monkeypatch at module level to affect subprocess
         import os
+
         env = os.environ.copy()
         env["ENV_CHECKS_TEST_MODE"] = "all_required_present"
 
@@ -192,7 +205,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # In a real environment with all deps installed, exit code should be 0
@@ -206,7 +219,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script, "--json"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # Should return valid JSON
@@ -243,7 +256,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script, "--strict", "--json"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # Parse JSON output
@@ -266,7 +279,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script, "--json"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # Run in strict mode
@@ -274,7 +287,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script, "--strict", "--json"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # Parse both outputs
@@ -297,7 +310,7 @@ class TestVerifyEnvCLI:
             [sys.executable, verify_env_script, "--help"],
             capture_output=True,
             text=True,
-            timeout=10,
+            timeout=30,  # Increased from 10s for CI reliability
         )
 
         # --help should exit with 0

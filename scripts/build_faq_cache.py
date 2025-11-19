@@ -33,67 +33,44 @@ from clockify_rag.config import (
     DEFAULT_RETRIES,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Build precomputed FAQ cache for instant responses"
-    )
+    parser = argparse.ArgumentParser(description="Build precomputed FAQ cache for instant responses")
+    parser.add_argument("faq_file", help="Path to FAQ file (one question per line)")
+    parser.add_argument("--output", default="faq_cache.json", help="Output cache file path (default: faq_cache.json)")
     parser.add_argument(
-        "faq_file",
-        help="Path to FAQ file (one question per line)"
-    )
-    parser.add_argument(
-        "--output",
-        default="faq_cache.json",
-        help="Output cache file path (default: faq_cache.json)"
-    )
-    parser.add_argument(
-        "--top-k",
-        type=int,
-        default=DEFAULT_TOP_K,
-        help=f"Number of candidates to retrieve (default: {DEFAULT_TOP_K})"
+        "--top-k", type=int, default=DEFAULT_TOP_K, help=f"Number of candidates to retrieve (default: {DEFAULT_TOP_K})"
     )
     parser.add_argument(
         "--pack-top",
         type=int,
         default=DEFAULT_PACK_TOP,
-        help=f"Number of chunks to pack in context (default: {DEFAULT_PACK_TOP})"
+        help=f"Number of chunks to pack in context (default: {DEFAULT_PACK_TOP})",
     )
     parser.add_argument(
         "--threshold",
         type=float,
         default=DEFAULT_THRESHOLD,
-        help=f"Minimum similarity threshold (default: {DEFAULT_THRESHOLD})"
+        help=f"Minimum similarity threshold (default: {DEFAULT_THRESHOLD})",
     )
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help=f"Random seed for LLM (default: {DEFAULT_SEED})")
     parser.add_argument(
-        "--seed",
-        type=int,
-        default=DEFAULT_SEED,
-        help=f"Random seed for LLM (default: {DEFAULT_SEED})"
-    )
-    parser.add_argument(
-        "--num-ctx",
-        type=int,
-        default=DEFAULT_NUM_CTX,
-        help=f"LLM context window size (default: {DEFAULT_NUM_CTX})"
+        "--num-ctx", type=int, default=DEFAULT_NUM_CTX, help=f"LLM context window size (default: {DEFAULT_NUM_CTX})"
     )
     parser.add_argument(
         "--num-predict",
         type=int,
         default=DEFAULT_NUM_PREDICT,
-        help=f"LLM max tokens to generate (default: {DEFAULT_NUM_PREDICT})"
+        help=f"LLM max tokens to generate (default: {DEFAULT_NUM_PREDICT})",
     )
     parser.add_argument(
         "--retries",
         type=int,
         default=DEFAULT_RETRIES,
-        help=f"Number of retries for LLM calls (default: {DEFAULT_RETRIES})"
+        help=f"Number of retries for LLM calls (default: {DEFAULT_RETRIES})",
     )
 
     args = parser.parse_args()

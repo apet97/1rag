@@ -27,6 +27,7 @@ from .exceptions import LLMError, ValidationError
 from .indexing import bm25_scores, get_faiss_index
 from .utils import tokenize  # FIX (Error #17): Import tokenize from utils instead of duplicating
 from .intent_classification import classify_intent, get_intent_metadata, adjust_scores_by_intent
+
 logger = logging.getLogger(__name__)
 
 # ====== RETRIEVAL PROFILING ======
@@ -477,12 +478,12 @@ def retrieve(
     # Enforce hard ceiling to prevent context overflow (safety cap for user-supplied values)
     # This protects against accidental or malicious large requests that would blow up context
     if top_k > config.MAX_TOP_K:
-        logger.warning(
-            f"top_k={top_k} exceeds MAX_TOP_K={config.MAX_TOP_K}, clamping to MAX_TOP_K"
-        )
+        logger.warning(f"top_k={top_k} exceeds MAX_TOP_K={config.MAX_TOP_K}, clamping to MAX_TOP_K")
         top_k = config.MAX_TOP_K
 
-    logger.debug(f"Retrieval config: requested_top_k={requested_top_k}, effective_top_k={top_k}, max_allowed={config.MAX_TOP_K}")
+    logger.debug(
+        f"Retrieval config: requested_top_k={requested_top_k}, effective_top_k={top_k}, max_allowed={config.MAX_TOP_K}"
+    )
 
     # OPTIMIZATION: Classify query intent for specialized retrieval strategy (if enabled)
     intent_metadata = {}
