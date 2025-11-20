@@ -34,7 +34,7 @@ jobs:
     - name: Install dependencies
       run: |
         # Use Poetry to install dev dependencies for linting
-        poetry install --no-interaction --with dev --only-root
+        poetry install --no-interaction --with dev
 
     - name: Run ruff linter
       run: |
@@ -72,7 +72,7 @@ jobs:
 
     - name: Install black via Poetry
       run: |
-        poetry install --no-interaction --with dev --only-root
+        poetry install --no-interaction --with dev
 
     - name: Check formatting with black
       run: |
