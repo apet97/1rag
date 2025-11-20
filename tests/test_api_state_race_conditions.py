@@ -32,7 +32,12 @@ def app_with_index():
     ]
     vecs_n = np.random.rand(2, 768).astype(np.float32)
     vecs_n = vecs_n / np.linalg.norm(vecs_n, axis=1, keepdims=True)
-    bm = {"doc_lens": [10, 10], "avg_len": 10.0, "k1": 1.5, "b": 0.75}
+    bm = {
+        "doc_lens": [10, 10],
+        "avgdl": 10.0,
+        "doc_tfs": [{"test": 1}, {"test": 1}],
+        "idf": {"test": 1.0},
+    }
 
     # Set state using lock
     with app.state.lock:
@@ -84,7 +89,12 @@ class TestQueryDuringIngest:
                 # Step 3: Commit new state atomically
                 app_with_index.state.chunks = new_chunks
                 app_with_index.state.vecs_n = new_vecs
-                app_with_index.state.bm = {"doc_lens": [10], "avg_len": 10.0, "k1": 1.5, "b": 0.75}
+                app_with_index.state.bm = {
+                    "doc_lens": [10],
+                    "avgdl": 10.0,
+                    "doc_tfs": [{"test": 1}],
+                    "idf": {"test": 1.0},
+                }
                 app_with_index.state.index_ready = True
 
         # Mock embed_query for entire test duration

@@ -432,9 +432,11 @@ def create_app() -> FastAPI:
             started_at = time.time()
             try:
                 logger.info(f"Starting ingest from {input_file}")
-                build(input_file, retries=2)
-                result = ensure_index_ready(retries=2)
-                _set_index_state(app, result)
+                # Acquire lock to serialize concurrent ingest requests
+                with app.state.lock:
+                    build(input_file, retries=2)
+                    result = ensure_index_ready(retries=2)
+                    _set_index_state(app, result)
                 duration_ms = (time.time() - started_at) * 1000
                 logger.info(f"Ingest completed successfully in {duration_ms:.1f} ms")
             except Exception as e:
