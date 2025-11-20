@@ -20,7 +20,14 @@ def test_pyproject_exposes_modern_cli_script():
 
     pyproject_text = Path("pyproject.toml").read_text(encoding="utf-8")
     metadata = tomllib.loads(pyproject_text)
-    scripts = metadata["project"]["scripts"]
+
+    # Support both PEP 621 format and Poetry format
+    if "project" in metadata and "scripts" in metadata["project"]:
+        scripts = metadata["project"]["scripts"]
+    elif "tool" in metadata and "poetry" in metadata["tool"] and "scripts" in metadata["tool"]["poetry"]:
+        scripts = metadata["tool"]["poetry"]["scripts"]
+    else:
+        pytest.fail("Could not find scripts definition in pyproject.toml")
 
     assert scripts["ragctl"] == "clockify_rag.cli_modern:app"
 

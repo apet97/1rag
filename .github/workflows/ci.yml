@@ -26,23 +26,26 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Poetry
+        run: pip install "poetry>=1.7"
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install black ruff mypy
-          pip install -e .
+          # Use Poetry to install dependencies from poetry.lock for reproducibility
+          # This ensures CI uses the exact same versions as local development
+          poetry install --no-interaction --with dev
 
       - name: Format check (black)
         env:
           ENVIRONMENT: ci  # Enforce production constraints
-        run: black --check clockify_rag tests
+        run: poetry run black --check clockify_rag tests
 
       - name: Lint (ruff)
-        run: ruff check clockify_rag tests
+        run: poetry run ruff check clockify_rag tests
 
       - name: Type check (mypy)
         continue-on-error: true
-        run: mypy clockify_rag
+        run: poetry run mypy clockify_rag
 
   # =========================================================================
   # Unit Tests
@@ -64,51 +67,54 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache pip packages
+      - name: Cache Poetry packages
         uses: actions/cache@v3
         with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('**/pyproject.toml') }}
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-poetry-
+
+      - name: Install Poetry
+        run: pip install "poetry>=1.7"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip setuptools wheel
-          pip install -e ".[dev]"
+          # Use Poetry with poetry.lock for reproducible builds across all environments
+          poetry install --no-interaction --with dev
 
       - name: Verify environment (non-strict)
         run: |
-          python scripts/verify_env.py --json | python -m json.tool | head -30
+          poetry run python scripts/verify_env.py --json | python -m json.tool | head -30
           echo "✓ Environment verification passed"
 
       - name: Verify environment (strict mode)
         run: |
-          python scripts/verify_env.py --strict --json
+          poetry run python scripts/verify_env.py --strict --json
           echo "✓ Environment verification passed (strict)"
         continue-on-error: true  # Allow to fail for now until all optional deps are in CI
 
       - name: System diagnostics
         run: |
-          python -c "import platform; print(f'Platform: {platform.machine()}')"
-          python -c "import torch; print(f'PyTorch: {torch.__version__}')" || echo "PyTorch not installed"
-          python -c "import sys; print(f'Python: {sys.version}')"
+          poetry run python -c "import platform; print(f'Platform: {platform.machine()}')"
+          poetry run python -c "import torch; print(f'PyTorch: {torch.__version__}')" || echo "PyTorch not installed"
+          poetry run python -c "import sys; print(f'Python: {sys.version}')"
 
       - name: Run unit tests
         env:
           ENVIRONMENT: ci  # Enforce production constraints (fail-fast on missing langchain-ollama)
-        run: pytest tests/ -v --tb=short -x --ignore=tests/test_integration.py --cov=clockify_rag --cov-report=term 2>&1 | head -100
+        run: poetry run pytest tests/ -v --tb=short -x --ignore=tests/test_integration.py --cov=clockify_rag --cov-report=term 2>&1 | head -100
 
       - name: Run integration tests (Ubuntu only)
         if: runner.os == 'Linux'
         env:
           ENVIRONMENT: ci  # Enforce production constraints
-        run: pytest tests/test_integration.py -v --tb=short -x || true
+        run: poetry run pytest tests/test_integration.py -v --tb=short -x || true
 
       - name: Generate coverage report
         env:
           ENVIRONMENT: ci  # Enforce production constraints
-        run: pytest tests/ --cov=clockify_rag --cov-report=xml --cov-report=term -q 2>&1 | tail -20
+        run: poetry run pytest tests/ --cov=clockify_rag --cov-report=xml --cov-report=term -q 2>&1 | tail -20
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
@@ -133,10 +139,12 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install Poetry
+        run: pip install "poetry>=1.7"
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -e . 2>&1 | tail -5
+          poetry install --no-interaction --only main
 
       - name: Create minimal test knowledge base
         run: |
@@ -177,7 +185,7 @@ jobs:
         env:
           ENVIRONMENT: ci  # Enforce production constraints
         run: |
-          python -m clockify_rag.cli_modern ingest --input test_kb.md 2>&1 | tail -10
+          poetry run python -m clockify_rag.cli_modern ingest --input test_kb.md 2>&1 | tail -10
           echo "✓ Index built"
 
       - name: Verify index files
@@ -187,7 +195,7 @@ jobs:
 
       - name: Test doctor command
         run: |
-          python -m clockify_rag.cli_modern doctor --json | python -m json.tool | head -20
+          poetry run python -m clockify_rag.cli_modern doctor --json | python -m json.tool | head -20
           echo "✓ Doctor command works"
 
   # =========================================================================

@@ -19,23 +19,31 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'
+
+    - name: Cache Poetry packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-
+
+    - name: Install Poetry
+      run: pip install "poetry>=1.7"
 
     - name: Install dependencies
       run: |
-        python -m pip install --upgrade pip
-        # Install only linting tools, not full requirements.txt
-        pip install mypy==1.13.0 ruff==0.8.4 black==24.1.1
-        pip install numpy==2.3.4 requests==2.32.5  # For type checking imports
+        # Use Poetry to install dev dependencies for linting
+        poetry install --no-interaction --with dev --only-root
 
     - name: Run ruff linter
       run: |
-        python -m ruff check clockify_support_cli_final.py --config pyproject.toml
+        poetry run ruff check clockify_support_cli_final.py --config pyproject.toml
       continue-on-error: true
 
     - name: Run mypy type checker
       run: |
-        python -m mypy clockify_support_cli_final.py --config-file pyproject.toml
+        poetry run mypy clockify_support_cli_final.py --config-file pyproject.toml
       continue-on-error: true
 
   format-check:
@@ -50,14 +58,23 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'
 
-    - name: Install black
+    - name: Cache Poetry packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-
+
+    - name: Install Poetry
+      run: pip install "poetry>=1.7"
+
+    - name: Install black via Poetry
       run: |
-        python -m pip install --upgrade pip
-        pip install black==24.1.1
+        poetry install --no-interaction --with dev --only-root
 
     - name: Check formatting with black
       run: |
-        python -m black --check --diff clockify_support_cli_final.py --config pyproject.toml
+        poetry run black --check --diff clockify_support_cli_final.py --config pyproject.toml
       continue-on-error: true

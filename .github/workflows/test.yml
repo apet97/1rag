@@ -24,29 +24,33 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
-        cache: 'pip'
 
-    - name: Install dependencies (via CI bootstrap script)
-      run: |
-        # Use CI bootstrap script (Recommendation #4: Guard Against Missing Vector Assets in CI)
-        # Mode 'test' installs core deps + sentence-transformers (no FAISS for speed)
-        bash scripts/ci_bootstrap.sh test
-        # Install linting tools separately
-        pip install mypy==1.13.0 ruff==0.8.4 black==24.1.1
+    - name: Cache Poetry packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pypoetry
+        key: ${{ runner.os }}-poetry-${{ hashFiles('**/poetry.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-poetry-
 
-    - name: Install project (runtime + dev extras)
+    - name: Install Poetry
+      run: pip install "poetry>=1.7"
+
+    - name: Install dependencies
       run: |
-        pip install -e ".[dev]"
+        # Use Poetry with poetry.lock for reproducible builds
+        # This replaces ci_bootstrap.sh with Poetry's dependency management
+        poetry install --no-interaction --with dev
 
     - name: Verify environment (non-strict)
       run: |
-        python scripts/verify_env.py --json | python -m json.tool | head -30
+        poetry run python scripts/verify_env.py --json | python -m json.tool | head -30
         echo "✓ Environment verification passed"
       continue-on-error: false
 
     - name: Verify environment (strict mode)
       run: |
-        python scripts/verify_env.py --strict --json
+        poetry run python scripts/verify_env.py --strict --json
         echo "✓ Environment verification passed (strict)"
       continue-on-error: true  # Allow to fail for now until all optional deps are in CI
 
@@ -56,18 +60,18 @@ jobs:
         PYTORCH_ENABLE_MPS_FALLBACK: "1"
         PYTORCH_MPS_HIGH_WATERMARK_RATIO: "0.0"
       run: |
-        python -m pytest tests/ -v --cov=clockify_rag --cov=clockify_support_cli_final --cov-report=term-missing --cov-report=xml
+        poetry run pytest tests/ -v --cov=clockify_rag --cov=clockify_support_cli_final --cov-report=term-missing --cov-report=xml
       continue-on-error: false  # Fail if tests fail
 
     - name: Prepare dummy benchmark artifacts
       run: |
-        python scripts/create_dummy_index.py
+        poetry run python scripts/create_dummy_index.py
 
     - name: Run quick benchmark smoke test
       env:
         BENCHMARK_FAKE_REMOTE: "1"
       run: |
-        python benchmark.py --quick
+        poetry run python benchmark.py --quick
 
     - name: Run M1 compatibility tests (macOS only)
       if: matrix.os == 'macos-14'
