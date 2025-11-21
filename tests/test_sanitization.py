@@ -279,5 +279,75 @@ class TestPromptInjectionDefense:
             assert "timing" in result
 
 
+class TestErrorMessageSanitization:
+    """Test sanitization of error messages for client-facing responses."""
+
+    def test_sanitize_for_client_redacts_urls(self):
+        """Test that internal URLs are redacted."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Connection failed to http://10.127.0.192:11434"
+        result = sanitize_for_client(message)
+        assert "10.127.0.192" not in result
+        assert "<endpoint>" in result
+
+    def test_sanitize_for_client_redacts_https_urls(self):
+        """Test that HTTPS URLs are redacted."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Error connecting to https://192.168.1.1:8080"
+        result = sanitize_for_client(message)
+        assert "192.168.1.1" not in result
+        assert "<endpoint>" in result
+
+    def test_sanitize_for_client_redacts_file_paths(self):
+        """Test that file paths are redacted."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Failed to open /var/lib/data/index.json"
+        result = sanitize_for_client(message)
+        assert "/var/lib/data/index.json" not in result
+        assert "<file>" in result
+
+    def test_sanitize_for_client_redacts_windows_paths(self):
+        """Test that Windows file paths are redacted."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Failed to open C:\\Users\\data\\index.json"
+        result = sanitize_for_client(message)
+        assert "C:\\Users\\data\\index.json" not in result
+        assert "<file>" in result
+
+    def test_sanitize_for_client_redacts_env_vars(self):
+        """Test that environment variable values are redacted."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Check RAG_OLLAMA_URL=http://10.127.0.192:11434 for connectivity"
+        result = sanitize_for_client(message)
+        assert "RAG_OLLAMA_URL=<redacted>" in result
+        assert "10.127.0.192" not in result
+
+    def test_sanitize_for_client_preserves_safe_text(self):
+        """Test that safe error messages pass through."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Connection timeout after 30 seconds"
+        result = sanitize_for_client(message)
+        assert result == message
+
+    def test_sanitize_for_client_handles_multiple_patterns(self):
+        """Test sanitization of multiple sensitive patterns in one message."""
+        from clockify_rag.error_handlers import sanitize_for_client
+
+        message = "Failed to load /path/to/file.json from http://10.0.0.1:8080 with KEY=secret123"
+        result = sanitize_for_client(message)
+        assert "/path/to/file.json" not in result
+        assert "10.0.0.1" not in result
+        assert "secret123" not in result
+        assert "<file>" in result
+        assert "<endpoint>" in result
+        assert "KEY=<redacted>" in result
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

@@ -397,10 +397,12 @@ def create_app() -> FastAPI:
 
         except ValidationError as e:
             logger.warning(f"Validation error: {e}")
+            # ValidationError messages are safe user-facing messages
             raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
+            # Generic exceptions may contain internal details - sanitize
             logger.error(f"Query error: {e}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Query processing failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Internal server error")
 
     # ========================================================================
     # Ingest Endpoint

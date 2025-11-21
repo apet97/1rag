@@ -5,6 +5,7 @@ and graceful degradation strategies across all RAG components.
 """
 
 import logging
+import re
 from typing import Any, Dict, Optional, Tuple
 from functools import wraps
 
@@ -19,6 +20,34 @@ from .config import (
 
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_for_client(message: str) -> str:
+    """Sanitize error messages for client-facing responses.
+
+    Removes:
+    - Internal URLs and IPs
+    - File paths
+    - Environment variable values
+
+    Args:
+        message: Error message to sanitize
+
+    Returns:
+        Sanitized message safe for client responses
+    """
+    # Replace URLs (http://10.x.x.x:port, http://localhost:port, etc.)
+    message = re.sub(r"http://[\d.:]+", "<endpoint>", message)
+    message = re.sub(r"https://[\d.:]+", "<endpoint>", message)
+
+    # Replace file paths (/path/to/file, C:\path\to\file)
+    message = re.sub(r"[/\\][\w/\\.-]+\.\w+", "<file>", message)
+    message = re.sub(r"[A-Z]:[/\\][\w/\\.-]+", "<file>", message)
+
+    # Replace environment variable values (KEY=value -> KEY=<redacted>)
+    message = re.sub(r"(\w+)=([^\s]+)", r"\1=<redacted>", message)
+
+    return message
 
 
 def format_error_message(error_type: str, message: str, hint: Optional[str] = None) -> str:
@@ -260,7 +289,9 @@ def check_endpoint_health() -> Tuple[bool, str, Optional[Dict]]:
             return True, f"Healthy - {len(models)} models available", {"models": model_names}
         return True, "Healthy - endpoint accessible", None
     except Exception as e:
-        return False, f"Unhealthy - Error checking {RAG_OLLAMA_URL}: {str(e)}", {"error": str(e)}
+        # Sanitize error message for client-facing response
+        safe_error = sanitize_for_client(str(e))
+        return False, f"Unhealthy - Error checking endpoint: {safe_error}", {"error": safe_error}
 
 
 def print_system_health():
