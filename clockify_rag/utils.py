@@ -46,6 +46,8 @@ def resolve_corpus_path(preferred: Optional[str] = None) -> tuple[str, bool, Lis
 
     for cand in seen:
         if os.path.exists(cand):
+            if os.path.basename(cand) == "knowledge_full.md":
+                logger.info("Using legacy knowledge_full.md corpus (missing clockify_help_corpus.en.md)")
             return cand, True, seen
 
     # Fall back to first candidate even if missing so callers can surface a clear error

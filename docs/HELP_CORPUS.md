@@ -8,6 +8,7 @@ How the Clockify/CAKE help-center corpus is refreshed and turned into searchable
 - Sections: **Summary**, **Canonical answer**, **Body**, **Key points**, **Limits & gotchas**, **FAQ**, **Search hints**, **Internal notes**.
 - Any article with `suppress_from_rag: true` is skipped during ingestion.
 - Hub/category pages (`is_hub: true`) are indexed but down-weighted during retrieval so they do not outrank specific answers.
+- Preferred input is `clockify_help_corpus.en.md`; if you previously used `knowledge_full.md`, delete old artifacts (`chunks.jsonl`, `vecs_n.npy`, `bm25.json`, `faiss.index`, `index.meta.json`) before rebuilding to avoid mixing corpora.
 
 ## 🚧 Roadmap: UpdateHelpGPT Integration
 

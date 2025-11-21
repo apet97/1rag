@@ -123,6 +123,7 @@ Artifacts: `chunks.jsonl`, `vecs_n.npy`, `bm25.json`, `faiss.index` (when FAISS 
 - **FAISS missing on M1**: `conda install -c conda-forge faiss-cpu=1.8.0`; system falls back to linear search if absent.
 - **Python 3.14**: blocked at import time; use 3.11–3.13.
 - **Index drift**: delete artifacts and rebuild: `rm -f chunks.jsonl vecs_n.npy bm25.json faiss.index index.meta.json && python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md`.
+- **Switching from legacy `knowledge_full.md`**: remove old artifacts before rebuilding with the new `clockify_help_corpus.en.md` to avoid mixing data (`rm -f chunks.jsonl vecs_n.npy bm25.json faiss.index index.meta.json` then ingest).
 
 ## Docs to read next
 - `docs/ARCHITECTURE.md` – deeper dive + diagrams.
