@@ -171,12 +171,12 @@ TASK:
 - Answer the USER QUESTION using only the information in the CONTEXT_BLOCKS plus obvious general software knowledge.
 - If certain details are not specified in the CONTEXT, do NOT invent them. Instead, explain what is known and what is not known.
 - Output ONLY a single JSON object matching the schema specified in the system prompt:
-  {
+  {{
     "answer": "customer-ready support reply in Markdown format, in the same language as the question",
     "confidence": <0-100 integer based on context support>,
     "reasoning": "brief explanation of which context blocks were used and why",
     "sources_used": [<list of CONTEXT_BLOCK IDs used, e.g., "1", "2", "5">]
-  }
+  }}
 - Do NOT output any text before or after the JSON object.
 - Do NOT wrap the JSON in markdown code blocks."""
 

@@ -23,7 +23,7 @@ How the Clockify/CAKE help-center corpus is refreshed and turned into searchable
 1. Add `UpdateHelpGPT/` directory to repo with scraper scripts
 2. Implement `UpdateHelpGPT/refresh_help_corpus.py`:
    - Scrape Clockify/CAKE help centers
-   - Generate `knowledge_full.md` (or `clockify_help_corpus.en.md`)
+   - Generate `knowledge_full.md` (current filename, will continue to be used)
    - Output metadata files: `url_manifest.txt`, `scrape_report.json`
 3. Add CLI command: `python -m clockify_rag.cli_modern refresh-corpus --delay-seconds 0.75 --max-pages 1500`
 4. Integrate with CI for periodic corpus updates

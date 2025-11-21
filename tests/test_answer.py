@@ -324,7 +324,7 @@ class TestAnswerOnce:
         # Mock LLM to return answer (plain text or JSON)
         # Note: With new prompt system, confidence is computed from retrieval scores,
         # not from LLM output. In mock mode, confidence defaults to 100.
-        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85}'
+        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85, "reasoning": "Used context block 1", "sources_used": ["1"]}'
 
         # Mock BM25 index
         bm = {"idf": {}, "avgdl": 10, "doc_lens": [10] * 5, "doc_tfs": [{}] * 5}
@@ -336,8 +336,8 @@ class TestAnswerOnce:
         assert "answer" in result
         assert result["answer"] == "Track time using [1]."
         assert not result["refused"]
-        # Confidence is now computed from retrieval scores (mock mode defaults to 100)
-        assert result["confidence"] == 100
+        # Confidence comes from Qwen JSON output
+        assert result["confidence"] == 85
         assert "timing" in result
         assert "metadata" in result
 
