@@ -391,7 +391,7 @@ def generate_llm_answer(
         if client_mode == "mock":
             if confidence is None:
                 confidence = 100
-            return answer, timing, confidence
+            return answer, timing, confidence, reasoning, sources_used
         has_citations = bool(extract_citations(answer))
 
         if not has_citations and answer != REFUSAL_STR:

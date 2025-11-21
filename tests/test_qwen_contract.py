@@ -29,7 +29,10 @@ class TestQwenJSONContract:
 
         assert result["answer"] == "To track time in Clockify, click the timer button."
         assert result["confidence"] == 95
-        assert result["reasoning"] == "This answer is based on context blocks 1 and 3 which explicitly describe the timer functionality."
+        assert (
+            result["reasoning"]
+            == "This answer is based on context blocks 1 and 3 which explicitly describe the timer functionality."
+        )
         assert result["sources_used"] == ["1", "3"]
 
     def test_parse_json_with_markdown_code_blocks(self):

@@ -209,7 +209,7 @@ class TestGenerateLLMAnswer:
             "reasoning": "Context 1 provides clear instructions.",
             "sources_used": ["1"],
         }
-        mock_ask_llm.return_value = f'```json\n{json.dumps(payload)}\n```'
+        mock_ask_llm.return_value = f"```json\n{json.dumps(payload)}\n```"
 
         chunks = [{"id": 1, "text": "Track time using timer."}]
         answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
@@ -234,8 +234,10 @@ class TestGenerateLLMAnswer:
 
         chunks = [{"id": 1, "text": "Track time using timer."}, {"id": 2, "text": "Manual entry option."}]
         answer, _, confidence, reasoning, sources_used = generate_llm_answer(
-            "How to track time?", "[1] Track time using timer. [2] Manual entry option.",
-            packed_ids=[1, 2], all_chunks=chunks
+            "How to track time?",
+            "[1] Track time using timer. [2] Manual entry option.",
+            packed_ids=[1, 2],
+            all_chunks=chunks,
         )
 
         assert answer == payload["answer"]

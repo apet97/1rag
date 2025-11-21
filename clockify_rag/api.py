@@ -426,9 +426,7 @@ def create_app() -> FastAPI:
         """
         input_file, exists, candidates = resolve_corpus_path(request.input_file)
         if not exists:
-            raise HTTPException(
-                status_code=404, detail=f"Input file not found. Looked for: {', '.join(candidates)}"
-            )
+            raise HTTPException(status_code=404, detail=f"Input file not found. Looked for: {', '.join(candidates)}")
 
         def do_ingest():
             """Background task to build index."""
