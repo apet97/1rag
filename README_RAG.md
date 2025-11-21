@@ -1,5 +1,7 @@
 # Clockify RAG CLI Tool
 
+> Legacy CLI guide for the older `clockify_support_cli_final.py` entry point. For the current production pipeline and Typer CLI (`clockify_rag.cli_modern`), use `README.md` plus `docs/ARCHITECTURE.md` and `docs/HELP_CORPUS.md`.
+
 A Retrieval-Augmented Generation (RAG) CLI tool that uses Clockify's Markdown documentation as a knowledge base with Ollama LLM for Q&A.
 
 ## Overview

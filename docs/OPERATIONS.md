@@ -1,6 +1,6 @@
 # Operations Guide
 
-This guide documents how to operate the Clockify RAG stack once it has been installed.  It assumes the repository has been cloned and dependencies installed via `pyproject.toml`/`requirements.txt`.
+This guide documents how to operate the Clockify RAG stack once it has been installed. It assumes the repository has been cloned and dependencies installed via `pyproject.toml`/`requirements.txt`. For architecture and ingestion specifics see `docs/ARCHITECTURE.md` and `docs/HELP_CORPUS.md`.
 
 ## Quick Reference
 

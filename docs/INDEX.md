@@ -2,6 +2,8 @@
 
 This index organizes all documentation files in the repository by category and purpose.
 
+**Canonical set for day-to-day work**: `README.md`, `docs/ARCHITECTURE.md`, `docs/CONFIGURATION.md`, `docs/HELP_CORPUS.md`, and `docs/OPERATIONS.md`. The other documents below are historical or role-specific references.
+
 ## 📖 Getting Started (Current & Essential)
 
 Start here for quick setup and usage:
