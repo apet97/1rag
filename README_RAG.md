@@ -4,6 +4,8 @@
 
 A Retrieval-Augmented Generation (RAG) CLI tool that uses Clockify's Markdown documentation as a knowledge base with Ollama LLM for Q&A.
 
+Default corpus filename is `clockify_help_corpus.en.md` (UpdateHelpGPT export); the legacy `knowledge_full.md` name is still supported as a fallback.
+
 ## Overview
 
 This tool (`clockify_support_cli_final.py`) implements a production-ready RAG pipeline:
@@ -98,7 +100,7 @@ pip install requests numpy sentence-transformers
 Build the complete index (chunks, embeddings, BM25, FAISS) in one command:
 
 ```bash
-python3 clockify_support_cli_final.py build knowledge_full.md
+python3 clockify_support_cli_final.py build clockify_help_corpus.en.md  # falls back to knowledge_full.md if present
 ```
 
 **Output**: Creates all required index files:
@@ -195,7 +197,7 @@ After running all commands, your directory will contain:
 ```
 /Users/15x/Downloads/KBDOC/
 ├── clockify_rag.py          # Main CLI tool
-├── knowledge_full.md        # Source documentation (6.9 MB)
+├── clockify_help_corpus.en.md        # Source documentation (legacy: knowledge_full.md)
 ├── chunks.jsonl             # Generated: chunked documentation
 ├── vecs.npy                 # Generated: embedding vectors
 ├── meta.jsonl               # Generated: chunk metadata

@@ -35,6 +35,7 @@ shim.log
 # Environment
 .env
 .venv
+.venv-test-py312/
 venv/
 *.bak
 

@@ -301,6 +301,20 @@ class TestQwenJSONContract:
         with pytest.raises(ValueError, match="Field 'sources_used\\[0\\]' must be string"):
             parse_qwen_json(invalid_json)
 
+    def test_parse_sources_used_with_empty_string_raises_error(self):
+        """Test that empty or whitespace-only sources are rejected."""
+        invalid_json = json.dumps(
+            {
+                "answer": "Test answer",
+                "confidence": 80,
+                "reasoning": "Test reasoning",
+                "sources_used": [" "],  # Empty after stripping
+            }
+        )
+
+        with pytest.raises(ValueError, match="sources_used\\[0\\].*empty"):
+            parse_qwen_json(invalid_json)
+
     def test_parse_sources_used_with_mixed_types(self):
         """Test that mixed types in sources_used raise ValueError."""
         invalid_json = json.dumps(

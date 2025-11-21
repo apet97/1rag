@@ -425,7 +425,7 @@ def build_chunks(md_path: str) -> list:
     for art in parse_articles(raw):
         meta = art.get("meta") or {}
         doc_name = pathlib.Path(md_path).stem
-        article_id = str(meta.get("id") or "").strip()
+        article_id = str(meta.get("id") or doc_name).strip()
         slug = re.sub(r"[^A-Za-z0-9_-]+", "-", article_id or doc_name).strip("-") or doc_name
         title = norm_ws(meta.get("short_title") or art["title"])
         source_url = meta.get("source_url") or art["url"]

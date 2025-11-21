@@ -116,17 +116,22 @@ def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
     if not isinstance(data["sources_used"], list):
         raise ValueError(f"Field 'sources_used' must be list, got {type(data['sources_used']).__name__}")
 
-    # Validate sources_used elements are strings
+    # Validate sources_used elements are non-empty strings and strip whitespace
+    sanitized_sources: List[str] = []
     for i, source in enumerate(data["sources_used"]):
         if not isinstance(source, str):
             raise ValueError(f"Field 'sources_used[{i}]' must be string, got {type(source).__name__}")
+        cleaned = source.strip()
+        if cleaned == "":
+            raise ValueError(f"Field 'sources_used[{i}]' must not be empty")
+        sanitized_sources.append(cleaned)
 
     # Return validated data with normalized confidence
     return {
         "answer": data["answer"],
         "confidence": confidence,
         "reasoning": data["reasoning"],
-        "sources_used": data["sources_used"],
+        "sources_used": sanitized_sources,
     }
 
 

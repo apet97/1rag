@@ -1,6 +1,6 @@
 # Document Ingestion Guide
 
-This project now uses a single help-corpus entry point (`knowledge_full.md`) plus the ingestion pipeline described in `docs/HELP_CORPUS.md`. That document covers:
+This project now uses a single help-corpus entry point (`clockify_help_corpus.en.md`, falling back to `knowledge_full.md` for legacy exports) plus the ingestion pipeline described in `docs/HELP_CORPUS.md`. That document covers:
 
 - How to refresh the corpus (UpdateHelpGPT export).
 - How to rebuild artifacts with `clockify_rag.cli_modern ingest`.

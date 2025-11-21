@@ -56,13 +56,20 @@ if [ "$PLATFORM" = "arm64" ] && [ "$SYSTEM" = "Darwin" ]; then
 fi
 echo "" | tee -a "$LOG_FILE"
 
-# Check if knowledge base exists
-if [ ! -f "knowledge_full.md" ]; then
-    echo "❌ knowledge_full.md not found. Cannot run benchmarks." | tee -a "$LOG_FILE"
+# Check if knowledge base exists (prefer refreshed corpus, fallback to legacy)
+KB_PATH="clockify_help_corpus.en.md"
+if [ -f "$KB_PATH" ]; then
+    KB_LABEL="$KB_PATH"
+elif [ -f "knowledge_full.md" ]; then
+    KB_PATH="knowledge_full.md"
+    KB_LABEL="$KB_PATH (legacy fallback)"
+else
+    echo "❌ clockify_help_corpus.en.md not found (knowledge_full.md fallback also missing). Cannot run benchmarks." | tee -a "$LOG_FILE"
     exit 1
 fi
 
-KB_SIZE=$(du -h knowledge_full.md | cut -f1)
+KB_SIZE=$(du -h "$KB_PATH" | cut -f1)
+echo "  Knowledge base: $KB_LABEL" | tee -a "$LOG_FILE"
 echo "  Knowledge base size: $KB_SIZE" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 
@@ -77,7 +84,7 @@ echo "=== Benchmark 1: Build Performance ===" | tee -a "$LOG_FILE"
 echo "Building knowledge base..." | tee -a "$LOG_FILE"
 
 BUILD_START=$(date +%s)
-python3 clockify_support_cli_final.py build knowledge_full.md 2>&1 | tee -a "$LOG_FILE"
+python3 clockify_support_cli_final.py build "$KB_PATH" 2>&1 | tee -a "$LOG_FILE"
 BUILD_END=$(date +%s)
 BUILD_TIME=$((BUILD_END - BUILD_START))
 
