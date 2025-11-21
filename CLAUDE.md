@@ -443,5 +443,5 @@ See [IMPROVEMENTS_V5.9.md](IMPROVEMENTS_V5.9.md) for complete details.
 **Status**: ✅ Production Ready
 **Date**: 2025-11-08
 **Platform**: macOS/Linux (v1.0 and v2.0); Windows requires manual venv setup
-**Python**: 3.8+
+**Python**: 3.11-3.13 (3.14+ not supported due to Pydantic v1 incompatibility in LangChain)
 **Apple Silicon**: ✅ M1/M2/M3 Compatible - See [M1_COMPATIBILITY.md](M1_COMPATIBILITY.md) for installation guide
