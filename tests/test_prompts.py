@@ -1,6 +1,5 @@
 """Tests for the prompts module."""
 
-import pytest
 from clockify_rag.prompts import QWEN_SYSTEM_PROMPT, build_rag_user_prompt
 
 

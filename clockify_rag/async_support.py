@@ -84,6 +84,7 @@ async def async_ask_llm(
     num_ctx: int = DEFAULT_NUM_CTX,
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
+    chunks: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     """Async version of ask_llm.
 
@@ -91,14 +92,22 @@ async def async_ask_llm(
         question: User question
         context_block: Context snippets
         seed, num_ctx, num_predict, retries: LLM parameters
+        chunks: Optional list of chunk dicts for new Qwen prompts
 
     Returns:
         LLM response text
     """
     from .retrieval import get_system_prompt, USER_WRAPPER
+    from .prompts import QWEN_SYSTEM_PROMPT, build_rag_user_prompt
 
-    system_prompt = get_system_prompt()
-    user_prompt = USER_WRAPPER.format(snips=context_block, q=question)
+    # Use new Qwen prompts if chunks provided, otherwise legacy prompts
+    if chunks is not None:
+        system_prompt = QWEN_SYSTEM_PROMPT
+        user_prompt = build_rag_user_prompt(question, chunks)
+    else:
+        # Legacy format for backward compatibility
+        system_prompt = get_system_prompt()
+        user_prompt = USER_WRAPPER.format(snips=context_block, q=question)
 
     client = get_llm_client()
     messages: List[ChatMessage] = [
@@ -137,6 +146,9 @@ async def async_generate_llm_answer(
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
     packed_ids: Optional[List] = None,
+    all_chunks: Optional[List[Dict]] = None,
+    selected_indices: Optional[List[int]] = None,
+    scores_dict: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, float, Optional[int]]:
     """Async version of generate_llm_answer with confidence scoring and citation validation.
 
@@ -145,12 +157,21 @@ async def async_generate_llm_answer(
         context_block: Packed context snippets
         seed, num_ctx, num_predict, retries: LLM parameters
         packed_ids: List of chunk IDs included in context (for citation validation)
+        all_chunks: All chunks (for extracting packed chunks)
+        selected_indices: Indices of selected chunks (for confidence computation)
+        scores_dict: Retrieval scores (for confidence computation)
 
     Returns:
         Tuple of (answer_text, timing, confidence)
     """
     from .answer import extract_citations, validate_citations
     from .config import STRICT_CITATIONS
+
+    # Extract packed chunks if all data is provided (new code path)
+    packed_chunks = None
+    if all_chunks is not None and packed_ids is not None:
+        chunk_id_to_chunk = {c["id"]: c for c in all_chunks}
+        packed_chunks = [chunk_id_to_chunk[cid] for cid in packed_ids if cid in chunk_id_to_chunk]
 
     t0 = time.time()
     raw_response = (
@@ -161,6 +182,7 @@ async def async_generate_llm_answer(
             num_ctx,
             num_predict,
             retries,
+            chunks=packed_chunks,  # Pass chunks for new Qwen prompts
         )
     ).strip()
     timing = time.time() - t0
@@ -202,6 +224,12 @@ async def async_generate_llm_answer(
     except json.JSONDecodeError:
         # Not JSON, use raw response
         answer = raw_response
+
+    # Compute confidence from scores (preferred method, overrides LLM JSON confidence)
+    if scores_dict is not None and selected_indices is not None:
+        from .retrieval import compute_confidence_from_scores
+
+        confidence = compute_confidence_from_scores(scores_dict, selected_indices)
 
     # Citation validation
     if packed_ids:
@@ -364,6 +392,9 @@ async def async_answer_once(
             num_predict=num_predict,
             retries=retries,
             packed_ids=packed_ids,
+            all_chunks=chunks,
+            selected_indices=selected,
+            scores_dict=scores,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during async answer generation: {exc}")
