@@ -48,6 +48,41 @@ jobs:
         run: poetry run mypy clockify_rag
 
   # =========================================================================
+  # Prompt Contract Validation (v6.0+)
+  # =========================================================================
+  prompt-contract:
+    name: Qwen Prompt Contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install Poetry
+        run: pip install "poetry>=1.7"
+
+      - name: Install dependencies
+        run: |
+          poetry install --no-interaction --with dev
+
+      - name: Test Qwen JSON contract
+        run: |
+          poetry run pytest tests/test_qwen_contract.py tests/test_prompts.py -v --tb=short
+          echo "✓ Qwen prompt contract validated"
+
+      - name: Verify parse_qwen_json coverage
+        run: |
+          poetry run pytest tests/test_qwen_contract.py \
+            --cov=clockify_rag.answer --cov=clockify_rag.prompts \
+            --cov-report=term-missing \
+            --cov-fail-under=85 \
+            -v
+          echo "✓ Prompt parsing coverage sufficient"
+
+  # =========================================================================
   # Unit Tests
   # =========================================================================
   test:

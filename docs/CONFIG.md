@@ -179,7 +179,7 @@ CTX_BUDGET=8000 ragctl chat  # For smaller models
 
 Example:
 ```bash
-CHUNK_CHARS=2000 ragctl ingest --input knowledge_full.md
+CHUNK_CHARS=2000 ragctl ingest --input clockify_help_corpus.en.md
 ```
 
 #### `CHUNK_OVERLAP`

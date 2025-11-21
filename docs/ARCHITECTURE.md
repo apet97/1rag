@@ -30,7 +30,7 @@ flowchart LR
 ## Pipelines
 
 ### Ingestion (offline)
-1. **Source**: `knowledge_full.md` (latest help-center export; see `docs/HELP_CORPUS.md`).
+1. **Source**: `clockify_help_corpus.en.md` (latest help-center export; see `docs/HELP_CORPUS.md`; falls back to `knowledge_full.md`).
 2. **Chunking**: `clockify_rag.chunking.build_chunks` performs heading-aware splits with overlap (`CHUNK_CHARS`, `CHUNK_OVERLAP`).
 3. **Embeddings**: `clockify_rag.embedding.embed_texts` chooses local vs Ollama via `EMB_BACKEND`.
 4. **Indexing**: `clockify_rag.indexing.build` writes BM25 stats, FAISS index (when available), and `index.meta.json`; guarded by `.build.lock`.
@@ -72,7 +72,7 @@ sequenceDiagram
 - **Observability**: `clockify_rag/metrics.py`, logging helpers in `clockify_rag/logging_config.py`, optional `rag_queries.jsonl`.
 
 ## Artifacts and storage
-- **Input**: `knowledge_full.md` (help corpus).
+- **Input**: `clockify_help_corpus.en.md` (help corpus; legacy `knowledge_full.md` supported).
 - **Generated**: `chunks.jsonl`, `vecs_n.npy`, `bm25.json`, `faiss.index` (when FAISS present), `index.meta.json`, optional `rag_queries.jsonl`.
 - **Locks**: `.build.lock` prevents concurrent ingest.
 - **FAQ cache (optional)**: `faq_cache.json` when generated via `scripts/build_faq_cache.py`.

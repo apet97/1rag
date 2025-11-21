@@ -9,7 +9,7 @@ import logging
 import math
 import random
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Union, cast
 from typing_extensions import TypedDict
 
@@ -612,7 +612,7 @@ class MockLLMClient(BaseLLMClient):
             snippet = snippet[:200] + ("..." if len(snippet) > 200 else "")
             content = f"[mock-answer] {snippet or 'No question provided.'}"
 
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         response: ChatCompletionResponse = {
             "model": model or self.gen_model,
             "created_at": now,
@@ -669,7 +669,7 @@ class MockLLMClient(BaseLLMClient):
         return [self.create_embedding(text, model=model) for text in texts]
 
     def list_models(self) -> List[ModelInfo]:
-        now = datetime.utcnow().isoformat() + "Z"
+        now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
         return [
             {
                 "model": self.gen_model,

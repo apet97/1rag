@@ -44,6 +44,7 @@ from clockify_rag import (
     load_index,
 )
 from clockify_rag.config import EMB_BACKEND, EMB_DIM
+from clockify_rag.utils import resolve_corpus_path
 from clockify_rag.retrieval import RETRIEVE_PROFILE_LAST
 
 # Allow CI smoke tests to bypass external services by providing deterministic
@@ -416,9 +417,10 @@ def main():
 
     # Chunking benchmark
     if not args.embedding and not args.retrieval and not args.e2e and not args.quick:
-        if os.path.exists("knowledge_full.md"):
+        kb_path, exists, _ = resolve_corpus_path()
+        if exists and os.path.exists(kb_path):
             print("--- Chunking Benchmark ---")
-            results.append(benchmark_chunking("knowledge_full.md", iterations=5))
+            results.append(benchmark_chunking(kb_path, iterations=5))
             print(f"✅ {results[-1].name}: {results[-1].summary()['latency_ms']['mean']:.2f}ms")
             print()
 

@@ -27,7 +27,7 @@ cd 1rag
 bash scripts/bootstrap_macos_arm64.sh
 
 # 2. Build index
-python3 -m clockify_rag.cli_modern ingest --input knowledge_full.md
+python3 -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
 
 # 3. Start interactive chat
 python3 -m clockify_rag.cli_modern chat
@@ -50,7 +50,7 @@ source venv/bin/activate
 pip install -e .
 
 # Build index and chat
-python3 -m clockify_rag.cli_modern ingest --input knowledge_full.md
+python3 -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
 python3 -m clockify_rag.cli_modern chat
 ```
 
@@ -85,7 +85,7 @@ ragctl doctor --json | jq .device
 
 ```bash
 # From markdown file
-ragctl ingest --input knowledge_full.md
+ragctl ingest --input clockify_help_corpus.en.md
 
 # Force rebuild
 ragctl ingest --force
@@ -277,20 +277,20 @@ curl http://127.0.0.1:11434/api/version
 
 ```bash
 # Check knowledge base exists
-ls -lh knowledge_full.md
+ls -lh clockify_help_corpus.en.md
 
 # Force rebuild (remove artifacts)
 rm -f chunks.jsonl vecs_n.npy meta.jsonl bm25.json index.meta.json
 
 # Retry
-ragctl ingest --input knowledge_full.md --force
+ragctl ingest --input clockify_help_corpus.en.md --force
 ```
 
 ### Low Answer Quality
 
 1. **Increase TOP_K**: `DEFAULT_TOP_K=20 ragctl query "question"`
 2. **Lower threshold**: `DEFAULT_THRESHOLD=0.15 ragctl query "question"`
-3. **Check source documents**: Are answers in knowledge_full.md?
+3. **Check source documents**: Are answers in clockify_help_corpus.en.md?
 4. **Enable debug**: `ragctl query "q" --debug` to see retrieval scores
 5. **Verify embeddings**: Check if embedding model is appropriate for domain
 

@@ -85,7 +85,7 @@ Starts an asynchronous index rebuild. The body accepts `input_file` and `force` 
 ```json
 {
   "status": "processing",
-  "message": "Index build started in background from knowledge_full.md",
+  "message": "Index build started in background from clockify_help_corpus.en.md",
   "timestamp": "2025-11-10T13:12:00.113423",
   "index_ready": false
 }

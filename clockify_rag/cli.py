@@ -22,6 +22,7 @@ from .retrieval import set_query_expansion_path, load_query_expansion_dict
 from .precomputed_cache import get_precomputed_cache
 from .api_client import get_llm_client, ChatCompletionOptions, ChatMessage
 from .http_utils import http_post_with_retries
+from .utils import resolve_corpus_path
 
 logger = logging.getLogger(__name__)
 QUERY_LOG_DISABLED = False
@@ -36,6 +37,8 @@ def ensure_index_ready(retries=0) -> Tuple:
     """
     from .error_handlers import log_and_raise
     from .exceptions import IndexLoadError
+
+    kb_path, kb_exists, candidates = resolve_corpus_path()
 
     artifacts_ok = True
     missing_files = []
@@ -52,38 +55,42 @@ def ensure_index_ready(retries=0) -> Tuple:
 
     if not artifacts_ok:
         logger.info(
-            f"[rebuild] artifacts missing or invalid: building from knowledge_full.md... (missing: {', '.join(missing_files)})"
+            f"[rebuild] artifacts missing or invalid: building from {kb_path}... (missing: {', '.join(missing_files)})"
         )
-        if os.path.exists("knowledge_full.md"):
+        if kb_exists:
             try:
-                build("knowledge_full.md", retries=retries)
+                build(kb_path, retries=retries)
             except Exception as e:
                 log_and_raise(
-                    IndexLoadError, f"Failed to build index: {str(e)}", "check knowledge_full.md file and configuration"
+                    IndexLoadError,
+                    f"Failed to build index: {str(e)}",
+                    f"provide one of: {', '.join(candidates)}",
                 )
         else:
             log_and_raise(
-                IndexLoadError, "knowledge_full.md not found", "provide a valid knowledge base file to build the index"
+                IndexLoadError,
+                f"{kb_path} not found",
+                f"provide a valid knowledge base file to build the index (looked for: {', '.join(candidates)})",
             )
 
     result = load_index()
     if result is None:
         logger.info("[rebuild] artifact validation failed: rebuilding...")
-        if os.path.exists("knowledge_full.md"):
+        if kb_exists:
             try:
-                build("knowledge_full.md", retries=retries)
+                build(kb_path, retries=retries)
                 result = load_index()
             except Exception as e:
                 log_and_raise(
                     IndexLoadError,
                     f"Failed to rebuild index: {str(e)}",
-                    "check knowledge_full.md file and configuration",
+                    f"check {kb_path} or provide one of: {', '.join(candidates)}",
                 )
         else:
             log_and_raise(
                 IndexLoadError,
-                "knowledge_full.md not found after validation failure",
-                "provide a valid knowledge base file to build the index",
+                f"{kb_path} not found after validation failure",
+                f"provide a valid knowledge base file to build the index (looked for: {', '.join(candidates)})",
             )
 
     if result is None:
@@ -429,7 +436,10 @@ def setup_cli_args():
 
     # Build subparser with common flags
     b = subparsers.add_parser("build", help="Build knowledge base", parents=[common_flags])
-    b.add_argument("md_path", help="Path to knowledge_full.md")
+    b.add_argument(
+        "md_path",
+        help="Path to help corpus markdown (default: clockify_help_corpus.en.md, falls back to knowledge_full.md)",
+    )
     b.add_argument(
         "--retries", type=int, default=config.DEFAULT_RETRIES, help="Retries for transient errors (default 2)"
     )
@@ -584,6 +594,7 @@ def handle_ask_command(args):
 def handle_chat_command(args):
     """Handle chat command including determinism check."""
     call_retries = getattr(args, "retries", 0)
+    kb_path, kb_exists, candidates = resolve_corpus_path()
     # Determinism check
     if getattr(args, "det_check", False):
         # Load index once for determinism test
@@ -596,8 +607,8 @@ def handle_chat_command(args):
         ]:
             if not os.path.exists(fname):
                 logger.info("[rebuild] artifacts missing for det-check: building...")
-                if os.path.exists("knowledge_full.md"):
-                    build("knowledge_full.md", retries=getattr(args, "retries", 0))
+                if kb_exists:
+                    build(kb_path, retries=getattr(args, "retries", 0))
                 break
         result = load_index()
         if result:

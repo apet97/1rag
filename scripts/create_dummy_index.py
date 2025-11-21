@@ -15,6 +15,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from clockify_rag import config, build_bm25, compute_sha256
+from clockify_rag.utils import resolve_corpus_path
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -64,7 +65,11 @@ def main() -> None:
     with bm25_path.open("w", encoding="utf-8") as handle:
         json.dump(bm, handle)
 
-    kb_path = REPO_ROOT / "knowledge_full.md"
+    kb_candidate, _, _ = resolve_corpus_path()
+    kb_path = Path(kb_candidate)
+    if not kb_path.is_absolute():
+        kb_path = REPO_ROOT / kb_path
+
     if kb_path.exists():
         kb_sha = compute_sha256(str(kb_path))
     else:

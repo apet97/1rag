@@ -5,7 +5,7 @@ Clockify Internal Support CLI – Stateless RAG with Hybrid Retrieval
 HOW TO RUN
 ==========
   # Build knowledge base (one-time)
-  python3 clockify_support_cli_final.py build knowledge_full.md
+  python3 clockify_support_cli_final.py build clockify_help_corpus.en.md
 
   # Start interactive REPL
   python3 clockify_support_cli_final.py chat [--debug] [--rerank] [--topk 12] [--pack 6] [--threshold 0.30]

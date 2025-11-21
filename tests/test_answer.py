@@ -179,72 +179,100 @@ class TestGenerateLLMAnswer:
 
     @patch("clockify_rag.answer.ask_llm")
     def test_generate_with_json_response(self, mock_ask_llm):
-        """Test answer generation with JSON response."""
+        """Test answer generation with new JSON response format (v6.0+)."""
         payload = {
             "answer": "1. Track time using the timer.\n2. Steps:\n   - Press Start\n   - Press Stop\n3. Notes: Applies to all plans.\n4. Citations: [id_1]",
             "confidence": 85,
+            "reasoning": "Based on context block 1 which describes timer functionality.",
+            "sources_used": ["1"],
         }
         mock_ask_llm.return_value = json.dumps(payload)
 
-        answer, timing, confidence = generate_llm_answer(
-            "How to track time?", "[1] Track time using timer.", packed_ids=[1]
+        # Provide all_chunks so packed_chunks is set, triggering new prompt path
+        chunks = [{"id": 1, "text": "Track time using timer."}]
+        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+            "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
         assert answer == payload["answer"]
         assert confidence == payload["confidence"]
+        assert reasoning == payload["reasoning"]
+        assert sources_used == payload["sources_used"]
         assert timing >= 0
 
     @patch("clockify_rag.answer.ask_llm")
     def test_generate_with_markdown_json(self, mock_ask_llm):
-        """Test answer generation with markdown-wrapped JSON."""
-        mock_ask_llm.return_value = '```json\n{"answer": "Track time using [1].", "confidence": 90}\n```'
+        """Test answer generation with markdown-wrapped JSON (v6.0+)."""
+        payload = {
+            "answer": "Track time using [1].",
+            "confidence": 90,
+            "reasoning": "Context 1 provides clear instructions.",
+            "sources_used": ["1"],
+        }
+        mock_ask_llm.return_value = f'```json\n{json.dumps(payload)}\n```'
 
-        answer, timing, confidence = generate_llm_answer(
-            "How to track time?", "[1] Track time using timer.", packed_ids=[1]
+        chunks = [{"id": 1, "text": "Track time using timer."}]
+        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+            "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
         assert answer == "Track time using [1]."
         assert confidence == 90
+        assert reasoning == "Context 1 provides clear instructions."
+        assert sources_used == ["1"]
 
     @patch("clockify_rag.answer.ask_llm")
     def test_generate_with_numbered_answer_structure(self, mock_ask_llm):
-        """Ensure numbered content inside JSON answer parses correctly."""
+        """Ensure numbered content inside JSON answer parses correctly (v6.0+)."""
         payload = {
             "answer": "1. Direct answer\n2. Steps:\n   1) Start timer\n   2) Stop timer\n3. Notes: Premium users see advanced features.\n4. Citations: [id_1, id_2]",
             "confidence": 77,
+            "reasoning": "Synthesized from context blocks 1 and 2.",
+            "sources_used": ["1", "2"],
         }
         mock_ask_llm.return_value = json.dumps(payload)
 
-        answer, _, confidence = generate_llm_answer(
-            "How to track time?", "[1] Track time using timer. [2] Manual entry option.", packed_ids=[1, 2]
+        chunks = [{"id": 1, "text": "Track time using timer."}, {"id": 2, "text": "Manual entry option."}]
+        answer, _, confidence, reasoning, sources_used = generate_llm_answer(
+            "How to track time?", "[1] Track time using timer. [2] Manual entry option.",
+            packed_ids=[1, 2], all_chunks=chunks
         )
 
         assert answer == payload["answer"]
         assert confidence == payload["confidence"]
+        assert reasoning == payload["reasoning"]
+        assert sources_used == payload["sources_used"]
 
     @patch("clockify_rag.answer.ask_llm")
-    def test_generate_with_plain_text(self, mock_ask_llm):
-        """Test answer generation with plain text (no JSON)."""
+    def test_generate_with_plain_text_legacy(self, mock_ask_llm):
+        """Test answer generation with plain text legacy path (no chunks provided)."""
         mock_ask_llm.return_value = "Track time using [1]."
 
-        answer, timing, confidence = generate_llm_answer(
+        # Don't provide all_chunks, triggers legacy path
+        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
             "How to track time?", "[1] Track time using timer.", packed_ids=[1]
         )
 
         assert answer == "Track time using [1]."
-        assert confidence is None  # No confidence in plain text
+        assert confidence is None  # No confidence in plain text legacy
+        assert reasoning is None  # No reasoning in legacy
+        assert sources_used is None  # No sources_used in legacy
 
     @patch("clockify_rag.answer.ask_llm")
-    def test_generate_with_invalid_confidence(self, mock_ask_llm):
-        """Test answer generation with out-of-range confidence."""
-        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 150}'
+    def test_generate_with_invalid_json_fallback(self, mock_ask_llm):
+        """Test that invalid JSON falls back to raw text with warning (v6.0+)."""
+        # Invalid JSON (missing required fields)
+        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85}'
 
-        answer, timing, confidence = generate_llm_answer(
-            "How to track time?", "[1] Track time using timer.", packed_ids=[1]
+        chunks = [{"id": 1, "text": "Track time using timer."}]
+        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+            "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
-        assert answer == "Track time using [1]."
-        assert confidence is None  # Invalid confidence ignored
+        # Should fall back to raw text when JSON parsing fails
+        assert "Track time using [1]." in answer
+        assert reasoning is None  # Fallback path doesn't have reasoning
+        assert sources_used is None  # Fallback path doesn't have sources
 
 
 class TestReranking:
@@ -296,7 +324,7 @@ class TestAnswerOnce:
         # Mock LLM to return answer (plain text or JSON)
         # Note: With new prompt system, confidence is computed from retrieval scores,
         # not from LLM output. In mock mode, confidence defaults to 100.
-        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85}'
+        mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85, "reasoning": "Used context block 1", "sources_used": ["1"]}'
 
         # Mock BM25 index
         bm = {"idf": {}, "avgdl": 10, "doc_lens": [10] * 5, "doc_tfs": [{}] * 5}
@@ -308,8 +336,8 @@ class TestAnswerOnce:
         assert "answer" in result
         assert result["answer"] == "Track time using [1]."
         assert not result["refused"]
-        # Confidence is now computed from retrieval scores (mock mode defaults to 100)
-        assert result["confidence"] == 100
+        # Confidence comes from Qwen JSON output
+        assert result["confidence"] == 85
         assert "timing" in result
         assert "metadata" in result
 

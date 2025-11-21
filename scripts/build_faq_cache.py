@@ -93,7 +93,10 @@ def main():
     try:
         index_data = load_index()
         if index_data is None:
-            logger.error("Failed to load index. Run 'python3 clockify_support_cli.py build knowledge_full.md' first.")
+            logger.error(
+                "Failed to load index. Run 'python3 clockify_support_cli.py build clockify_help_corpus.en.md' first "
+                "(falls back to knowledge_full.md)."
+            )
             sys.exit(1)
 
         chunks = index_data["chunks"]

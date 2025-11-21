@@ -218,7 +218,7 @@ print(f"Processor: {platform.processor()}")
 
 ## Performance Benchmarks (M1 Pro, 16GB)
 
-### Build Phase (knowledge_full.md → indexes)
+### Build Phase (clockify_help_corpus.en.md → indexes)
 ```
 Chunking:         ~2 seconds
 Embedding:        ~30 seconds (384 chunks, local SentenceTransformer)
@@ -275,7 +275,7 @@ make clean  # or: rm -f chunks.jsonl vecs_n.npy meta.jsonl bm25.json faiss.index
 
 # Rebuild with ARM-native Python
 source rag_env/bin/activate  # or conda activate
-python3 clockify_support_cli_final.py build knowledge_full.md
+python3 clockify_support_cli_final.py build clockify_help_corpus.en.md  # falls back to knowledge_full.md
 ```
 
 ## Testing on M1

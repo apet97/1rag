@@ -240,7 +240,7 @@ curl http://127.0.0.1:11434/api/version
 ### Quick Build (with test KB)
 
 ```bash
-# Build index from default knowledge_full.md
+# Build index from default clockify_help_corpus.en.md (falls back to knowledge_full.md)
 python3 -m clockify_rag.cli_modern ingest
 
 # Expected: ✅ Index built successfully!

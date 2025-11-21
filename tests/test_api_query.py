@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import clockify_rag.api as api_module
+import clockify_rag.config as config
 from clockify_rag.exceptions import ValidationError
 
 
@@ -50,6 +51,9 @@ def test_api_query_returns_metadata(monkeypatch):
 )
 def test_api_query_validation_errors(monkeypatch, question, message):
     """API should convert validation errors into 400 responses."""
+
+    # Set MAX_QUERY_LENGTH to match test expectations (12000 chars)
+    monkeypatch.setattr(config, "MAX_QUERY_LENGTH", 12000)
 
     monkeypatch.setattr(api_module, "ensure_index_ready", lambda retries=2: ([], [], {}, None))
 
