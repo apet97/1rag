@@ -7,8 +7,8 @@ The script supports two modes of operation:
    hybrid index (``chunks.jsonl`` + ``vecs_n.npy`` + ``bm25.json``) is present
    and importable. This measures the real retrieval stack (dense + BM25 + MMR).
 2. **Lexical fallback** – if the hybrid index is unavailable, the script builds
-   an in-memory BM25 index directly from ``knowledge_full.md`` using the same
-   chunking heuristics as the main application. This path keeps CI lightweight
+   an in-memory BM25 index directly from ``clockify_help_corpus.en.md`` (falls back to ``knowledge_full.md``)
+   using the same chunking heuristics as the main application. This path keeps CI lightweight
    (no heavy Torch/SentenceTransformer dependencies) while still validating the
    knowledge base coverage.
 
@@ -32,6 +32,8 @@ import sys
 from collections import defaultdict
 
 import numpy as np
+
+from clockify_rag.utils import resolve_corpus_path
 
 try:
     from rank_bm25 import BM25Okapi
@@ -163,10 +165,10 @@ def _load_chunks() -> list[dict]:
                     chunks.append(json.loads(line))
         return chunks
 
-    knowledge_path = os.path.join(os.path.dirname(__file__), "knowledge_full.md")
-    if not os.path.exists(knowledge_path):
+    knowledge_path, exists, candidates = resolve_corpus_path()
+    if not exists:
         raise FileNotFoundError(
-            "knowledge_full.md is missing. Run `make build` to generate chunks." \
+            f"Help corpus is missing. Provide one of: {', '.join(candidates)}"
         )
 
     try:

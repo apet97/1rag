@@ -327,7 +327,7 @@ grep "FAQ cache" rag_queries.jsonl
 **Solutions**:
 ```bash
 # Ensure index is built
-python3 clockify_support_cli.py build knowledge_full.md
+python3 clockify_support_cli.py build clockify_help_corpus.en.md
 
 # Check FAQ file format
 cat config/my_faqs.txt

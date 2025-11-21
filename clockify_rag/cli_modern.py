@@ -24,7 +24,7 @@ from . import config
 from .answer import answer_once, answer_to_json
 from .cli import ensure_index_ready, chat_repl
 from .indexing import build
-from .utils import check_ollama_connectivity
+from .utils import check_ollama_connectivity, resolve_corpus_path
 
 logger = logging.getLogger(__name__)
 console = Console()
@@ -271,7 +271,10 @@ def doctor(
 @app.command()
 def ingest(
     input: Optional[str] = typer.Option(
-        None, "--input", "-i", help="Input markdown file or directory (default: knowledge_full.md)"
+        None,
+        "--input",
+        "-i",
+        help="Input markdown file or directory (default: clockify_help_corpus.en.md, falls back to knowledge_full.md)",
     ),
     output: Optional[str] = typer.Option(
         None, "--output", "-o", help="Output directory for index (default: current directory)"
@@ -289,11 +292,11 @@ def ingest(
     Example:
         ragctl ingest --input ./docs --output ./var/index
     """
-    input_file = input or "knowledge_full.md"
+    input_file, exists, candidates = resolve_corpus_path(input)
     output_dir = output or "."
 
-    if not os.path.exists(input_file):
-        console.print(f"❌ Input file not found: {input_file}")
+    if not exists:
+        console.print(f"❌ Input file not found. Looked for: {', '.join(candidates)}")
         raise typer.Exit(1)
 
     console.print(f"📥 Ingesting: {input_file}")

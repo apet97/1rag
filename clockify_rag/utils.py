@@ -11,7 +11,7 @@ import tempfile
 import time
 import unicodedata
 from contextlib import contextmanager
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 import requests
@@ -20,6 +20,36 @@ import requests
 # For functions that need dynamic config access, we'll import inside functions
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_CORPUS_FILES = ["clockify_help_corpus.en.md", "knowledge_full.md"]
+
+
+def resolve_corpus_path(preferred: Optional[str] = None) -> tuple[str, bool, List[str]]:
+    """Return a usable corpus path, preferring the refreshed help-center file.
+
+    Args:
+        preferred: Explicit path provided by the caller (highest priority).
+
+    Returns:
+        (path, exists, candidates_checked)
+    """
+    candidates: List[str] = []
+    if preferred:
+        candidates.append(preferred)
+    candidates.extend(DEFAULT_CORPUS_FILES)
+
+    # Deduplicate while preserving order
+    seen: List[str] = []
+    for cand in candidates:
+        if cand not in seen:
+            seen.append(cand)
+
+    for cand in seen:
+        if os.path.exists(cand):
+            return cand, True, seen
+
+    # Fall back to first candidate even if missing so callers can surface a clear error
+    return seen[0], False, seen
 
 
 # ====== INPUT SANITIZATION ======

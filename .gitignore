@@ -7,6 +7,10 @@ meta.jsonl
 bm25.json
 index.meta.json
 
+# Help corpus inputs (large data, provided outside git)
+knowledge_full.md
+clockify_help_corpus.en.md
+
 # v4.1 FAISS and ANN indexes
 faiss.index
 hnsw_cosine.bin

@@ -6,7 +6,7 @@ This document describes the current Retrieval-Augmented Generation (RAG) stack t
 
 | Stage | Responsibility | Key Modules / Files |
 |-------|----------------|---------------------|
-| **Ingestion & Normalization** | Convert Markdown/HTML/PDF/txt/docx sources into normalized Markdown that follows the `# [ARTICLE]` convention. Supports single files or entire trees. | `clockify_rag/ingestion.py`, `knowledge_full.md`, `docs/INGESTION.md` |
+| **Ingestion & Normalization** | Convert Markdown/HTML/PDF/txt/docx sources into normalized Markdown with UpdateHelpGPT front matter (or legacy `# [ARTICLE]` convention). Supports single files or entire trees. | `clockify_rag/ingestion.py`, `clockify_help_corpus.en.md`, `docs/INGESTION.md` |
 | **Chunking** | Parse Markdown articles, split by headings/sentences with overlap, and emit normalized chunks with stable IDs. | `clockify_rag/chunking.py`, `CHUNKING.md` |
 | **Embedding Layer** | Produce semantic vectors using local SentenceTransformers (default) or the Ollama embedding endpoint. Handles batching, retries, caching, and validation. | `clockify_rag/embedding.py`, `emb_cache.jsonl` |
 | **Vector & Lexical Indexes** | Maintain FAISS IVFFlat (primary), HNSW (fallback), and BM25 sparse indexes. Persist artifacts for reuse. | `clockify_rag/indexing.py`, files under `config.FILES` |

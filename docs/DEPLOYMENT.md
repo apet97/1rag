@@ -33,9 +33,9 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
 
 3. **Build the artifacts**
    ```bash
-   ragctl ingest --input knowledge_full.md
+   ragctl ingest --input clockify_help_corpus.en.md
    # or the legacy wrapper:
-   python3 clockify_support_cli_final.py build knowledge_full.md
+   python3 clockify_support_cli_final.py build clockify_help_corpus.en.md
    ```
 
 4. **Run a smoke test**
@@ -84,7 +84,7 @@ docker run -d \
   -e RAG_CHAT_MODEL=qwen2.5:32b \
   -e RAG_EMBED_MODEL=nomic-embed-text:latest \
   -e EMB_BACKEND=ollama \
-  -v $(pwd)/knowledge_full.md:/app/knowledge_full.md:ro \
+  -v $(pwd)/clockify_help_corpus.en.md:/app/clockify_help_corpus.en.md:ro \
   -v $(pwd)/data:/app/data \
   clockify-rag
 ```

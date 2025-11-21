@@ -162,7 +162,7 @@ cp .env.example .env
 # Edit .env with your settings
 
 # 5. Build knowledge base
-python clockify_support_cli_final.py build knowledge_full.md
+python clockify_support_cli_final.py build clockify_help_corpus.en.md  # falls back to knowledge_full.md
 
 # 6. Start service
 python clockify_support_cli_final.py chat

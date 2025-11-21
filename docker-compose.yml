@@ -14,7 +14,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./knowledge_full.md:/app/knowledge_full.md:ro
+      - ./clockify_help_corpus.en.md:/app/clockify_help_corpus.en.md:ro
       - ./data:/app/data
       - ./logs:/app/logs
       - ./.env:/app/.env:ro

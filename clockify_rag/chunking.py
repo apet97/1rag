@@ -9,12 +9,15 @@ import pathlib
 import re
 import unicodedata
 import uuid
-from typing import List, Dict
+from typing import Any, Dict, List, Optional
 
 from .config import CHUNK_CHARS, CHUNK_OVERLAP
 from .utils import norm_ws, strip_noise
 
 logger = logging.getLogger(__name__)
+
+_FRONT_MATTER_PATTERN = re.compile(r"^---\s*\n(.*?)\n---\s*\n(.*?)(?=\n---\s*\n|\Z)", re.S | re.M)
+_HIGH_PRIORITY_SECTIONS = {"key points", "limits & gotchas", "canonical answer"}
 
 # Rank 23: NLTK for sentence-aware chunking
 try:
@@ -31,11 +34,93 @@ except ImportError:
     _NLTK_AVAILABLE = False
 
 
+def _coerce_front_matter_value(raw: str) -> Any:
+    """Parse simple scalar or list values from YAML-like front matter."""
+    val = raw.strip().strip('"').strip("'")
+    lower = val.lower()
+    if lower in {"true", "yes", "on"}:
+        return True
+    if lower in {"false", "no", "off"}:
+        return False
+    if val.startswith("[") and val.endswith("]"):
+        inner = val[1:-1].strip()
+        if not inner:
+            return []
+        return [item.strip().strip('"').strip("'") for item in inner.split(",") if item.strip()]
+    return val
+
+
+def _parse_front_matter_block(block: str) -> Dict[str, Any]:
+    """Parse a YAML-like front matter block without requiring PyYAML."""
+    meta: Dict[str, Any] = {}
+    current_list_key: Optional[str] = None
+
+    for line in block.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+
+        if stripped.startswith("-") and current_list_key:
+            meta.setdefault(current_list_key, [])
+            meta[current_list_key].append(stripped.lstrip("-").strip().strip('"').strip("'"))
+            continue
+
+        if ":" in stripped:
+            key, raw_val = stripped.split(":", 1)
+            key = key.strip()
+            raw_val = raw_val.strip()
+
+            if raw_val == "":
+                meta[key] = []
+                current_list_key = key
+            else:
+                parsed_val = _coerce_front_matter_value(raw_val)
+                meta[key] = parsed_val
+                current_list_key = key if isinstance(parsed_val, list) else None
+
+    return meta
+
+
+def _parse_front_matter_articles(md_text: str) -> list:
+    """Parse articles that use YAML front matter with UpdateHelpGPT metadata."""
+    articles = []
+    for match in _FRONT_MATTER_PATTERN.finditer(md_text.strip()):
+        meta_block, body = match.groups()
+        meta = _parse_front_matter_block(meta_block)
+        if bool(meta.get("suppress_from_rag")):
+            logger.debug("Skipping suppressed article id=%s", meta.get("id"))
+            continue
+
+        title = meta.get("title") or meta.get("short_title") or meta.get("id") or "Untitled Article"
+        url = meta.get("source_url") or meta.get("url") or ""
+        articles.append({"title": title, "url": url, "body": body.strip(), "meta": meta})
+
+    return articles
+
+
+def _clean_section_header(header: str) -> str:
+    """Normalize section titles by stripping markdown hashes and whitespace."""
+    return norm_ws(re.sub(r"^#+\s*", "", header))
+
+
+def _section_importance(section: str) -> Optional[str]:
+    """Return a hint for sections we want to emphasize during retrieval."""
+    normalized = section.lower()
+    if normalized in _HIGH_PRIORITY_SECTIONS:
+        return "high"
+    if "faq" in normalized:
+        return "medium"
+    return None
+
+
 # ====== KB PARSING ======
 def parse_articles(md_text: str) -> list:
-    """Parse articles from markdown. Heuristic: '# [ARTICLE]' + optional URL line."""
+    """Parse articles from markdown supporting front matter + legacy formats."""
+    articles = _parse_front_matter_articles(md_text)
+    if articles:
+        return articles
+
     lines = md_text.splitlines()
-    articles = []
     i = 0
     while i < len(lines):
         if lines[i].startswith("# [ARTICLE]"):
@@ -51,11 +136,12 @@ def parse_articles(md_text: str) -> list:
                 buf.append(lines[i])
                 i += 1
             body = "\n".join(buf).strip()
-            articles.append({"title": title_line, "url": url, "body": body})
+            articles.append({"title": title_line, "url": url, "body": body, "meta": {}})
         else:
             i += 1
+
     if not articles:
-        articles = [{"title": "KB", "url": "", "body": md_text}]
+        articles = [{"title": "KB", "url": "", "body": md_text, "meta": {}}]
     return articles
 
 
@@ -337,11 +423,19 @@ def build_chunks(md_path: str) -> list:
     chunks = []
 
     for art in parse_articles(raw):
+        meta = art.get("meta") or {}
+        doc_name = pathlib.Path(md_path).stem
+        article_id = str(meta.get("id") or "").strip()
+        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", article_id or doc_name).strip("-") or doc_name
+        title = norm_ws(meta.get("short_title") or art["title"])
+        source_url = meta.get("source_url") or art["url"]
+
         sects = split_by_headings(art["body"]) or [art["body"]]
 
         for sect_idx, sect in enumerate(sects):
             # Extract the section header/title from the content
             head = sect.splitlines()[0] if sect else art["title"]
+            section_label = _clean_section_header(head)
 
             # Parse the section for any H3 or H4 headers as subsection indicators
             subsection_headers = extract_subsection_headers(sect)
@@ -351,17 +445,22 @@ def build_chunks(md_path: str) -> list:
 
             for chunk_idx, piece in enumerate(text_chunks):
                 # Create a meaningful ID that includes document structure info
-                doc_name = pathlib.Path(md_path).stem
-                cid = f"{doc_name}_{sect_idx}_{chunk_idx}_{str(uuid.uuid4())[:8]}"
+                cid = f"{slug}_{sect_idx}_{chunk_idx}_{str(uuid.uuid4())[:8]}"
 
                 # Extract additional metadata
-                metadata = extract_metadata(piece)
+                metadata = {**extract_metadata(piece), **meta}
+                if section_label:
+                    metadata.setdefault("section_type", section_label)
+                    importance = _section_importance(section_label)
+                    if importance:
+                        metadata["section_importance"] = importance
 
                 chunk_obj = {
                     "id": cid,
-                    "title": norm_ws(art["title"]),
-                    "url": art["url"],
-                    "section": norm_ws(head),
+                    "article_id": article_id,
+                    "title": title,
+                    "url": source_url,
+                    "section": section_label,
                     "subsection": subsection_headers[0] if subsection_headers else "",
                     "text": piece,
                     "doc_path": str(md_path),

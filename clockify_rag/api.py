@@ -32,7 +32,7 @@ from .cli import ensure_index_ready
 from .exceptions import ValidationError
 from .indexing import build
 from .metrics import MetricNames, get_metrics
-from .utils import check_ollama_connectivity
+from .utils import check_ollama_connectivity, resolve_corpus_path
 
 # Re-export for tests that monkeypatch api.get_rate_limiter
 get_rate_limiter = _get_rate_limiter
@@ -424,10 +424,11 @@ def create_app() -> FastAPI:
         Note:
             Build happens asynchronously. Check /health to verify completion.
         """
-        input_file = request.input_file or "knowledge_full.md"
-
-        if not os.path.exists(input_file):
-            raise HTTPException(status_code=404, detail=f"Input file not found: {input_file}")
+        input_file, exists, candidates = resolve_corpus_path(request.input_file)
+        if not exists:
+            raise HTTPException(
+                status_code=404, detail=f"Input file not found. Looked for: {', '.join(candidates)}"
+            )
 
         def do_ingest():
             """Background task to build index."""

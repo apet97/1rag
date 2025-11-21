@@ -73,7 +73,7 @@ freeze:
 
 build:
 	@echo "Building knowledge base with ragctl ingest (local embeddings for speed)..."
-	source rag_env/bin/activate && EMB_BACKEND=local python3 -m clockify_rag.cli_modern ingest --input knowledge_full.md
+	source rag_env/bin/activate && EMB_BACKEND=local python3 -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
 	@echo ""
 	@echo "Hint: To use Ollama embeddings instead, run: EMB_BACKEND=ollama make build"
 
@@ -82,7 +82,7 @@ ingest: build
 
 reindex:
 	@echo "Force rebuilding knowledge base and indexes..."
-	source rag_env/bin/activate && EMB_BACKEND=local python3 -m clockify_rag.cli_modern ingest --input knowledge_full.md --force
+	source rag_env/bin/activate && EMB_BACKEND=local python3 -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md --force
 	@echo "✅ Reindex complete"
 
 regen-artifacts:

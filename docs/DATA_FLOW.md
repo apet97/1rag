@@ -14,7 +14,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
 └─────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────┐
-│ Knowledge Base  │  knowledge_full.md (6.9 MB Markdown)
+│ Knowledge Base  │  clockify_help_corpus.en.md (UpdateHelpGPT export; falls back to knowledge_full.md)
 │   (Markdown)    │  ~150 pages of documentation
 └────────┬────────┘
          │
@@ -162,13 +162,13 @@ The RAG system processes user questions through a multi-stage pipeline combining
 
 ### 1. Knowledge Base Ingestion
 
-**File**: `knowledge_full.md`
+**File**: `clockify_help_corpus.en.md` (legacy: `knowledge_full.md`)
 **Size**: ~6.9 MB (150 pages)
 **Format**: Markdown with hierarchical headings
 
 The knowledge base is ingested once (or when updated) using:
 ```bash
-ragctl ingest knowledge_full.md
+ragctl ingest clockify_help_corpus.en.md
 ```
 
 ### 2. Chunking Strategy

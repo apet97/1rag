@@ -14,7 +14,7 @@
 # ============================================================================
 data:
   # Path to knowledge base markdown file
-  kb_path: ./knowledge_full.md
+  kb_path: ./clockify_help_corpus.en.md  # falls back to ./knowledge_full.md if present
 
   # Output directory for index artifacts
   index_dir: ./var/index
@@ -62,7 +62,7 @@ embedding:
 # ============================================================================
 ollama:
   # Base URL for Ollama service
-  url: http://127.0.0.1:11434
+  url: http://10.127.0.192:11434
 
   # Embedding model on Ollama server
   embedding_model: nomic-embed-text
