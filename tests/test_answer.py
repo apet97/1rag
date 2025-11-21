@@ -293,7 +293,9 @@ class TestAnswerOnce:
             },
         )
 
-        # Mock LLM to return answer
+        # Mock LLM to return answer (plain text or JSON)
+        # Note: With new prompt system, confidence is computed from retrieval scores,
+        # not from LLM output. In mock mode, confidence defaults to 100.
         mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85}'
 
         # Mock BM25 index
@@ -306,7 +308,8 @@ class TestAnswerOnce:
         assert "answer" in result
         assert result["answer"] == "Track time using [1]."
         assert not result["refused"]
-        assert result["confidence"] == 85
+        # Confidence is now computed from retrieval scores (mock mode defaults to 100)
+        assert result["confidence"] == 100
         assert "timing" in result
         assert "metadata" in result
 

@@ -27,6 +27,7 @@ from .exceptions import LLMError, ValidationError
 from .indexing import bm25_scores, get_faiss_index
 from .utils import tokenize  # FIX (Error #17): Import tokenize from utils instead of duplicating
 from .intent_classification import classify_intent, get_intent_metadata, adjust_scores_by_intent
+from .prompts import QWEN_SYSTEM_PROMPT, build_rag_user_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,80 @@ QUESTION:
 
 PASSAGES:
 {passages}"""
+
+
+# ====== CONFIDENCE COMPUTATION ======
+def compute_confidence_from_scores(
+    scores_dict: Dict[str, Any],
+    selected_indices: List[int],
+    threshold: float = 0.25,
+) -> int:
+    """Compute confidence score (0-100) from retrieval scores.
+
+    This provides a more reliable confidence estimate than asking the LLM to guess.
+    Confidence is based on:
+    - Top hybrid score (main signal)
+    - Score distribution (consistency)
+    - Coverage (number of high-quality chunks)
+
+    Args:
+        scores_dict: Dictionary with 'hybrid', 'dense', 'bm25' score arrays
+        selected_indices: List of selected chunk indices
+        threshold: Minimum acceptable similarity threshold
+
+    Returns:
+        Integer confidence score from 0-100
+    """
+    if not selected_indices:
+        return 0
+
+    try:
+        import numpy as np
+
+        # Extract scores for selected indices
+        hybrid_scores = scores_dict.get("hybrid", np.array([]))
+        if len(hybrid_scores) == 0:
+            return 50  # Fallback if no scores available
+
+        selected_scores = [hybrid_scores[i] for i in selected_indices if i < len(hybrid_scores)]
+        if not selected_scores:
+            return 50
+
+        # Base confidence on top score (main signal)
+        top_score = max(selected_scores)
+
+        # Normalize to 0-100 range
+        # Scores typically range from 0.0 to 1.0 for normalized vectors
+        # Map 0.0 -> 0, threshold -> 40, 0.5 -> 70, 1.0 -> 100
+        if top_score < threshold:
+            base_confidence = int(top_score / threshold * 40)
+        else:
+            # Scale from threshold to 1.0 into range 40-100
+            normalized = (top_score - threshold) / (1.0 - threshold)
+            base_confidence = int(40 + normalized * 60)
+
+        # Adjust based on score distribution (consistency boost)
+        if len(selected_scores) >= 2:
+            avg_score = sum(selected_scores) / len(selected_scores)
+            # If average is close to top, boost confidence (consistent results)
+            consistency = avg_score / top_score if top_score > 0 else 0
+            if consistency > 0.8:  # Very consistent
+                base_confidence = min(100, base_confidence + 5)
+            elif consistency < 0.5:  # Very inconsistent
+                base_confidence = max(0, base_confidence - 10)
+
+        # Adjust based on coverage (number of high-quality chunks)
+        high_quality_count = sum(1 for s in selected_scores if s >= threshold)
+        if high_quality_count >= 3:
+            base_confidence = min(100, base_confidence + 5)
+        elif high_quality_count < 2:
+            base_confidence = max(0, base_confidence - 10)
+
+        return max(0, min(100, base_confidence))
+
+    except Exception as e:
+        logger.warning(f"Error computing confidence from scores: {e}, using fallback")
+        return 50  # Safe fallback
 
 
 # ====== INPUT VALIDATION ======
@@ -881,8 +956,24 @@ def ask_llm(
     num_ctx: Optional[int] = None,
     num_predict: Optional[int] = None,
     retries: Optional[int] = None,
+    chunks: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
-    """Call Ollama chat with Qwen best-practice options using the API client."""
+    """Call Ollama chat with Qwen using production-grade prompts.
+
+    Returns plain text answer (not JSON). Confidence is computed separately
+    from retrieval scores, not from LLM output.
+
+    Args:
+        question: User question
+        snippets_block: Legacy formatted context string (used if chunks not provided)
+        seed, num_ctx, num_predict, retries: LLM parameters
+        chunks: Optional list of chunk dicts for new prompt format.
+                If provided, uses QWEN_SYSTEM_PROMPT and build_rag_user_prompt().
+                If None, falls back to legacy prompts (for backward compatibility).
+
+    Returns:
+        Plain text answer from LLM
+    """
     if seed is None:
         seed = config.DEFAULT_SEED
     if num_ctx is None:
@@ -894,9 +985,18 @@ def ask_llm(
 
     from .api_client import chat_completion
 
+    # Use new prompts if chunks provided, otherwise fall back to legacy
+    if chunks is not None:
+        system_prompt = QWEN_SYSTEM_PROMPT
+        user_prompt = build_rag_user_prompt(question, chunks)
+    else:
+        # Legacy format for backward compatibility
+        system_prompt = get_system_prompt()
+        user_prompt = USER_WRAPPER.format(snips=snippets_block, q=question)
+
     messages = [
-        {"role": "system", "content": get_system_prompt()},
-        {"role": "user", "content": USER_WRAPPER.format(snips=snippets_block, q=question)},
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt},
     ]
 
     options = {
@@ -1002,4 +1102,5 @@ __all__ = [
     "RERANK_PROMPT",
     "hybrid_score",
     "pack_snippets_dynamic",
+    "compute_confidence_from_scores",
 ]

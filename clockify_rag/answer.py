@@ -214,67 +214,90 @@ def generate_llm_answer(
     num_predict: int = DEFAULT_NUM_PREDICT,
     retries: int = DEFAULT_RETRIES,
     packed_ids: Optional[List] = None,
+    all_chunks: Optional[List[Dict]] = None,
+    selected_indices: Optional[List[int]] = None,
+    scores_dict: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, float, Optional[int]]:
-    """Generate answer from LLM given question and context with confidence scoring and citation validation.
+    """Generate answer from LLM with production-grade Qwen prompts and computed confidence.
+
+    Confidence is computed from retrieval scores (more reliable than asking LLM to guess).
+    LLM returns plain text answers; this function wraps them in JSON format.
 
     Args:
         question: User question
-        context_block: Packed context snippets
+        context_block: Legacy packed context string (for backward compatibility)
         seed, num_ctx, num_predict, retries: LLM parameters
         packed_ids: List of chunk IDs included in context (for citation validation)
+        all_chunks: Full chunk list (for extracting packed chunks)
+        selected_indices: Selected chunk indices (for confidence computation)
+        scores_dict: Score arrays from retrieval (for confidence computation)
 
     Returns:
         Tuple of (answer_text, timing, confidence)
-        - answer_text: The LLM's response
+        - answer_text: The LLM's plain text response
         - timing: Time taken for LLM call
-        - confidence: 0-100 score, or None if not provided/parsable
+        - confidence: 0-100 score computed from retrieval scores, or None if unavailable
     """
+    from .retrieval import compute_confidence_from_scores
+
     t0 = time.time()
+
+    # Extract packed chunks if all data is provided (new code path)
+    packed_chunks = None
+    if all_chunks is not None and packed_ids is not None:
+        # Build list of chunk dicts for the packed IDs
+        chunk_id_to_chunk = {c["id"]: c for c in all_chunks}
+        packed_chunks = [chunk_id_to_chunk[cid] for cid in packed_ids if cid in chunk_id_to_chunk]
+
+    # Call LLM with new or legacy prompts
     raw_response = ask_llm(
-        question, context_block, seed=seed, num_ctx=num_ctx, num_predict=num_predict, retries=retries
+        question,
+        context_block,
+        seed=seed,
+        num_ctx=num_ctx,
+        num_predict=num_predict,
+        retries=retries,
+        chunks=packed_chunks,  # None for legacy, list of dicts for new
     ).strip()
     timing = time.time() - t0
 
-    # Parse JSON response with confidence
-    confidence = None
-    answer = raw_response  # Default to raw response if parsing fails
+    # LLM returns plain text (no JSON parsing needed when using new prompts)
+    # For backward compatibility, try JSON parsing first, fall back to plain text
+    answer = raw_response
+    confidence_from_json = None
 
+    # Try JSON parsing (for legacy code paths or if LLM returns JSON anyway)
     try:
-        # Try to parse as JSON
-        # Handle markdown code blocks (```json ... ```)
         cleaned = raw_response.strip()
         if cleaned.startswith("```"):
-            # Extract content between ``` markers
             lines = cleaned.split("\n")
-            # Remove first line (```json or ```) and last line (```)
             if len(lines) >= 3 and lines[-1].strip() == "```":
                 cleaned = "\n".join(lines[1:-1]).strip()
             elif len(lines) >= 2:
-                # Sometimes the closing ``` is on same line
                 cleaned = "\n".join(lines[1:]).replace("```", "").strip()
 
         parsed = json.loads(cleaned)
-
         if isinstance(parsed, dict):
             answer = parsed.get("answer", raw_response)
-            confidence = parsed.get("confidence")
-
-            # Validate confidence is in 0-100 range
-            if confidence is not None:
+            confidence_from_json = parsed.get("confidence")
+            if confidence_from_json is not None:
                 try:
-                    confidence = int(confidence)
-                    if not (0 <= confidence <= 100):
-                        logger.warning(f"Confidence out of range: {confidence}, ignoring")
-                        confidence = None
+                    confidence_from_json = int(confidence_from_json)
+                    if not (0 <= confidence_from_json <= 100):
+                        confidence_from_json = None
                 except (ValueError, TypeError):
-                    logger.warning(f"Invalid confidence value: {confidence}, ignoring")
-                    confidence = None
-        else:
-            answer = raw_response
-
+                    confidence_from_json = None
     except json.JSONDecodeError:
-        # Not JSON, use raw response
-        answer = raw_response
+        # Plain text response (expected with new prompts)
+        pass
+
+    # Compute confidence from scores (preferred method)
+    confidence = None
+    if scores_dict is not None and selected_indices is not None:
+        confidence = compute_confidence_from_scores(scores_dict, selected_indices)
+    elif confidence_from_json is not None:
+        # Fall back to JSON confidence if available (legacy)
+        confidence = confidence_from_json
 
     client_mode = (get_llm_client_mode("") or "").lower()
 
@@ -497,6 +520,9 @@ def answer_once(
             num_predict=num_predict,
             retries=retries,
             packed_ids=packed_ids,
+            all_chunks=chunks,
+            selected_indices=selected,
+            scores_dict=scores,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during answer generation: {exc}")
