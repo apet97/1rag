@@ -53,6 +53,10 @@ jobs:
   prompt-contract:
     name: Qwen Prompt Contract
     runs-on: ubuntu-latest
+    env:
+      RAG_LLM_CLIENT: mock
+      EMB_BACKEND: local
+      RAG_OLLAMA_URL: http://127.0.0.1:11434
     steps:
       - uses: actions/checkout@v4
 
@@ -88,6 +92,10 @@ jobs:
   test:
     name: Tests on Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    env:
+      RAG_LLM_CLIENT: mock
+      EMB_BACKEND: local
+      RAG_OLLAMA_URL: http://127.0.0.1:11434
     strategy:
       fail-fast: false
       matrix:
@@ -166,6 +174,10 @@ jobs:
     name: Smoke Test - End-to-End
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      RAG_LLM_CLIENT: mock
+      EMB_BACKEND: local
+      RAG_OLLAMA_URL: http://127.0.0.1:11434
     steps:
       - uses: actions/checkout@v4
 

@@ -10,6 +10,10 @@ jobs:
   test:
     name: Run tests on ${{ matrix.os }} with Python ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    env:
+      RAG_LLM_CLIENT: mock
+      EMB_BACKEND: local
+      RAG_OLLAMA_URL: http://127.0.0.1:11434
     strategy:
       fail-fast: false
       matrix:

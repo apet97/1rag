@@ -675,7 +675,22 @@ def retrieve(
             zs_dense = zs_dense_full[candidate_idx_array] if candidate_idx_array.size else np.array([], dtype="float32")
 
     # Hybrid scoring (OPTIMIZATION: use intent-specific alpha for +8-12% accuracy)
+    def _apply_hub_penalty(scores: np.ndarray, idx_array: np.ndarray) -> np.ndarray:
+        """Down-weight hub/category pages to keep specific answers prioritized."""
+
+        if not scores.size or config.HUB_PAGE_SCORE_MULTIPLIER >= 1.0:
+            return scores
+
+        # Copy to avoid mutating inputs used elsewhere
+        penalized = scores.copy()
+        for pos, chunk_idx in enumerate(idx_array):
+            meta = chunks[chunk_idx].get("metadata", {}) or {}
+            if bool(meta.get("is_hub")):
+                penalized[pos] = penalized[pos] * config.HUB_PAGE_SCORE_MULTIPLIER
+        return penalized
+
     hybrid = alpha_hybrid * zs_bm + (1 - alpha_hybrid) * zs_dense
+    hybrid = _apply_hub_penalty(hybrid, candidate_idx_array)
     if hybrid.size:
         top_positions = np.argsort(hybrid)[::-1][:top_k]
         top_idx = candidate_idx_array[top_positions]
@@ -699,6 +714,12 @@ def retrieve(
         hybrid_full = np.zeros(len(chunks), dtype="float32")
         for idx, score in zip(candidate_idx, hybrid):
             hybrid_full[idx] = score
+
+    if hybrid_full.size and config.HUB_PAGE_SCORE_MULTIPLIER < 1.0:
+        for idx, chunk in enumerate(chunks):
+            meta = chunk.get("metadata", {}) or {}
+            if bool(meta.get("is_hub")):
+                hybrid_full[idx] = hybrid_full[idx] * config.HUB_PAGE_SCORE_MULTIPLIER
 
     if dense_scores_full is not None:
         dense_scores_store = DenseScoreStore(len(chunks), full_scores=dense_scores_full)

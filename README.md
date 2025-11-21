@@ -27,7 +27,7 @@ Zero-config path to a working RAG stack (internal Ollama defaults baked in):
    ```
 4. **Install dependencies**
    ```bash
-   pip install -e .  # add '.[dev]' if you want linters/tests locally
+   pip install -e ".[dev]"  # includes pytest/ruff/black for local checks
    ```
 5. **Place the refreshed corpus** – drop `clockify_help_corpus.en.md` (UpdateHelpGPT export) in the repo root. The tooling will fall back to `knowledge_full.md` for legacy builds.
 6. **Build the index**
@@ -36,7 +36,7 @@ Zero-config path to a working RAG stack (internal Ollama defaults baked in):
    ```
 7. **Smoke tests**
    ```bash
-   python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
+   RAG_LLM_CLIENT=mock python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
    ```
 8. **Run the API + hit it**
    ```bash
@@ -118,6 +118,8 @@ Artifacts: `chunks.jsonl`, `vecs_n.npy`, `bm25.json`, `faiss.index` (when FAISS 
 
 ## Troubleshooting (common)
 - **Ollama unreachable**: verify VPN and `curl $RAG_OLLAMA_URL/api/tags`; fall back to local with `RAG_OLLAMA_URL=http://127.0.0.1:11434` and `EMB_BACKEND=local`.
+- **Missing corpus**: ensure `clockify_help_corpus.en.md` is in repo root or pass `--input` to `ingest`; CI uses the sample corpus to stay offline.
+- **Offline/mock mode**: set `RAG_LLM_CLIENT=mock` (and optionally `EMB_BACKEND=local`) to run pytest, CLI, or API without VPN.
 - **FAISS missing on M1**: `conda install -c conda-forge faiss-cpu=1.8.0`; system falls back to linear search if absent.
 - **Python 3.14**: blocked at import time; use 3.11–3.13.
 - **Index drift**: delete artifacts and rebuild: `rm -f chunks.jsonl vecs_n.npy bm25.json faiss.index index.meta.json && python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md`.

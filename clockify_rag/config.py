@@ -429,6 +429,14 @@ ALPHA_HYBRID = _parse_env_float(
     "ALPHA", 0.5, min_val=0.0, max_val=1.0
 )  # 0.5 = BM25 and dense equally weighted (fallback)
 
+# Down-weight hub/category pages so they don't dominate specific answers
+HUB_PAGE_SCORE_MULTIPLIER = _parse_env_float(
+    "HUB_PAGE_SCORE_MULTIPLIER",
+    0.6,
+    min_val=0.1,
+    max_val=1.0,
+)
+
 # ====== INTENT CLASSIFICATION (v5.9) ======
 # OPTIMIZATION: Enable intent-based retrieval for +8-12% accuracy improvement
 # When enabled, alpha_hybrid is dynamically adjusted based on query intent:

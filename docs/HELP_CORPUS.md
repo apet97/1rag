@@ -7,6 +7,7 @@ How the Clockify/CAKE help-center corpus is refreshed and turned into searchable
 - Each article uses YAML front matter with: `id`, `source_url`, `domain`, `product`, `title`, `short_title`, `category`, `last_fetched`, `detected_lang`, `tags`, `is_hub`, and optional `suppress_from_rag`.
 - Sections: **Summary**, **Canonical answer**, **Body**, **Key points**, **Limits & gotchas**, **FAQ**, **Search hints**, **Internal notes**.
 - Any article with `suppress_from_rag: true` is skipped during ingestion.
+- Hub/category pages (`is_hub: true`) are indexed but down-weighted during retrieval so they do not outrank specific answers.
 
 ## 🚧 Roadmap: UpdateHelpGPT Integration
 
