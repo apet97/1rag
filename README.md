@@ -9,24 +9,50 @@ RAG service that answers Clockify/CAKE support questions from the internal help 
 - FastAPI API + Typer CLI (`clockify_rag.cli_modern`) for ingest/query/chat/demo.
 - Deterministic ingestion and build locks to keep artifacts consistent across environments.
 
-## Quickstart — local dev (M1 Pro)
+## Quickstart — local dev (macOS M1/M2/M3 Pro)
+
+**Zero to working RAG in 10 steps** (no environment variables required):
+
 ```bash
+# 1. Clone repository
+git clone git@github.com:apet97/1rag.git
+cd 1rag
+
+# 2. Create and activate Python virtual environment
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
 
-# Optional: verify setup
+# 3. Upgrade pip
+pip install --upgrade pip
+
+# 4. Install dependencies
+pip install -e .  # or: poetry install
+
+# 5. (Optional) Verify environment
 python -m clockify_rag.sanity_check
 
-# Build the KB index from the bundled corpus
+# 6. Build the KB index from bundled corpus
 python -m clockify_rag.cli_modern ingest --input knowledge_full.md
 
-# Try a query
+# 7. Verify index artifacts
+python -m clockify_rag.cli_modern doctor
+
+# 8. Run tests
+pytest
+
+# 9. Start API server
+uvicorn clockify_rag.api:app --reload
+
+# 10. Try a query via CLI
 python -m clockify_rag.cli_modern query "How do I lock timesheets?"
 ```
-Notes:
-- Python 3.11–3.13 are supported; 3.14+ is blocked by guards in `clockify_rag.config`.
-- For faster embedding on VPN, set `EMB_BACKEND=ollama` (default is local). See configuration below.
+
+**Notes:**
+- **Python 3.11–3.13** supported; 3.14+ blocked by guards in `clockify_rag.config`.
+- **No VPN required** for local dev: default embedding backend is `local` (SentenceTransformer).
+- **Default Ollama URL**: `http://10.127.0.192:11434` (internal VPN host). Override with `RAG_OLLAMA_URL` if needed.
+- **For VPN/remote embeddings**: Set `EMB_BACKEND=ollama` for faster embedding via internal Ollama.
+- **Comprehensive setup guide**: See [docs/INSTALL_macOS_ARM64.md](docs/INSTALL_macOS_ARM64.md) for troubleshooting, benchmarks, and M1-specific optimizations.
 
 ## Quickstart — internal deployment (VPN + internal Ollama/Qwen)
 ```bash

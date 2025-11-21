@@ -1,4 +1,28 @@
-"""Configuration constants for Clockify RAG system."""
+"""Configuration constants for Clockify RAG system.
+
+IMPORTANT: This module ships with VPN-safe, production-ready defaults for internal use.
+**No environment variables are required** for standard operation on corporate macOS (M1/M2/M3 Pro).
+
+Default Configuration (Zero-Config):
+- LLM endpoint: http://10.127.0.192:11434 (internal VPN Ollama host)
+- Chat model: qwen2.5:32b
+- Embeddings: Local SentenceTransformer (offline-friendly, 384-dim)
+- Retries: 2 (VPN resilience)
+- Timeouts: 120s read, 3s connect
+
+Environment Variable Override:
+All settings can be overridden via env vars (e.g., RAG_OLLAMA_URL, EMB_BACKEND).
+See docs/CONFIGURATION.md for details.
+
+Resolution Order:
+1. Environment variables (highest priority)
+2. .env file (if present)
+3. Hard-coded defaults in this module (fallback)
+
+Legacy Compatibility:
+Old env var names (OLLAMA_URL, GEN_MODEL, EMB_MODEL) are supported but deprecated.
+Prefer the RAG_* namespace for new deployments.
+"""
 
 import sys
 

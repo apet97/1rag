@@ -2,6 +2,28 @@
 
 `clockify_rag/config.py` is the source of truth. Values resolve in this order: environment variables → `.env` → hard-coded defaults. Legacy aliases (`OLLAMA_URL`, `GEN_MODEL`, `EMB_MODEL`) still work but prefer the `RAG_*` namespace.
 
+## ⚡ Default Values — No Configuration Required
+
+**For internal VPN use on macOS M1/M2/M3 Pro, no environment variables are required.** The system ships with production-ready defaults:
+
+| Setting | Default Value | Purpose |
+|---------|---------------|---------|
+| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Internal Ollama host (VPN) |
+| `RAG_CHAT_MODEL` | `qwen2.5:32b` | Generation model for answers |
+| `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model (when `EMB_BACKEND=ollama`) |
+| `EMB_BACKEND` | `local` | Offline-friendly SentenceTransformer (384-dim) |
+| `DEFAULT_RETRIES` | `2` | Network retry attempts for VPN resilience |
+| `CHAT_READ_TIMEOUT` | `120s` | LLM response timeout |
+| `EMB_READ_TIMEOUT` | `120s` | Embedding timeout |
+
+**Key features:**
+- ✅ **No mandatory env vars**: Just clone, install, and run.
+- ✅ **VPN-safe defaults**: Internal Ollama URL hard-coded; lazy model selection avoids startup failures.
+- ✅ **Offline-friendly**: Local embeddings by default (no network calls for embedding).
+- ✅ **Override when needed**: Set `RAG_OLLAMA_URL=http://127.0.0.1:11434` for local Ollama or `EMB_BACKEND=ollama` for remote embeddings.
+
+See [README.md](../README.md) for the zero-config quickstart.
+
 ## Quick presets
 **Local M1 dev (offline-friendly)**
 ```bash

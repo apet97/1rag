@@ -4,8 +4,43 @@ How the Clockify/CAKE help-center corpus is refreshed and turned into searchable
 
 ## Source of truth
 - The corpus is delivered as a single Markdown file: `knowledge_full.md`.
-- It is generated internally (UpdateHelpGPT export) outside this repo. Drop the latest export at the repo root before rebuilding.
+- It is generated internally (UpdateHelpGPT export) **outside this repo**. Drop the latest export at the repo root before rebuilding.
 - English-only content is assumed; the RAG pipeline is not multi-lingual.
+
+## 🚧 Roadmap: UpdateHelpGPT Integration
+
+**Status:** Planned enhancement (not yet implemented)
+
+**Goal:** Automate help article scraping and corpus generation within this repository.
+
+**Current workflow:**
+1. External team runs UpdateHelpGPT tooling (not in this repo)
+2. Team generates `knowledge_full.md` export
+3. File is manually dropped into repo root
+4. Developer runs `ingest` command to rebuild index
+
+**Planned workflow:**
+1. Add `UpdateHelpGPT/` directory to repo with scraper scripts
+2. Implement `UpdateHelpGPT/refresh_help_corpus.py`:
+   - Scrape Clockify/CAKE help centers
+   - Generate `knowledge_full.md` (or `clockify_help_corpus.en.md`)
+   - Output metadata files: `url_manifest.txt`, `scrape_report.json`
+3. Add CLI command: `python -m clockify_rag.cli_modern refresh-corpus --delay-seconds 0.75 --max-pages 1500`
+4. Integrate with CI for periodic corpus updates
+
+**Benefits:**
+- 🔄 **Automated updates**: Schedule corpus refresh via CI/cron
+- 📊 **Traceability**: Track which URLs were scraped and when
+- 🛠️ **Self-contained**: No dependency on external team for corpus generation
+- 🔍 **Transparency**: Scrape logic and metadata visible in repo
+
+**Implementation notes:**
+- Keep existing `knowledge_full.md` workflow for backward compatibility
+- Scraper should respect rate limits and robots.txt
+- Consider incremental updates (only scrape changed pages)
+- Validate output format matches current chunking expectations
+
+For now, **continue using the external UpdateHelpGPT export workflow** described below.
 
 ## Refreshing the corpus
 1. Generate/export the latest help-center Markdown (internal UpdateHelpGPT tooling).

@@ -123,7 +123,7 @@ def test_build_rag_user_prompt_with_empty_chunks():
 
 
 def test_build_rag_user_prompt_includes_citations_instruction():
-    """Test that the prompt instructs the model to include citations."""
+    """Test that the prompt instructs the model to include citations and JSON output."""
     chunks = [
         {"id": "test_chunk", "text": "Test content."},
     ]
@@ -131,9 +131,11 @@ def test_build_rag_user_prompt_includes_citations_instruction():
 
     prompt = build_rag_user_prompt(question, chunks)
 
-    # Check citation instructions
-    assert "citations" in prompt.lower() or "id=" in prompt
-    assert "[id=" in prompt  # Example citation format
+    # Check JSON output instructions (v6.0+)
+    assert "JSON object" in prompt
+    assert "sources_used" in prompt
+    # Should still mention CONTEXT_BLOCK IDs
+    assert "CONTEXT_BLOCK" in prompt
 
 
 def test_system_prompt_structure():
@@ -143,7 +145,21 @@ def test_system_prompt_structure():
     assert "KNOWLEDGE & SCOPE" in QWEN_SYSTEM_PROMPT
     assert "RAG BEHAVIOR" in QWEN_SYSTEM_PROMPT
     assert "STYLE & FORMAT" in QWEN_SYSTEM_PROMPT
-    assert "OUTPUT RULES" in QWEN_SYSTEM_PROMPT
+    # v6.0+: Changed from OUTPUT RULES to OUTPUT FORMAT
+    assert "OUTPUT FORMAT" in QWEN_SYSTEM_PROMPT
+    assert "STRICT" in QWEN_SYSTEM_PROMPT  # Emphasizes mandatory JSON
 
     # Should emphasize importance of context
     assert "VERY IMPORTANT" in QWEN_SYSTEM_PROMPT
+
+
+def test_system_prompt_json_schema():
+    """Test that the system prompt includes the required JSON schema (v6.0+)."""
+    # Check for JSON schema fields
+    assert '"answer"' in QWEN_SYSTEM_PROMPT
+    assert '"confidence"' in QWEN_SYSTEM_PROMPT
+    assert '"reasoning"' in QWEN_SYSTEM_PROMPT
+    assert '"sources_used"' in QWEN_SYSTEM_PROMPT
+
+    # Check confidence range is specified
+    assert "0-100" in QWEN_SYSTEM_PROMPT or "0 to 100" in QWEN_SYSTEM_PROMPT

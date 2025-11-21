@@ -49,6 +49,87 @@ from .utils import sanitize_for_log
 logger = logging.getLogger(__name__)
 
 
+def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
+    """Parse and validate Qwen's JSON output.
+
+    Expected schema:
+    {
+      "answer": str,           # Customer-ready reply in Markdown
+      "confidence": int,        # 0-100
+      "reasoning": str,         # Brief explanation (2-4 sentences)
+      "sources_used": [str]     # List of source IDs/URLs
+    }
+
+    Args:
+        raw_text: Raw text response from LLM
+
+    Returns:
+        Dict with validated fields
+
+    Raises:
+        json.JSONDecodeError: If text is not valid JSON
+        ValueError: If required fields missing or invalid types/ranges
+    """
+    # Strip markdown code blocks if present
+    cleaned = raw_text.strip()
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        # Remove ```json and ``` markers
+        if len(lines) >= 3 and lines[-1].strip() == "```":
+            cleaned = "\n".join(lines[1:-1]).strip()
+        elif len(lines) >= 2:
+            # Handle missing closing ```
+            cleaned = "\n".join(lines[1:]).replace("```", "").strip()
+
+    # Parse JSON
+    try:
+        data = json.loads(cleaned)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse Qwen JSON output: {e}")
+        logger.debug(f"Raw output (first 500 chars): {raw_text[:500]}")
+        raise
+
+    # Validate schema
+    if not isinstance(data, dict):
+        raise ValueError(f"Expected JSON object, got {type(data).__name__}")
+
+    # Check required fields
+    required_fields = {"answer", "confidence", "reasoning", "sources_used"}
+    missing_fields = required_fields - set(data.keys())
+    if missing_fields:
+        raise ValueError(f"Missing required fields: {missing_fields}")
+
+    # Validate field types and ranges
+    if not isinstance(data["answer"], str):
+        raise ValueError(f"Field 'answer' must be string, got {type(data['answer']).__name__}")
+
+    if not isinstance(data["confidence"], (int, float)):
+        raise ValueError(f"Field 'confidence' must be integer, got {type(data['confidence']).__name__}")
+
+    confidence = int(data["confidence"])
+    if not (0 <= confidence <= 100):
+        raise ValueError(f"Field 'confidence' must be in range 0-100, got {confidence}")
+
+    if not isinstance(data["reasoning"], str):
+        raise ValueError(f"Field 'reasoning' must be string, got {type(data['reasoning']).__name__}")
+
+    if not isinstance(data["sources_used"], list):
+        raise ValueError(f"Field 'sources_used' must be list, got {type(data['sources_used']).__name__}")
+
+    # Validate sources_used elements are strings
+    for i, source in enumerate(data["sources_used"]):
+        if not isinstance(source, str):
+            raise ValueError(f"Field 'sources_used[{i}]' must be string, got {type(source).__name__}")
+
+    # Return validated data with normalized confidence
+    return {
+        "answer": data["answer"],
+        "confidence": confidence,
+        "reasoning": data["reasoning"],
+        "sources_used": data["sources_used"],
+    }
+
+
 def apply_mmr_diversification(
     selected: List[int], scores: Dict[str, Any], vecs_n: np.ndarray, pack_top: int
 ) -> List[int]:
@@ -217,11 +298,12 @@ def generate_llm_answer(
     all_chunks: Optional[List[Dict]] = None,
     selected_indices: Optional[List[int]] = None,
     scores_dict: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, float, Optional[int]]:
-    """Generate answer from LLM with production-grade Qwen prompts and computed confidence.
+) -> Tuple[str, float, Optional[int], Optional[str], Optional[List[str]]]:
+    """Generate answer from LLM with production-grade Qwen prompts.
 
-    Confidence is computed from retrieval scores (more reliable than asking LLM to guess).
-    LLM returns plain text answers; this function wraps them in JSON format.
+    BREAKING CHANGE (v6.0): Qwen now returns structured JSON with confidence, reasoning, and sources.
+    When using new prompts (packed_chunks provided), expects JSON output from LLM.
+    Legacy prompts (no chunks) still return plain text.
 
     Args:
         question: User question
@@ -233,10 +315,12 @@ def generate_llm_answer(
         scores_dict: Score arrays from retrieval (for confidence computation)
 
     Returns:
-        Tuple of (answer_text, timing, confidence)
-        - answer_text: The LLM's plain text response
+        Tuple of (answer_text, timing, confidence, reasoning, sources_used)
+        - answer_text: The LLM's answer (customer-ready Markdown)
         - timing: Time taken for LLM call
-        - confidence: 0-100 score computed from retrieval scores, or None if unavailable
+        - confidence: 0-100 score from LLM (new) or computed from retrieval scores (legacy)
+        - reasoning: Brief explanation from LLM (new), or None (legacy)
+        - sources_used: List of source IDs from LLM (new), or None (legacy)
     """
     from .retrieval import compute_confidence_from_scores
 
@@ -261,43 +345,35 @@ def generate_llm_answer(
     ).strip()
     timing = time.time() - t0
 
-    # LLM returns plain text (no JSON parsing needed when using new prompts)
-    # For backward compatibility, try JSON parsing first, fall back to plain text
+    # Parse response based on prompt type
     answer = raw_response
-    confidence_from_json = None
-
-    # Try JSON parsing (for legacy code paths or if LLM returns JSON anyway)
-    try:
-        cleaned = raw_response.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            if len(lines) >= 3 and lines[-1].strip() == "```":
-                cleaned = "\n".join(lines[1:-1]).strip()
-            elif len(lines) >= 2:
-                cleaned = "\n".join(lines[1:]).replace("```", "").strip()
-
-        parsed = json.loads(cleaned)
-        if isinstance(parsed, dict):
-            answer = parsed.get("answer", raw_response)
-            confidence_from_json = parsed.get("confidence")
-            if confidence_from_json is not None:
-                try:
-                    confidence_from_json = int(confidence_from_json)
-                    if not (0 <= confidence_from_json <= 100):
-                        confidence_from_json = None
-                except (ValueError, TypeError):
-                    confidence_from_json = None
-    except json.JSONDecodeError:
-        # Plain text response (expected with new prompts)
-        pass
-
-    # Compute confidence from scores (preferred method)
     confidence = None
-    if scores_dict is not None and selected_indices is not None:
-        confidence = compute_confidence_from_scores(scores_dict, selected_indices)
-    elif confidence_from_json is not None:
-        # Fall back to JSON confidence if available (legacy)
-        confidence = confidence_from_json
+    reasoning = None
+    sources_used = None
+
+    if packed_chunks is not None:
+        # New prompts: expect JSON output
+        try:
+            parsed = parse_qwen_json(raw_response)
+            answer = parsed["answer"]
+            confidence = parsed["confidence"]
+            reasoning = parsed["reasoning"]
+            sources_used = parsed["sources_used"]
+            logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used)}")
+        except (json.JSONDecodeError, ValueError) as e:
+            # JSON parsing failed - log and fall back to raw text
+            logger.warning(f"Failed to parse Qwen JSON output: {e}. Using raw text as fallback.")
+            logger.debug(f"Raw output (first 500 chars): {raw_response[:500]}")
+            answer = raw_response
+            # Compute fallback confidence from retrieval scores
+            if scores_dict is not None and selected_indices is not None:
+                confidence = compute_confidence_from_scores(scores_dict, selected_indices)
+    else:
+        # Legacy prompts: plain text output
+        answer = raw_response
+        # Compute confidence from retrieval scores (legacy method)
+        if scores_dict is not None and selected_indices is not None:
+            confidence = compute_confidence_from_scores(scores_dict, selected_indices)
 
     client_mode = (get_llm_client_mode("") or "").lower()
 
@@ -338,7 +414,7 @@ def generate_llm_answer(
     if client_mode == "mock" and confidence is None:
         confidence = 100
 
-    return answer, timing, confidence
+    return answer, timing, confidence, reasoning, sources_used
 
 
 def answer_once(
@@ -512,7 +588,7 @@ def answer_once(
 
     # Generate answer
     try:
-        answer, llm_time, confidence = generate_llm_answer(
+        answer, llm_time, confidence, reasoning, sources_used = generate_llm_answer(
             question,
             context_block,
             seed=seed,
@@ -581,6 +657,8 @@ def answer_once(
             "rerank_applied": rerank_applied,
             "rerank_reason": rerank_reason,
             "source_chunk_ids": _normalize_chunk_ids(packed_ids),
+            "reasoning": reasoning,  # LLM's explanation (new JSON format)
+            "sources_used": sources_used,  # LLM's cited sources (new JSON format)
         },
         "routing": routing,  # Add routing recommendation
     }
@@ -651,6 +729,7 @@ def answer_to_json(
 
 
 __all__ = [
+    "parse_qwen_json",
     "apply_mmr_diversification",
     "apply_reranking",
     "extract_citations",
