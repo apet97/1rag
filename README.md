@@ -73,8 +73,8 @@ Rerank and CORS knobs:
 - `ALLOWED_ORIGINS` (comma-separated) to enable CORS; omit to keep CORS off by default.
 
 **Notes:**
-- Default Ollama endpoint: `http://127.0.0.1:11434` (override via `RAG_OLLAMA_URL` or set `RAG_LLM_CLIENT=mock` for offline).
-- Embeddings default to local SentenceTransformer; set `EMB_BACKEND=ollama` on VPN for faster builds.
+- Default Ollama endpoint: `http://10.127.0.192:11434` (override via `RAG_OLLAMA_URL` or use `http://127.0.0.1:11434` for local dev).
+- Embeddings default to Ollama; set `EMB_BACKEND=local` only if you need an offline fallback.
 - See [docs/INSTALL_macOS_ARM64.md](docs/INSTALL_macOS_ARM64.md) for deeper M1 tuning and troubleshooting.
 
 ## Quickstart — internal deployment (VPN + internal Ollama/Qwen)

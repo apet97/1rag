@@ -86,9 +86,6 @@ def get_embedding_client() -> OllamaEmbeddings:
         _EMBEDDING_CLIENT = OllamaEmbeddings(
             base_url=RAG_OLLAMA_URL,
             model=RAG_EMBED_MODEL,
-            # Pass timeout via sync_client_kwargs for httpx client
-            # Tuple: (connect_timeout, read_timeout) in seconds
-            sync_client_kwargs={"timeout": (EMB_CONNECT_T, EMB_READ_T)},
         )
         # Probe dimension once
         try:

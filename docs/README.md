@@ -152,7 +152,7 @@ Knowledge Base (markdown)
 See [docs/CONFIG.md](CONFIG.md) for detailed parameter documentation.
 
 Key environment variables:
-- `RAG_OLLAMA_URL`: Ollama service URL (default: http://127.0.0.1:11434)
+- `RAG_OLLAMA_URL`: Ollama service URL (default: http://10.127.0.192:11434)
 - `RAG_CHAT_MODEL`: Generation model (default: qwen2.5:32b)
 - `RAG_EMBED_MODEL`: Embedding model (default: nomic-embed-text:latest)
 - `DEFAULT_TOP_K`: Retrieval candidates (default: 15)
@@ -270,7 +270,7 @@ ollama pull nomic-embed-text
 ollama pull qwen2.5:32b
 
 # Test connectivity
-curl http://127.0.0.1:11434/api/version
+curl http://10.127.0.192:11434/api/version
 ```
 
 ### Index Build Fails

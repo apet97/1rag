@@ -7,6 +7,9 @@ import sys
 import tempfile
 import importlib.util
 
+# Force tests to use local embeddings to avoid remote Ollama dependency
+os.environ.setdefault("EMB_BACKEND", "local")
+
 import httpx
 import numpy as np
 import pytest

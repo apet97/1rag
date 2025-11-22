@@ -8,7 +8,7 @@
 
 | Setting | Default Value | Purpose |
 |---------|---------------|---------|
-| `RAG_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama host |
+| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Corporate/local Ollama host |
 | `RAG_CHAT_MODEL` | `qwen2.5:32b` | Generation model for answers |
 | `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model (when `EMB_BACKEND=ollama`) |
 | `EMB_BACKEND` | `local` | Offline-friendly SentenceTransformer (384-dim) |
@@ -20,15 +20,15 @@
 - ✅ **No mandatory env vars**: Just clone, install, and run.
 - ✅ **VPN-safe defaults**: Internal Ollama URL hard-coded; lazy model selection avoids startup failures.
 - ✅ **Offline-friendly**: Local embeddings by default (no network calls for embedding).
-- ✅ **Override when needed**: Set `RAG_OLLAMA_URL=http://127.0.0.1:11434` for local Ollama or `EMB_BACKEND=ollama` for remote embeddings.
+- ✅ **Override when needed**: Set `RAG_OLLAMA_URL=http://127.0.0.1:11434` for local Ollama; default uses the corporate host.
 
 See [README.md](../README.md) for the zero-config quickstart.
 
 ## Quick presets
 **Local M1 dev (offline-friendly)**
 ```bash
-RAG_OLLAMA_URL=http://127.0.0.1:11434   # if you run Ollama locally; otherwise leave unset
-EMB_BACKEND=local                       # default; no remote calls
+RAG_OLLAMA_URL=http://127.0.0.1:11434   # run Ollama locally if not on VPN
+EMB_BACKEND=local                       # use local SentenceTransformer
 RAG_LLM_CLIENT=mock                     # optional offline smoke checks
 ```
 
@@ -45,7 +45,7 @@ CHAT_READ_TIMEOUT=180
 ## Ollama & models
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `RAG_OLLAMA_URL` | `http://127.0.0.1:11434` | Base URL for Qwen + embeddings. |
+| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Base URL for Qwen + embeddings. |
 | `RAG_CHAT_MODEL` | `qwen2.5:32b` | Generation model. |
 | `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model when `EMB_BACKEND=ollama`. |
 | `EMB_BACKEND` | `local` | `ollama` (production, remote embeddings) or `local` (SentenceTransformer). |

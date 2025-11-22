@@ -19,11 +19,11 @@ This guide documents how to operate the Clockify RAG stack once it has been inst
 
 1. **Local development / laptops**
    - `.env` copied from `.env.example`.
-   - `RAG_OLLAMA_URL=http://127.0.0.1:11434` when using a local Ollama daemon.
+   - `RAG_OLLAMA_URL=http://10.127.0.192:11434` for corporate host; override to `http://127.0.0.1:11434` if running Ollama locally.
    - Run `make deps-check` after installing dependencies to ensure `pip check` and the pytest smoke pass.
    - Use `RAG_LLM_CLIENT=mock` to stay offline while iterating on retrieval.
 2. **Corporate VPN / remote Ollama**
-   - Default `RAG_OLLAMA_URL=http://127.0.0.1:11434`.
+   - Default `RAG_OLLAMA_URL=http://10.127.0.192:11434` (set to localhost only for offline dev).
    - Increase `CHAT_READ_TIMEOUT`/`EMB_READ_TIMEOUT` and `DEFAULT_RETRIES` for higher latency links.
    - Always run `ragctl doctor --json` and `SMOKE_CLIENT=ollama make smoke` (or `python3 scripts/smoke_rag.py --client ollama`) before exposing the API.
 3. **CI / automation**

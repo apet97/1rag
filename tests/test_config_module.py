@@ -87,7 +87,7 @@ def _load_config_module(monkeypatch: pytest.MonkeyPatch, overrides: Optional[dic
 
 def test_config_defaults_match_expected(monkeypatch: pytest.MonkeyPatch):
     cfg = _load_config_module(monkeypatch)
-    assert cfg.RAG_OLLAMA_URL == "http://127.0.0.1:11434"
+    assert cfg.RAG_OLLAMA_URL == "http://10.127.0.192:11434"
     assert cfg.RAG_CHAT_MODEL == "qwen2.5:32b"
     assert cfg.RAG_EMBED_MODEL == "nomic-embed-text:latest"
     assert cfg.DEFAULT_TOP_K == 15

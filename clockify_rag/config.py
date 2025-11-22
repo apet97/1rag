@@ -169,8 +169,8 @@ def get_query_expansions_path() -> Optional[str]:
 
 
 # ====== OLLAMA CONFIG (Remote-First Design) ======
-# Local-first Ollama endpoint (single-user laptop default)
-_DEFAULT_RAG_OLLAMA_URL = "http://127.0.0.1:11434"
+# Corporate/local Ollama endpoint (production default)
+_DEFAULT_RAG_OLLAMA_URL = "http://10.127.0.192:11434"
 DEFAULT_RAG_OLLAMA_URL = _DEFAULT_RAG_OLLAMA_URL
 DEFAULT_LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 
@@ -411,7 +411,7 @@ MMR_LAMBDA = _parse_env_float("MMR_LAMBDA", 0.75, min_val=0.0, max_val=1.0)  # W
 CTX_TOKEN_BUDGET = _parse_env_int("CTX_BUDGET", 12000, min_val=100, max_val=100000)  # Was 6000, now 12000
 
 # ====== EMBEDDINGS BACKEND (v4.1) ======
-EMB_BACKEND = (_get_env_value("EMB_BACKEND", "local") or "local").lower()  # "local" or "ollama"
+EMB_BACKEND = (_get_env_value("EMB_BACKEND", "ollama") or "ollama").lower()  # "ollama" or "local"
 
 # Embedding dimensions:
 # - local (SentenceTransformer all-MiniLM-L6-v2): 384-dim
