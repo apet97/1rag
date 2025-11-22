@@ -62,4 +62,4 @@ def test_generate_llm_answer_handles_malformed_json(monkeypatch):
     assert answer == "not-json"
     assert isinstance(confidence, int)
     assert reasoning is None
-    assert sources == []
+    assert sources is None

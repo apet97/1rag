@@ -53,8 +53,6 @@ def get_retrieve_profile():
 _SYSTEM_PROMPT_TEMPLATE = QWEN_SYSTEM_PROMPT
 
 
-
-
 def get_system_prompt() -> str:
     """Return the canonical system prompt for the RAG assistant."""
 

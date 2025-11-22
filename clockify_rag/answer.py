@@ -377,11 +377,9 @@ def generate_llm_answer(
         # Compute fallback confidence from retrieval scores
         if scores_dict is not None and selected_indices is not None:
             confidence = compute_confidence_from_scores(scores_dict, selected_indices)
-        if structured_prompt and scores_dict is not None and selected_indices is not None:
-            # Structured prompt + parse failure: return empty list for clarity when retrieval context exists
-            sources_used = []
-        else:
-            sources_used = None
+        # On parse failure, treat as legacy/plain output: skip citation synthesis
+        structured_prompt = False
+        sources_used = None
 
     client_mode = (get_llm_client_mode("") or "").lower()
 
