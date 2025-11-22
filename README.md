@@ -11,40 +11,55 @@ RAG service that answers Clockify/CAKE support questions from the internal help 
 
 ## MacBook Pro (Apple Silicon, M1 Pro) Quickstart
 
-Zero-config path to a working RAG stack (internal Ollama defaults baked in):
+Fast path to a local stack that works offline (mock LLM + local embeddings):
 
-1. **Clone the repo**
-   ```bash
-   git clone git@github.com:apet97/1rag.git
-   cd 1rag
-   ```
-2. **Python toolchain** – use Python 3.12 (3.11–3.13 supported). On macOS, `pyenv install 3.12.12` works well.
-3. **Create + activate venv**
-   ```bash
-   python3.12 -m venv .venv
-   source .venv/bin/activate
-   pip install --upgrade pip
-   ```
-4. **Install dependencies**
-   ```bash
-   pip install -e ".[dev]"  # includes pytest/ruff/black for local checks
-   ```
-5. **Place the refreshed corpus** – drop `clockify_help_corpus.en.md` (UpdateHelpGPT export) in the repo root. The tooling will fall back to `knowledge_full.md` for legacy builds.
-6. **Build the index**
-   ```bash
-   python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
-   ```
-7. **Smoke tests**
-   ```bash
-   RAG_LLM_CLIENT=mock python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
-   ```
-8. **Run the API + hit it**
-   ```bash
-   uvicorn clockify_rag.api:app --reload
-   curl -X POST http://127.0.0.1:8000/v1/query \
-     -H "Content-Type: application/json" \
-     -d '{"question": "How do I lock timesheets?", "top_k": 8}'
-   ```
+1) Clone and enter the repo
+```bash
+git clone git@github.com:apet97/1rag.git
+cd 1rag
+```
+
+2) Install Python 3.12 (3.11–3.13 work). On macOS: `pyenv install 3.12.12`
+
+3) Create a venv and upgrade pip
+```bash
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+```
+
+4) Install deps (includes pytest/ruff/black)
+```bash
+pip install -e ".[dev]"
+```
+
+5) Put the corpus in place
+```bash
+cp /path/to/clockify_help_corpus.en.md .
+# falls back to knowledge_full.md if missing
+```
+
+6) Build a lightweight index (FAISS optional; BM25 works out of the box)
+```bash
+python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
+```
+
+7) Smoke test (mock LLM keeps it offline)
+```bash
+RAG_LLM_CLIENT=mock python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
+```
+
+8) Run the API
+```bash
+uvicorn clockify_rag.api:app --reload
+curl -X POST http://127.0.0.1:8000/v1/query \
+  -H "Content-Type: application/json" \
+  -d '{"question": "How do I lock timesheets?", "top_k": 8}'
+```
+
+Notes for Apple Silicon:
+- FAISS wheels are not shipped for arm64; if you want dense retrieval locally, install via conda: `conda install -c conda-forge faiss-cpu=1.8.0`. Without it, the stack falls back to BM25.
+- To stay VPN-free/offline, set `RAG_LLM_CLIENT=mock` and `EMB_BACKEND=local` (default).
 
 **Notes:**
 - Default Ollama endpoint: `http://10.127.0.192:11434` (override via `RAG_OLLAMA_URL` or set `RAG_LLM_CLIENT=mock` for offline).
