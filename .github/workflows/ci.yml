@@ -33,7 +33,7 @@ jobs:
         run: |
           # Use Poetry to install dependencies from poetry.lock for reproducibility
           # This ensures CI uses the exact same versions as local development
-          poetry install --no-interaction --with dev
+          poetry install --no-interaction --extras dev
 
       - name: Format check (black)
         env:
@@ -70,7 +70,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          poetry install --no-interaction --with dev
+          poetry install --no-interaction --extras dev
 
       - name: Test Qwen JSON contract
         run: |
@@ -124,7 +124,7 @@ jobs:
       - name: Install dependencies
         run: |
           # Use Poetry with poetry.lock for reproducible builds across all environments
-          poetry install --no-interaction --with dev
+          poetry install --no-interaction --extras dev
 
       - name: Verify environment (non-strict)
         run: |

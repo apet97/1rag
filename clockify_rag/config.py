@@ -529,6 +529,7 @@ CACHE_MAXSIZE = _parse_env_int("CACHE_MAXSIZE", 100, min_val=1, max_val=10000)
 # Cache TTL in seconds
 CACHE_TTL = _parse_env_int("CACHE_TTL", 3600, min_val=60, max_val=86400)
 # Rate limiting: max requests per window
+RATE_LIMIT_ENABLED = _get_bool_env("RATE_LIMIT_ENABLED", "0")
 RATE_LIMIT_REQUESTS = _parse_env_int("RATE_LIMIT_REQUESTS", 10, min_val=1, max_val=1000)
 # Rate limiting window in seconds
 RATE_LIMIT_WINDOW = _parse_env_int("RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3600)

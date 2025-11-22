@@ -54,6 +54,9 @@ def get_rate_limiter():
     """
     from . import config  # Import here to avoid circular import
 
+    if not getattr(config, "RATE_LIMIT_ENABLED", False):
+        return None
+
     global _RATE_LIMITER
     if _RATE_LIMITER is None:
         _RATE_LIMITER = RateLimiter(max_requests=config.RATE_LIMIT_REQUESTS, window_seconds=config.RATE_LIMIT_WINDOW)
