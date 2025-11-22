@@ -11,55 +11,61 @@ RAG service that answers Clockify/CAKE support questions from the internal help 
 
 ## MacBook Pro (Apple Silicon, M1 Pro) Quickstart
 
-Fast path to a local stack that works offline (mock LLM + local embeddings):
+Two options, both tested on arm64:
 
-1) Clone and enter the repo
-```bash
-git clone git@github.com:apet97/1rag.git
-cd 1rag
-```
+### A) Conda-first (easiest, includes FAISS)
+1) Install Miniconda (arm64):  
+   ```bash
+   curl -fsSL https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o miniconda.sh
+   bash miniconda.sh
+   conda init zsh  # then restart shell
+   ```
+2) Create env with Python 3.12 and core deps (FAISS included):  
+   ```bash
+   conda create -n clockify-rag python=3.12 -y
+   conda activate clockify-rag
+   conda install -c conda-forge faiss-cpu=1.8.0 numpy pandas pytest ruff black -y
+   ```
+3) Clone and install the project (pip inside the conda env):  
+   ```bash
+   git clone git@github.com:apet97/1rag.git
+   cd 1rag
+   pip install --upgrade pip
+   pip install -e ".[dev]"
+   ```
+4) Put the corpus in place:  
+   ```bash
+   cp /path/to/clockify_help_corpus.en.md .
+   # falls back to knowledge_full.md if missing
+   ```
+5) Build index (uses FAISS if present, BM25 otherwise):  
+   ```bash
+   python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
+   ```
+6) Smoke test offline (mock LLM):  
+   ```bash
+   RAG_LLM_CLIENT=mock python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
+   ```
+7) Run the API:  
+   ```bash
+   uvicorn clockify_rag.api:app --reload
+   curl -X POST http://127.0.0.1:8000/v1/query \
+     -H "Content-Type: application/json" \
+     -d '{"question": "How do I lock timesheets?", "top_k": 8}'
+   ```
 
-2) Install Python 3.12 (3.11–3.13 work). On macOS: `pyenv install 3.12.12`
+### B) Pure venv (BM25-only unless you add FAISS)
+1) Python 3.12 (3.11–3.13 supported). On macOS: `pyenv install 3.12.12`
+2) Create venv and install deps:  
+   ```bash
+   python3.12 -m venv .venv
+   source .venv/bin/activate
+   pip install --upgrade pip
+   pip install -e ".[dev]"
+   ```
+3) Place corpus, ingest, smoke-test, run API (same as steps 4–7 above).
 
-3) Create a venv and upgrade pip
-```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install --upgrade pip
-```
-
-4) Install deps (includes pytest/ruff/black)
-```bash
-pip install -e ".[dev]"
-```
-
-5) Put the corpus in place
-```bash
-cp /path/to/clockify_help_corpus.en.md .
-# falls back to knowledge_full.md if missing
-```
-
-6) Build a lightweight index (FAISS optional; BM25 works out of the box)
-```bash
-python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
-```
-
-7) Smoke test (mock LLM keeps it offline)
-```bash
-RAG_LLM_CLIENT=mock python -m pytest tests/test_api_query.py tests/test_qwen_contract.py -q
-```
-
-8) Run the API
-```bash
-uvicorn clockify_rag.api:app --reload
-curl -X POST http://127.0.0.1:8000/v1/query \
-  -H "Content-Type: application/json" \
-  -d '{"question": "How do I lock timesheets?", "top_k": 8}'
-```
-
-Notes for Apple Silicon:
-- FAISS wheels are not shipped for arm64; if you want dense retrieval locally, install via conda: `conda install -c conda-forge faiss-cpu=1.8.0`. Without it, the stack falls back to BM25.
-- To stay VPN-free/offline, set `RAG_LLM_CLIENT=mock` and `EMB_BACKEND=local` (default).
+Offline defaults: set `RAG_LLM_CLIENT=mock` and keep `EMB_BACKEND=local` (default) to avoid VPN/Ollama. FAISS is optional; without it, BM25-only retrieval still works. 
 
 **Notes:**
 - Default Ollama endpoint: `http://10.127.0.192:11434` (override via `RAG_OLLAMA_URL` or set `RAG_LLM_CLIENT=mock` for offline).
