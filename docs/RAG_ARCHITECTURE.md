@@ -74,7 +74,7 @@ This document describes the current Retrieval-Augmented Generation (RAG) stack t
 
 ## External Services & Dependencies
 
-- **Ollama-compatible LLM host** (default `RAG_OLLAMA_URL=http://10.127.0.192:11434`):
+- **Ollama-compatible LLM host** (default `RAG_OLLAMA_URL=http://127.0.0.1:11434`):
   - Chat/generation model: `RAG_CHAT_MODEL=qwen2.5:32b`
   - Embedding model: `RAG_EMBED_MODEL=nomic-embed-text:latest`
   - Accessible only from the company Mac (VPN required). All network clients must handle timeouts, retries, and be mockable for offline testing.

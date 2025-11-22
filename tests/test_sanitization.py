@@ -286,9 +286,9 @@ class TestErrorMessageSanitization:
         """Test that internal URLs are redacted."""
         from clockify_rag.error_handlers import sanitize_for_client
 
-        message = "Connection failed to http://10.127.0.192:11434"
+        message = "Connection failed to http://127.0.0.1:11434"
         result = sanitize_for_client(message)
-        assert "10.127.0.192" not in result
+        assert "127.0.0.1" not in result
         assert "<endpoint>" in result
 
     def test_sanitize_for_client_redacts_https_urls(self):
@@ -322,10 +322,10 @@ class TestErrorMessageSanitization:
         """Test that environment variable values are redacted."""
         from clockify_rag.error_handlers import sanitize_for_client
 
-        message = "Check RAG_OLLAMA_URL=http://10.127.0.192:11434 for connectivity"
+        message = "Check RAG_OLLAMA_URL=http://127.0.0.1:11434 for connectivity"
         result = sanitize_for_client(message)
         assert "RAG_OLLAMA_URL=<redacted>" in result
-        assert "10.127.0.192" not in result
+        assert "127.0.0.1" not in result
 
     def test_sanitize_for_client_preserves_safe_text(self):
         """Test that safe error messages pass through."""

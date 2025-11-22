@@ -1,6 +1,6 @@
 # Deployment Guide
 
-The Clockify RAG stack is designed to run on both Apple Silicon laptops (for local development) and linux/amd64 containers (for production). This guide focuses on deploying the service against the VPN-only Ollama endpoint (`http://10.127.0.192:11434`).
+The Clockify RAG stack is designed to run on both Apple Silicon laptops (for local development) and linux/amd64 containers (for production). This guide focuses on deploying the service against a local Ollama endpoint (`http://127.0.0.1:11434`), with VPN targets as an optional override.
 
 ## Supported targets
 
@@ -23,7 +23,7 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
 
 2. **Configure `.env`** – the important entries are:
    ```bash
-   RAG_OLLAMA_URL=http://10.127.0.192:11434   # or http://127.0.0.1:11434 locally
+   RAG_OLLAMA_URL=http://127.0.0.1:11434   # override for remote/VPN hosts if needed
    RAG_CHAT_MODEL=qwen2.5:32b
    RAG_EMBED_MODEL=nomic-embed-text:latest
    EMB_BACKEND=ollama                           # use remote embeddings in prod
@@ -44,7 +44,7 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
    make smoke
 
    # Against the remote Ollama host (VPN required)
-   RAG_OLLAMA_URL=http://10.127.0.192:11434 \
+   RAG_OLLAMA_URL=http://127.0.0.1:11434 \
    SMOKE_CLIENT=ollama make smoke
    ```
    The `make smoke` target now invokes `scripts/smoke_rag.py`, which loads the local index, calls `answer_once`, and reports routing + timing stats. Non-zero exit codes indicate an unhealthy deployment.
@@ -57,7 +57,7 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
 
 ## Remote Ollama host (VPN)
 
-- The production LLM lives at `http://10.127.0.192:11434` and does **not** require an API key, but is only reachable from the corporate network/VPN.
+- The default LLM endpoint is `http://127.0.0.1:11434`; if you maintain a shared Ollama host, override `RAG_OLLAMA_URL` accordingly.
 - Make sure the models are pulled on the server once:
   ```bash
   ollama pull qwen2.5:32b
@@ -80,7 +80,7 @@ docker build -t clockify-rag .
 docker run -d \
   --name clockify-rag \
   -p 8000:8000 \
-  -e RAG_OLLAMA_URL=http://10.127.0.192:11434 \
+  -e RAG_OLLAMA_URL=http://127.0.0.1:11434 \
   -e RAG_CHAT_MODEL=qwen2.5:32b \
   -e RAG_EMBED_MODEL=nomic-embed-text:latest \
   -e EMB_BACKEND=ollama \

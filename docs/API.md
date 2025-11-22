@@ -25,7 +25,7 @@ Quick readiness probe.
 Returns the resolved runtime configuration (mainly for debugging):
 ```json
 {
-  "ollama_url": "http://10.127.0.192:11434",
+  "ollama_url": "http://127.0.0.1:11434",
   "gen_model": "qwen2.5:32b",
   "emb_model": "nomic-embed-text:latest",
   "chunk_size": 1600,

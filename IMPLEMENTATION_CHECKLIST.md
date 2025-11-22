@@ -410,7 +410,7 @@ This verification pass confirmed that all previous work is:
 3. **Config Defaults Verification** ✅
    - Verified system works with **zero environment variables** set
    - Confirmed hardcoded safe defaults:
-     - `RAG_OLLAMA_URL`: `http://10.127.0.192:11434`
+     - `RAG_OLLAMA_URL`: `http://127.0.0.1:11434`
      - `LLM_MODEL`: `qwen2.5:32b`
      - `EMB_MODEL`: `nomic-embed-text:latest`
      - `OLLAMA_TIMEOUT`: `120.0s`

@@ -55,7 +55,7 @@ def check_ollama_connectivity() -> tuple[bool, str]:
     except ImportError:
         return False, "httpx not installed (cannot check connectivity)"
 
-    base_url = os.getenv("RAG_OLLAMA_URL", os.getenv("OLLAMA_URL", "http://10.127.0.192:11434"))
+    base_url = os.getenv("RAG_OLLAMA_URL", os.getenv("OLLAMA_URL", "http://127.0.0.1:11434"))
     try:
         response = httpx.get(f"{base_url}/api/tags", timeout=3.0)
         if response.status_code == 200:

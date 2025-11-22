@@ -62,7 +62,7 @@ embedding:
 # ============================================================================
 ollama:
   # Base URL for Ollama service
-  url: http://10.127.0.192:11434
+  url: http://127.0.0.1:11434
 
   # Embedding model on Ollama server
   embedding_model: nomic-embed-text

@@ -23,12 +23,12 @@ def _has_module(name: str) -> bool:
 
 
 def _vpn_reachable() -> bool:
-    """Check if the corporate Ollama server is reachable (VPN connectivity check).
+    """Check if the Ollama server is reachable (connectivity check).
 
     Returns:
         True if Ollama endpoint responds, False otherwise (e.g., VPN down, CI environment)
     """
-    base_url = os.getenv("OLLAMA_BASE_URL") or os.getenv("RAG_OLLAMA_URL") or "http://10.127.0.192:11434"
+    base_url = os.getenv("OLLAMA_BASE_URL") or os.getenv("RAG_OLLAMA_URL") or "http://127.0.0.1:11434"
     try:
         response = httpx.get(f"{base_url}/api/tags", timeout=1.0)
         return response.status_code == 200

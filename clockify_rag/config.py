@@ -4,7 +4,7 @@ IMPORTANT: This module ships with VPN-safe, production-ready defaults for intern
 **No environment variables are required** for standard operation on corporate macOS (M1/M2/M3 Pro).
 
 Default Configuration (Zero-Config):
-- LLM endpoint: http://10.127.0.192:11434 (internal VPN Ollama host)
+- LLM endpoint: http://127.0.0.1:11434 (local Ollama)
 - Chat model: qwen2.5:32b
 - Embeddings: Local SentenceTransformer (offline-friendly, 384-dim)
 - Retries: 2 (VPN resilience)
@@ -169,8 +169,8 @@ def get_query_expansions_path() -> Optional[str]:
 
 
 # ====== OLLAMA CONFIG (Remote-First Design) ======
-# Corporate Ollama server (reachable only over VPN on macOS + corporate networks)
-_DEFAULT_RAG_OLLAMA_URL = "http://10.127.0.192:11434"
+# Local-first Ollama endpoint (single-user laptop default)
+_DEFAULT_RAG_OLLAMA_URL = "http://127.0.0.1:11434"
 DEFAULT_RAG_OLLAMA_URL = _DEFAULT_RAG_OLLAMA_URL
 DEFAULT_LOCAL_OLLAMA_URL = "http://127.0.0.1:11434"
 
@@ -251,7 +251,7 @@ def _check_remote_models(base_url: str, timeout: float = 5.0) -> list:
     Safe for VPN environments: uses short timeout, logs warnings instead of raising.
 
     Args:
-        base_url: Ollama base URL (e.g., http://10.127.0.192:11434)
+        base_url: Ollama base URL (e.g., http://127.0.0.1:11434)
         timeout: Connection timeout in seconds (default 5s for VPN)
 
     Returns:
@@ -321,8 +321,8 @@ _LLM_MODEL_CACHE: Optional[str] = None
 def get_llm_model() -> str:
     """Get the selected LLM model with lazy caching and safe offline fallback.
 
-    Avoids network calls on import; only probes /api/tags when explicitly requested
-    and when not running in mock/CI/test modes.
+    Local-first: returns the configured primary model without probing remote
+    endpoints. This avoids startup latency or failures on offline laptops.
     """
     global _LLM_MODEL_CACHE
 
@@ -334,17 +334,7 @@ def get_llm_model() -> str:
         _LLM_MODEL_CACHE = RAG_CHAT_MODEL
         return _LLM_MODEL_CACHE
 
-    try:
-        _LLM_MODEL_CACHE = _select_best_model(
-            RAG_CHAT_MODEL,
-            RAG_CHAT_FALLBACK_MODEL,
-            RAG_OLLAMA_URL,
-            timeout=5.0,
-        )
-    except Exception as exc:
-        _logger.warning(f"LLM model selection fallback to primary due to error: {exc}")
-        _LLM_MODEL_CACHE = RAG_CHAT_MODEL
-
+    _LLM_MODEL_CACHE = RAG_CHAT_MODEL
     return _LLM_MODEL_CACHE
 
 

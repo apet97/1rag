@@ -26,7 +26,7 @@ Operational checklist for the Clockify RAG service. Use this document when bring
    make smoke
 
    # Production mode (VPN → remote Ollama)
-   RAG_OLLAMA_URL=http://10.127.0.192:11434 \
+   RAG_OLLAMA_URL=http://127.0.0.1:11434 \
    SMOKE_CLIENT=ollama make smoke
    ```
    `scripts/smoke_rag.py` prints routing + timing; exit codes other than 0 indicate failure.

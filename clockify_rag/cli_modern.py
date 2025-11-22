@@ -348,9 +348,9 @@ def ingest(
 @app.command()
 def query(
     question: str = typer.Argument(..., help="Question to ask"),
-    top_k: int = typer.Option(15, "--top-k", help="Number of chunks to retrieve"),
-    pack_top: int = typer.Option(8, "--pack-top", help="Number of chunks to include in context"),
-    threshold: float = typer.Option(0.25, "--threshold", help="Minimum similarity threshold"),
+    top_k: int = typer.Option(config.DEFAULT_TOP_K, "--top-k", help="Number of chunks to retrieve"),
+    pack_top: int = typer.Option(config.DEFAULT_PACK_TOP, "--pack-top", help="Number of chunks to include in context"),
+    threshold: float = typer.Option(config.DEFAULT_THRESHOLD, "--threshold", help="Minimum similarity threshold"),
     json_output: bool = typer.Option(False, "--json", help="JSON output"),
     debug: bool = typer.Option(False, "--debug", help="Debug output"),
 ) -> None:
@@ -442,9 +442,9 @@ def query(
 
 @app.command()
 def chat(
-    top_k: int = typer.Option(15, "--top-k", help="Number of chunks to retrieve"),
-    pack_top: int = typer.Option(8, "--pack-top", help="Number of chunks to include in context"),
-    threshold: float = typer.Option(0.25, "--threshold", help="Minimum similarity threshold"),
+    top_k: int = typer.Option(config.DEFAULT_TOP_K, "--top-k", help="Number of chunks to retrieve"),
+    pack_top: int = typer.Option(config.DEFAULT_PACK_TOP, "--pack-top", help="Number of chunks to include in context"),
+    threshold: float = typer.Option(config.DEFAULT_THRESHOLD, "--threshold", help="Minimum similarity threshold"),
     debug: bool = typer.Option(False, "--debug", help="Debug output"),
 ) -> None:
     """Start interactive chat REPL.

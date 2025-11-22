@@ -279,7 +279,7 @@ clockify_rag.py
     └── numpy==2.3.4
 
 External Services:
-├── Ollama (http://10.127.0.192:11434)
+├── Ollama (http://127.0.0.1:11434)
 │   ├── nomic-embed-text (embedding model)
 │   └── qwen2.5:32b (LLM model)
 │
@@ -296,7 +296,7 @@ Located in `clockify_rag.py` (lines 6-15):
 ```python
 CHUNK_SIZE = 1600          # Max chunk size (characters)
 CHUNK_OVERLAP = 200        # Overlap between sub-chunks
-OLLAMA_URL = "http://10.127.0.192:11434"  # Ollama endpoint
+OLLAMA_URL = "http://127.0.0.1:11434"  # Ollama endpoint
 EMBED_MODEL = "nomic-embed-text"
 CHAT_MODEL = "qwen2.5:32b"
 ```

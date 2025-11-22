@@ -8,7 +8,7 @@
 
 | Setting | Default Value | Purpose |
 |---------|---------------|---------|
-| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Internal Ollama host (VPN) |
+| `RAG_OLLAMA_URL` | `http://127.0.0.1:11434` | Local Ollama host |
 | `RAG_CHAT_MODEL` | `qwen2.5:32b` | Generation model for answers |
 | `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model (when `EMB_BACKEND=ollama`) |
 | `EMB_BACKEND` | `local` | Offline-friendly SentenceTransformer (384-dim) |
@@ -45,7 +45,7 @@ CHAT_READ_TIMEOUT=180
 ## Ollama & models
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `RAG_OLLAMA_URL` | `http://10.127.0.192:11434` | Base URL for Qwen + embeddings (override locally to `http://127.0.0.1:11434`). |
+| `RAG_OLLAMA_URL` | `http://127.0.0.1:11434` | Base URL for Qwen + embeddings. |
 | `RAG_CHAT_MODEL` | `qwen2.5:32b` | Generation model. |
 | `RAG_EMBED_MODEL` | `nomic-embed-text:latest` | Embedding model when `EMB_BACKEND=ollama`. |
 | `EMB_BACKEND` | `local` | `ollama` (production, remote embeddings) or `local` (SentenceTransformer). |
