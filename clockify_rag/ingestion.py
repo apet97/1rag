@@ -27,8 +27,6 @@ except ImportError:
     HTML_AVAILABLE = False
     logger.warning("BeautifulSoup4 not available. HTML support will be limited.")
 
-    logger.warning("pandas not available. Spreadsheet support will be limited.")
-
 
 def extract_text_from_pdf(file_path: str) -> str:
     """Extract text from PDF file.

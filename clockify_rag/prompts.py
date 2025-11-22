@@ -94,13 +94,19 @@ FIELD RULES:
 
 CONSTRAINTS:
 - If the answer is NOT supported by the context, say so clearly in the "answer", set "confidence" <= 20, and suggest what information would be needed.
+- Confidence scale semantics (calibrate carefully):
+  - 100: Fully supported by the provided CONTEXT with no guessing.
+  - 50: Partially supported; some interpretation required; might be missing details.
+  - 0: No relevant context; you are essentially guessing. Use <=20 when the context is insufficient.
 - Never mention internal implementation details (file paths, embeddings, FAISS, RAG) to the user.
 - Never change the JSON structure or add extra top-level keys.
 - Never output trailing commas or invalid JSON.
 - DO NOT wrap the JSON in markdown code blocks (```json ... ```).
 - Output ONLY the JSON object, nothing else.
 
-Your goal is to make it as easy as possible for internal support agents to paste your answer into a customer reply with minimal edits while staying strictly aligned with the provided CONTEXT."""
+INSUFFICIENT CONTEXT (IMPORTANT)
+- If you cannot answer confidently from the CONTEXT, admit it in the "answer", set "confidence" <= 20, and keep guidance generic (e.g., suggest checking workspace settings, contacting an admin, or opening an internal ticket).
+- Never invent product features, settings, API fields, or release statuses that are not clearly present in the CONTEXT or obvious from general software knowledge."""
 
 
 def build_rag_user_prompt(question: str, chunks: Sequence[Dict[str, Any]]) -> str:

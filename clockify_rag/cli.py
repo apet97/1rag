@@ -188,7 +188,13 @@ def chat_repl(
     if config.FAQ_CACHE_ENABLED and os.path.exists(config.FAQ_CACHE_PATH):
         try:
             faq_cache = get_precomputed_cache(config.FAQ_CACHE_PATH)
-            logger.info(f"FAQ cache loaded: {faq_cache.size()} precomputed answers")
+            if faq_cache.is_stale():
+                logger.warning(
+                    "FAQ cache signature mismatch; ignoring stale cache at %s", config.FAQ_CACHE_PATH
+                )
+                faq_cache = None
+            else:
+                logger.info(f"FAQ cache loaded: {faq_cache.size()} precomputed answers")
         except Exception as e:
             logger.warning(f"Failed to load FAQ cache: {e}")
 

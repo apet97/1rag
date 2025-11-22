@@ -50,32 +50,15 @@ def get_retrieve_profile():
 
 
 # ====== PROMPTS ======
-_SYSTEM_PROMPT_TEMPLATE = """You are CAKE.com Internal Support for Clockify.
-Closed-book. Only use SNIPPETS. If info is missing, reply exactly "{refusal}" and set confidence to 0.
-Respond with a single JSON object that matches this schema:
-{{
-  "answer": "<complete response>",
-  "confidence": <0-100 integer>
-}}
-Guidelines for the answer field:
-- Use the user's language.
-- Be precise. No speculation. No external info. No web search.
-- Include the following sections in order inside the answer text (you may format them with numbered or bulleted lists):
-  1. Direct answer.
-  2. Steps.
-  3. Notes by role/plan/region if relevant.
-  4. Citations with snippet IDs like [id1, id2], including URLs inline if present.
-- If SNIPPETS disagree, explain the conflict and provide the safest interpretation.
-- Ensure the entire output remains valid JSON with no extra prose or markdown wrappers."""
+_SYSTEM_PROMPT_TEMPLATE = QWEN_SYSTEM_PROMPT
+
+
 
 
 def get_system_prompt() -> str:
-    """Return the system prompt with the current refusal string.
+    """Return the canonical system prompt for the RAG assistant."""
 
-    This function allows runtime configuration of the refusal string,
-    enabling dynamic prompt generation for testing and customization.
-    """
-    return _SYSTEM_PROMPT_TEMPLATE.format(refusal=config.REFUSAL_STR)
+    return _SYSTEM_PROMPT_TEMPLATE
 
 
 SYSTEM_PROMPT = None  # Dynamically resolved via __getattr__
@@ -87,9 +70,17 @@ USER_WRAPPER = """SNIPPETS:
 QUESTION:
 {q}
 
-Respond with only a JSON object following the schema {{"answer": "...", "confidence": 0-100}}.
-Keep all narrative content inside the answer field and include citations as described in the system message.
-Do not add markdown fences or text outside the JSON object."""
+Respond with only a JSON object following this schema (no code fences or preamble):
+{{
+  "answer": "<customer-ready Markdown answer in the user's language>",
+  "confidence": <0-100 integer>,
+  "reasoning": "<2-4 sentences on how the context supports the answer>",
+  "sources_used": ["<CONTEXT_BLOCK IDs used, e.g., \"1\" or \"2\">"]
+}}
+- If context is missing or insufficient, say so in the answer, keep guidance generic, set confidence <= 20, and return an empty sources_used list.
+- Do not invent product features, settings, or APIs not present in the snippets or obvious general knowledge.
+- Keep all narrative content inside the JSON 'answer' field.
+- Do not wrap the JSON in markdown fences or add extra prose."""
 
 RERANK_PROMPT = """You rank passages for a Clockify support answer. Score each 0.0–1.0 strictly.
 Output JSON only: [{{"id":"<chunk_id>","score":0.82}}, ...].
@@ -577,6 +568,20 @@ def retrieve(
     faiss_index = None
     if config.USE_ANN == "faiss":
         faiss_index = get_faiss_index(faiss_index_path)
+        if faiss_index:
+            # Defensive: skip FAISS if dimension mismatches current query vectors (e.g., toy tests)
+            try:
+                faiss_dim = getattr(faiss_index, "d", None)
+                if faiss_dim is not None and faiss_dim != qv_n.shape[0]:
+                    logger.info(
+                        "info: ann=fallback reason=dim-mismatch faiss_d=%s q_dim=%s",
+                        faiss_dim,
+                        qv_n.shape[0],
+                    )
+                    faiss_index = None
+            except Exception:
+                faiss_index = None
+
         if faiss_index:
             # Only set nprobe for IVF indexes (not flat indexes)
             if hasattr(faiss_index, "nprobe"):

@@ -8,6 +8,7 @@ import time
 from collections import deque
 
 logger = logging.getLogger(__name__)
+from .metrics import MetricNames, increment_counter, set_gauge
 
 # FIX (Error #2): Declare globals at module level for safe initialization
 _RATE_LIMITER = None
@@ -113,6 +114,7 @@ class QueryCache:
 
             if key not in self.cache:
                 self.misses += 1
+                increment_counter(MetricNames.CACHE_MISSES)
                 return None
 
             answer, metadata, timestamp = self.cache[key]
@@ -129,12 +131,14 @@ class QueryCache:
                 del self.cache[key]
                 self.access_order.remove(key)
                 self.misses += 1
+                increment_counter(MetricNames.CACHE_MISSES)
                 return None
 
             # Cache hit - update access order
             self.access_order.remove(key)
             self.access_order.append(key)
             self.hits += 1
+            increment_counter(MetricNames.CACHE_HITS)
             logger.debug(f"[cache] HIT question_hash={key[:8]} age={age:.1f}s")
             return answer, metadata
 
@@ -171,6 +175,7 @@ class QueryCache:
             self.access_order.append(key)
 
             logger.debug(f"[cache] PUT question_hash={key[:8]}")
+            set_gauge(MetricNames.CACHE_SIZE, len(self.cache))
 
     def clear(self):
         """Clear all cache entries."""
@@ -180,6 +185,7 @@ class QueryCache:
             self.hits = 0
             self.misses = 0
             logger.info("[cache] CLEAR")
+            set_gauge(MetricNames.CACHE_SIZE, 0)
 
     def stats(self) -> dict:
         """Get cache statistics.

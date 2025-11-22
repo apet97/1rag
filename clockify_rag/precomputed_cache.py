@@ -40,6 +40,29 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _default_kb_signature(meta: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Derive a KB signature from index metadata or on-disk index meta."""
+
+    if meta:
+        sig = meta.get("kb_sha256") or meta.get("kb_sha") or meta.get("kb_signature")
+        if sig:
+            return str(sig)
+
+    try:
+        from . import config
+
+        meta_path = config.FILES.get("index_meta")
+        if not meta_path or not os.path.exists(meta_path):
+            return None
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta_obj = json.load(f)
+        sig = meta_obj.get("kb_sha256") or meta_obj.get("kb_sha") or meta_obj.get("kb_signature")
+        return str(sig) if sig else None
+    except Exception as exc:
+        logger.debug("Failed to derive KB signature: %s", exc)
+        return None
+
+
 class PrecomputedCache:
     """Cache for precomputed answers to frequently asked questions.
 
@@ -47,17 +70,21 @@ class PrecomputedCache:
     response times for FAQ queries.
     """
 
-    def __init__(self, cache_path: Optional[str] = None):
+    def __init__(self, cache_path: Optional[str] = None, kb_signature: Optional[str] = None):
         """Initialize precomputed cache.
 
         Args:
             cache_path: Path to cache file (optional, can load later)
+            kb_signature: Optional knowledge-base signature to validate staleness
         """
         self.cache: Dict[str, Dict[str, Any]] = {}
         self.cache_path = cache_path
+        self.kb_signature = kb_signature
+        self.loaded_kb_signature: Optional[str] = None
+        self.stale: bool = False
 
         if cache_path and os.path.exists(cache_path):
-            self.load(cache_path)
+            self.load(cache_path, kb_signature=kb_signature)
 
     def _normalize_question(self, question: str) -> str:
         """Normalize question for cache lookup.
@@ -131,17 +158,45 @@ class PrecomputedCache:
             "routing": answer_data.get("routing", {}),
         }
 
-    def load(self, cache_path: str) -> None:
+    def load(self, cache_path: str, kb_signature: Optional[str] = None) -> None:
         """Load precomputed cache from disk.
 
         Args:
             cache_path: Path to JSON cache file
+            kb_signature: Optional knowledge-base signature to validate freshness
         """
+        self.stale = False
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 self.cache = data.get("cache", {})
-                logger.info(f"Loaded precomputed cache: {len(self.cache)} entries from {cache_path}")
+                self.loaded_kb_signature = data.get("kb_signature")
+                # If caller provided a signature and it mismatches, treat cache as stale
+                expected_sig = kb_signature or self.kb_signature
+                if expected_sig and self.loaded_kb_signature and expected_sig != self.loaded_kb_signature:
+                    logger.warning(
+                        "Precomputed cache stale: stored kb_signature=%s, expected=%s. Ignoring cached entries.",
+                        self.loaded_kb_signature,
+                        expected_sig,
+                    )
+                    self.cache = {}
+                    self.stale = True
+                elif expected_sig and not self.loaded_kb_signature:
+                    logger.warning(
+                        "Precomputed cache missing kb_signature; expected=%s. Treating cache as stale.",
+                        expected_sig,
+                    )
+                    self.cache = {}
+                    self.stale = True
+                # Track the effective signature we trust for subsequent saves
+                self.kb_signature = expected_sig or self.loaded_kb_signature
+
+                logger.info(
+                    "Loaded precomputed cache: %d entries from %s%s",
+                    len(self.cache),
+                    cache_path,
+                    " (stale)" if self.stale else "",
+                )
         except FileNotFoundError:
             logger.warning(f"Precomputed cache file not found: {cache_path}")
         except json.JSONDecodeError as e:
@@ -162,7 +217,12 @@ class PrecomputedCache:
         # Ensure directory exists
         Path(cache_path).parent.mkdir(parents=True, exist_ok=True)
 
-        data = {"version": "1.0", "count": len(self.cache), "cache": self.cache}
+        data = {
+            "version": "1.0",
+            "kb_signature": self.kb_signature,
+            "count": len(self.cache),
+            "cache": self.cache,
+        }
 
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
@@ -172,6 +232,7 @@ class PrecomputedCache:
     def clear(self) -> None:
         """Clear all cached entries."""
         self.cache.clear()
+        self.stale = False
 
     def size(self) -> int:
         """Get number of cached entries."""
@@ -181,9 +242,21 @@ class PrecomputedCache:
         """Get list of cached question hashes."""
         return list(self.cache.keys())
 
+    def is_stale(self) -> bool:
+        """Return True if the loaded cache was marked stale due to kb_signature mismatch."""
+
+        return self.stale
+
 
 def build_faq_cache(
-    questions: List[str], chunks: List[Dict], vecs_n, bm: Dict, output_path: str = "faq_cache.json", **answer_kwargs
+    questions: List[str],
+    chunks: List[Dict],
+    vecs_n,
+    bm: Dict,
+    output_path: str = "faq_cache.json",
+    *,
+    kb_signature: Optional[str] = None,
+    **answer_kwargs,
 ) -> PrecomputedCache:
     """Build precomputed cache from list of FAQ questions.
 
@@ -193,6 +266,7 @@ def build_faq_cache(
         vecs_n: Normalized embeddings
         bm: BM25 index
         output_path: Where to save cache (default: faq_cache.json)
+        kb_signature: Optional KB signature to store alongside the cache for staleness detection
         **answer_kwargs: Additional arguments for answer_once()
 
     Returns:
@@ -200,7 +274,8 @@ def build_faq_cache(
     """
     from .answer import answer_once
 
-    cache = PrecomputedCache()
+    effective_sig = kb_signature or _default_kb_signature()
+    cache = PrecomputedCache(kb_signature=effective_sig)
 
     logger.info(f"Building FAQ cache for {len(questions)} questions...")
 
@@ -243,19 +318,26 @@ def load_faq_list(faq_file: str) -> List[str]:
 _PRECOMPUTED_CACHE: Optional[PrecomputedCache] = None
 
 
-def get_precomputed_cache(cache_path: str = "faq_cache.json") -> PrecomputedCache:
+def get_precomputed_cache(cache_path: str = "faq_cache.json", kb_signature: Optional[str] = None) -> PrecomputedCache:
     """Get global precomputed cache instance.
 
     Args:
         cache_path: Path to cache file
+        kb_signature: Optional knowledge-base signature to validate freshness
 
     Returns:
         PrecomputedCache instance
     """
     global _PRECOMPUTED_CACHE
 
-    if _PRECOMPUTED_CACHE is None:
-        _PRECOMPUTED_CACHE = PrecomputedCache(cache_path)
+    expected_sig = kb_signature or _default_kb_signature()
+
+    if (
+        _PRECOMPUTED_CACHE is None
+        or (_PRECOMPUTED_CACHE.cache_path and _PRECOMPUTED_CACHE.cache_path != cache_path)
+        or (_PRECOMPUTED_CACHE.kb_signature != expected_sig)
+    ):
+        _PRECOMPUTED_CACHE = PrecomputedCache(cache_path, kb_signature=expected_sig)
 
     return _PRECOMPUTED_CACHE
 

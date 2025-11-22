@@ -356,28 +356,32 @@ def generate_llm_answer(
     answer = raw_response
     confidence = None
     reasoning = None
-    sources_used = None
+    sources_used: Optional[List[str]] = None
 
-    if packed_chunks is not None:
-        # New prompts: expect JSON output
-        try:
+    try:
+        if structured_prompt:
             parsed = parse_qwen_json(raw_response)
             answer = parsed["answer"]
             confidence = parsed["confidence"]
             reasoning = parsed["reasoning"]
             sources_used = parsed["sources_used"]
             logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used)}")
-        except (json.JSONDecodeError, ValueError) as e:
-            # JSON parsing failed - log and fall back to raw text
-            logger.warning(f"Failed to parse Qwen JSON output: {e}. Using raw text as fallback.")
-            logger.debug(f"Raw output (first 500 chars): {raw_response[:500]}")
+        else:
+            # Legacy prompt: treat output as plain text without parsing
             answer = raw_response
-            # Compute fallback confidence from retrieval scores
-            if scores_dict is not None and selected_indices is not None:
-                confidence = compute_confidence_from_scores(scores_dict, selected_indices)
-    else:
-        # Legacy prompts: plain text output (keep confidence unset)
+    except (json.JSONDecodeError, ValueError) as e:
+        # JSON parsing failed - log and fall back to raw text
+        logger.warning(f"Failed to parse Qwen JSON output: {e}. Using raw text as fallback.")
+        logger.debug(f"Raw output (first 500 chars): {raw_response[:500]}")
         answer = raw_response
+        # Compute fallback confidence from retrieval scores
+        if scores_dict is not None and selected_indices is not None:
+            confidence = compute_confidence_from_scores(scores_dict, selected_indices)
+        if structured_prompt and scores_dict is not None and selected_indices is not None:
+            # Structured prompt + parse failure: return empty list for clarity when retrieval context exists
+            sources_used = []
+        else:
+            sources_used = None
 
     client_mode = (get_llm_client_mode("") or "").lower()
 

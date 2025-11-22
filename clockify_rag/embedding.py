@@ -129,7 +129,7 @@ def _embed_single_text(index: int, text: str, retries: int, total: int) -> tuple
     Args:
         index: Index of this text in the full list
         text: Text to embed
-        retries: Number of retries for HTTP session (currently unused; embeddings_client handles retries)
+        retries: Number of retries for HTTP session (passed to embeddings_client)
         total: Total number of texts (for logging)
 
     Returns:
@@ -140,7 +140,7 @@ def _embed_single_text(index: int, text: str, retries: int, total: int) -> tuple
         from .embeddings_client import embed_query
 
         # Embed single text and return as list (matching old API contract)
-        embedding = embed_query(text)
+        embedding = embed_query(text, retries=retries)
 
         if embedding is None or embedding.size == 0:
             raise EmbeddingError(f"Embedding chunk {index}: empty embedding returned (check Ollama API format)")
@@ -356,7 +356,7 @@ def embed_query(question: str, retries=0) -> np.ndarray:
 
         try:
             # embeddings_client.embed_query returns already-normalized 1D array
-            vec = embed_query_remote(question)
+            vec = embed_query_remote(question, retries=retries)
             return vec
         except Exception as e:
             logger.error(f"Failed to embed query via embeddings_client: {e}")

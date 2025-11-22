@@ -102,6 +102,7 @@ def main():
         chunks = index_data["chunks"]
         vecs_n = index_data["vecs_n"]
         bm = index_data["bm"]
+        meta = index_data.get("meta") if isinstance(index_data, dict) else None
         logger.info(f"Index loaded: {len(chunks)} chunks")
     except Exception as e:
         logger.error(f"Failed to load index: {e}")
@@ -110,12 +111,19 @@ def main():
     # Build FAQ cache
     logger.info(f"Building FAQ cache with {len(questions)} questions...")
     try:
+        kb_signature = None
+        if isinstance(meta, dict):
+            kb_signature = meta.get("kb_sha256") or meta.get("kb_sha") or meta.get("kb_signature")
+            if kb_signature:
+                kb_signature = str(kb_signature)
+
         cache = build_faq_cache(
             questions=questions,
             chunks=chunks,
             vecs_n=vecs_n,
             bm=bm,
             output_path=args.output,
+            kb_signature=kb_signature,
             top_k=args.top_k,
             pack_top=args.pack_top,
             threshold=args.threshold,

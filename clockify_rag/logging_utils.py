@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from .caching import log_query
+from .utils import sanitize_for_log
+
+logger = logging.getLogger(__name__)
 
 
 def _normalize_chunk_dict(chunk: Mapping[str, Any], rank: int) -> Dict[str, Any]:
@@ -140,11 +144,15 @@ def log_query_event(
     if channel:
         metadata["channel"] = channel
 
-    log_query(
-        question,
-        result.get("answer", ""),
-        retrieved_chunks,
-        float(computed_latency) if computed_latency is not None else 0.0,
-        refused=bool(result.get("refused")),
-        metadata=metadata,
-    )
+    try:
+        safe_question = sanitize_for_log(question, max_length=500)
+        log_query(
+            safe_question,
+            result.get("answer", ""),
+            retrieved_chunks,
+            float(computed_latency) if computed_latency is not None else 0.0,
+            refused=bool(result.get("refused")),
+            metadata=metadata,
+        )
+    except Exception as exc:
+        logger.warning("Failed to log query event: %s", exc)
