@@ -12,6 +12,7 @@ def test_log_query_records_non_zero_scores(tmp_path, monkeypatch):
 
     # Monkeypatch at the config module level where log_query() imports from
     monkeypatch.setattr(clockify_rag.config, "QUERY_LOG_FILE", str(log_path))
+    monkeypatch.setattr(clockify_rag.config, "QUERY_LOG_ENABLED", True)
 
     retrieved_chunks = [
         {"id": "chunk-1", "dense": 0.42, "bm25": 0.15, "hybrid": 0.30},

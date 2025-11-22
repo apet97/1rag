@@ -499,6 +499,7 @@ REFUSAL_STR = "I don't know based on the MD."
 
 
 # Query logging configuration
+QUERY_LOG_ENABLED = _get_bool_env("RAG_LOG_ENABLED", "0")
 QUERY_LOG_FILE = _get_env_value("RAG_LOG_FILE", "rag_queries.jsonl") or "rag_queries.jsonl"
 LOG_QUERY_INCLUDE_ANSWER = _get_bool_env("RAG_LOG_INCLUDE_ANSWER", "1")
 LOG_QUERY_ANSWER_PLACEHOLDER = _get_env_value("RAG_LOG_ANSWER_PLACEHOLDER", "[REDACTED]") or "[REDACTED]"

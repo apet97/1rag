@@ -312,6 +312,10 @@ def log_query(
 
     FIX (Error #6): Sanitizes user input to prevent log injection attacks.
     """
+    from . import config as _config
+    if not getattr(_config, "QUERY_LOG_ENABLED", False):
+        return
+
     import json
     from .config import (
         LOG_QUERY_ANSWER_PLACEHOLDER,
