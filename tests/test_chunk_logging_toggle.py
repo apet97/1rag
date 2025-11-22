@@ -19,6 +19,7 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
     try:
         # Set log file BEFORE reloading config
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
+        monkeypatch.setenv("RAG_LOG_ENABLED", "1")
 
         # Reload config to pick up env var
         import importlib
@@ -78,6 +79,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
         # Set BOTH env vars BEFORE reloading config
         monkeypatch.setenv("RAG_LOG_INCLUDE_CHUNKS", "1")
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
+        monkeypatch.setenv("RAG_LOG_ENABLED", "1")
 
         # Reload config to pick up env vars
         import importlib
@@ -139,6 +141,7 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
         monkeypatch.setenv("RAG_LOG_INCLUDE_ANSWER", "0")
         monkeypatch.setenv("RAG_LOG_INCLUDE_CHUNKS", "1")
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
+        monkeypatch.setenv("RAG_LOG_ENABLED", "1")
 
         # Reload config to pick up env vars
         import importlib

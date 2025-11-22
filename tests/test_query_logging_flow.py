@@ -38,6 +38,7 @@ def _make_args(**overrides):
 def test_handle_ask_command_writes_log_when_enabled(tmp_path, monkeypatch):
     log_path = tmp_path / "queries.jsonl"
     monkeypatch.setattr(config, "QUERY_LOG_FILE", str(log_path))
+    monkeypatch.setattr(config, "QUERY_LOG_ENABLED", True, raising=False)
     monkeypatch.setattr(cli, "QUERY_LOG_DISABLED", False, raising=False)
 
     fake_chunks = [{"id": "chunk-1", "title": "T", "section": "S"}]
