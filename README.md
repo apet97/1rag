@@ -67,6 +67,11 @@ Two options, both tested on arm64:
 
 Offline defaults: set `RAG_LLM_CLIENT=mock` and keep `EMB_BACKEND=local` (default) to avoid VPN/Ollama. FAISS is optional; without it, BM25-only retrieval still works. 
 
+Rerank and CORS knobs:
+- `RERANK_MODEL` to use a lighter model for reranking (falls back to `RAG_CHAT_MODEL`).
+- `RERANK_READ_TIMEOUT` to cap rerank latency (default 180s).
+- `ALLOWED_ORIGINS` (comma-separated) to enable CORS; omit to keep CORS off by default.
+
 **Notes:**
 - Default Ollama endpoint: `http://10.127.0.192:11434` (override via `RAG_OLLAMA_URL` or set `RAG_LLM_CLIENT=mock` for offline).
 - Embeddings default to local SentenceTransformer; set `EMB_BACKEND=ollama` on VPN for faster builds.

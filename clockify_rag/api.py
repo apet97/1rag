@@ -222,15 +222,14 @@ def create_app() -> FastAPI:
     # Using RLock for reentrant locking support
     app.state.lock = threading.RLock()
 
-    # Add CORS middleware if enabled
-    if config.ALPHA_HYBRID is not None:  # Placeholder check
-        origins = ["*"]
+    # Add CORS middleware only when explicitly configured
+    if config.ALLOWED_ORIGINS:
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=origins,
+            allow_origins=config.ALLOWED_ORIGINS,
             allow_credentials=True,
             allow_methods=["*"],
-            allow_headers=["*"],
+            allow_headers=[config.API_KEY_HEADER or "x-api-key", "content-type", "accept"],
         )
 
     _clear_index_state(app)
@@ -437,6 +436,7 @@ def create_app() -> FastAPI:
         Note:
             Build happens asynchronously. Check /health to verify completion.
         """
+        _require_api_key(request)
         input_file, exists, candidates = resolve_corpus_path(request.input_file)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Input file not found. Looked for: {', '.join(candidates)}")

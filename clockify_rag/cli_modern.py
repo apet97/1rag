@@ -165,6 +165,8 @@ def doctor(
             "config": {
                 "ollama_url": config.RAG_OLLAMA_URL,
                 "gen_model": config.RAG_CHAT_MODEL,
+                "rerank_model": getattr(config, "RERANK_MODEL", "") or config.RAG_CHAT_MODEL,
+                "rerank_read_timeout": config.RERANK_READ_T,
                 "emb_model": config.RAG_EMBED_MODEL,
                 "chunk_size": config.CHUNK_CHARS,
                 "top_k": config.DEFAULT_TOP_K,
