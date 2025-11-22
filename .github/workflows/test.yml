@@ -46,6 +46,11 @@ jobs:
         # This replaces ci_bootstrap.sh with Poetry's dependency management
         poetry install --no-interaction --with dev
 
+    - name: Install FAISS (Ubuntu only)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        pip install faiss-cpu==1.8.0
+
     - name: Verify environment (non-strict)
       run: |
         poetry run python scripts/verify_env.py --json | python -m json.tool | head -30

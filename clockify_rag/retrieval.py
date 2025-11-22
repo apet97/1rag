@@ -604,7 +604,9 @@ def retrieve(
         dense_from_ann = np.array([d for _, d in valid_pairs], dtype=np.float32)
 
         dense_scores = dense_from_ann
-        dense_scores_full = None
+        dense_scores_full = np.zeros(n_chunks, dtype=np.float32)
+        for idx_val, score_val in valid_pairs:
+            dense_scores_full[idx_val] = score_val
         dense_computed = len(candidate_idx)
         dot_elapsed = 0.0
     elif hnsw:
@@ -627,15 +629,16 @@ def retrieve(
         dense_scores = dense_scores_full
         candidate_idx = np.arange(len(chunks)).tolist()
 
-    if not candidate_idx:
-        dense_scores_full = vecs_n.dot(qv_n)
+    if not candidate_idx and not faiss_index:
         max_candidates = max(config.ANN_CANDIDATE_MIN, top_k * config.FAISS_CANDIDATE_MULTIPLIER)
+        dense_scores_full = vecs_n.dot(qv_n)
         if len(chunks) > max_candidates:
             top_indices = np.argsort(dense_scores_full)[::-1][:max_candidates]
             candidate_idx = top_indices.tolist()
+            dense_scores = dense_scores_full[top_indices]
         else:
             candidate_idx = np.arange(len(chunks)).tolist()
-        dense_scores = dense_scores_full
+            dense_scores = dense_scores_full
 
     candidate_idx_array = np.array(candidate_idx, dtype=np.int32)
 
