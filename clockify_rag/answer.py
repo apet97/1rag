@@ -386,7 +386,7 @@ def generate_llm_answer(
 
     # Citation validation
     if packed_ids:
-        if answer != REFUSAL_STR and client_mode == "mock" and not extract_citations(answer):
+        if structured_prompt and answer != REFUSAL_STR and client_mode == "mock" and not extract_citations(answer):
             synthesized = ", ".join(str(pid) for pid in packed_ids[:3])
             if synthesized:
                 answer = f"{answer}\n\n[{synthesized}]"
