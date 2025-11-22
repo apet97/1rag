@@ -702,8 +702,9 @@ def retrieve(
         return penalized
 
     hybrid = alpha_hybrid * zs_bm + (1 - alpha_hybrid) * zs_dense
-    if hybrid.size:
-        top_positions = np.argsort(hybrid)[::-1][:top_k]
+    hybrid_penalized = _apply_hub_penalty(hybrid, candidate_idx_array) if hybrid.size else hybrid
+    if hybrid_penalized.size:
+        top_positions = np.argsort(hybrid_penalized)[::-1][:top_k]
         top_idx = candidate_idx_array[top_positions]
     else:
         top_idx = np.array([], dtype=np.int32)
@@ -727,10 +728,8 @@ def retrieve(
             hybrid_full[idx] = score
 
     if hybrid_full.size and config.HUB_PAGE_SCORE_MULTIPLIER < 1.0:
-        for idx, chunk in enumerate(chunks):
-            meta = chunk.get("metadata", {}) or {}
-            if bool(meta.get("is_hub")):
-                hybrid_full[idx] = hybrid_full[idx] * config.HUB_PAGE_SCORE_MULTIPLIER
+        full_idx_array = np.arange(len(chunks), dtype=np.int32)
+        hybrid_full = _apply_hub_penalty(hybrid_full, full_idx_array)
 
     if dense_scores_full is not None:
         dense_scores_store = DenseScoreStore(len(chunks), full_scores=dense_scores_full)

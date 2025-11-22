@@ -482,9 +482,7 @@ CHAT_CONNECT_T = _parse_env_float("CHAT_CONNECT_TIMEOUT", 3.0, min_val=0.1, max_
 CHAT_READ_T = _parse_env_float("CHAT_READ_TIMEOUT", 120.0, min_val=1.0, max_val=600.0)
 RERANK_READ_T = _parse_env_float("RERANK_READ_TIMEOUT", 180.0, min_val=1.0, max_val=600.0)
 ALLOWED_ORIGINS = [
-    origin.strip()
-    for origin in (_get_env_value("ALLOWED_ORIGINS", "") or "").split(",")
-    if origin.strip()
+    origin.strip() for origin in (_get_env_value("ALLOWED_ORIGINS", "") or "").split(",") if origin.strip()
 ]
 
 # ====== EMBEDDING BATCHING CONFIG (Rank 10) ======
