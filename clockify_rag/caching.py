@@ -7,8 +7,9 @@ import threading
 import time
 from collections import deque
 
-logger = logging.getLogger(__name__)
 from .metrics import MetricNames, increment_counter, set_gauge
+
+logger = logging.getLogger(__name__)
 
 # FIX (Error #2): Declare globals at module level for safe initialization
 _RATE_LIMITER = None
