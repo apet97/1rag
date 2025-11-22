@@ -57,7 +57,9 @@ class QueryRequest(BaseModel):
     """Request body for /v1/query endpoint."""
 
     question: str = Field(..., min_length=1, max_length=config.MAX_QUERY_LENGTH, description="Question to answer")
-    top_k: Optional[int] = Field(config.DEFAULT_TOP_K, ge=1, le=config.MAX_TOP_K, description="Number of chunks to retrieve")
+    top_k: Optional[int] = Field(
+        config.DEFAULT_TOP_K, ge=1, le=config.MAX_TOP_K, description="Number of chunks to retrieve"
+    )
     pack_top: Optional[int] = Field(config.DEFAULT_PACK_TOP, ge=1, le=50, description="Number of chunks in context")
     threshold: Optional[float] = Field(config.DEFAULT_THRESHOLD, ge=0.0, le=1.0, description="Minimum similarity")
     debug: Optional[bool] = Field(False, description="Include debug information")
