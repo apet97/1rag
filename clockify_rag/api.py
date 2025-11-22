@@ -11,12 +11,14 @@ Provides REST API endpoints:
 import asyncio
 import json
 import logging
+import os
 import platform
 import threading
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict, Any
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
@@ -37,6 +39,13 @@ from .utils import check_ollama_connectivity, resolve_corpus_path
 get_rate_limiter = _get_rate_limiter
 
 logger = logging.getLogger(__name__)
+
+
+def _threadpool_workers() -> int:
+    """Compute a threadpool size that can handle small concurrent bursts."""
+
+    cpu_count = os.cpu_count() or 1
+    return max(4, min(32, cpu_count * 4))
 
 # ============================================================================
 # Pydantic Models
@@ -179,6 +188,9 @@ def create_app() -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        # Ensure a sufficiently-sized executor for run_in_executor workloads (queries/ingest)
+        executor = ThreadPoolExecutor(max_workers=_threadpool_workers())
+        asyncio.get_running_loop().set_default_executor(executor)
         try:
             logger.info("Loading index on startup...")
             try:
@@ -194,6 +206,7 @@ def create_app() -> FastAPI:
             yield
         finally:
             logger.info("Initiating graceful shutdown...")
+            executor.shutdown(wait=True)
             _clear_index_state(_app)
             logger.info("Graceful shutdown complete")
 
