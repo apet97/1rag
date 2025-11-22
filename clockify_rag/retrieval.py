@@ -138,29 +138,20 @@ def compute_confidence_from_scores(
         if not selected_scores:
             return 50
 
-        # Detect score scale (raw cosine vs. z-score) and normalize accordingly
-        score_min, score_max = float(np.min(hybrid_scores)), float(np.max(hybrid_scores))
-        zscore_like = score_max > 1.2 or score_min < -0.2
+        # Clip to [0,1] for stability regardless of normalization/z-scores
+        clipped = np.clip(np.array(selected_scores, dtype="float32"), 0.0, 1.0)
+        top_score = float(np.max(clipped))
 
-        # Base confidence on top score (main signal)
-        top_score = max(selected_scores)
-
-        if zscore_like:
-            # Map top score to percentile against full distribution, then to 0-100
-            percentile = float(np.mean(hybrid_scores <= top_score))
-            base_confidence = int(40 + percentile * 60)
+        # Map top score: below threshold → up to 40; above threshold → up to 100
+        if top_score < threshold:
+            base_confidence = int(top_score / max(threshold, 1e-6) * 40)
         else:
-            # Normalize to 0-100 range for cosine-like scores
-            if top_score < threshold:
-                base_confidence = int(top_score / threshold * 40)
-            else:
-                # Scale from threshold to 1.0 into range 40-100
-                normalized = (top_score - threshold) / max(1e-6, (1.0 - threshold))
-                base_confidence = int(40 + normalized * 60)
+            normalized = (top_score - threshold) / max(1e-6, (1.0 - threshold))
+            base_confidence = int(40 + normalized * 60)
 
         # Adjust based on score distribution (consistency boost)
-        if len(selected_scores) >= 2:
-            avg_score = sum(selected_scores) / len(selected_scores)
+        if len(clipped) >= 2:
+            avg_score = float(np.mean(clipped))
             # If average is close to top, boost confidence (consistent results)
             consistency = avg_score / top_score if top_score > 0 else 0
             if consistency > 0.8:  # Very consistent
@@ -169,7 +160,7 @@ def compute_confidence_from_scores(
                 base_confidence = max(0, base_confidence - 10)
 
         # Adjust based on coverage (number of high-quality chunks)
-        high_quality_count = sum(1 for s in selected_scores if s >= threshold)
+        high_quality_count = sum(1 for s in clipped if s >= threshold)
         if high_quality_count >= 3:
             base_confidence = min(100, base_confidence + 5)
         elif high_quality_count < 2:

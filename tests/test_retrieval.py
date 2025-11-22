@@ -319,6 +319,21 @@ def test_bm25_pruning_matches_full():
     assert full_top == pruned_top, "Pruned BM25 should keep the same top document as full scoring"
 
 
+def test_confidence_monotonicity(monkeypatch):
+    """Higher hybrid score should not reduce confidence."""
+
+    import clockify_rag.retrieval as retrieval
+
+    scores = {"hybrid": np.array([0.1, 0.5, 0.9], dtype=np.float32)}
+    selected_low = [0]
+    selected_high = [2]
+
+    low_conf = retrieval.compute_confidence_from_scores(scores, selected_low, threshold=0.25)
+    high_conf = retrieval.compute_confidence_from_scores(scores, selected_high, threshold=0.25)
+
+    assert high_conf >= low_conf, "Confidence should be monotonic with higher scores"
+
+
 def test_intent_toggle_controls_boost(monkeypatch):
     """Intent boosting should only apply when intent classification is enabled."""
 
