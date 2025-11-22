@@ -130,26 +130,33 @@ def compute_confidence_from_scores(
         import numpy as np
 
         # Extract scores for selected indices
-        hybrid_scores = scores_dict.get("hybrid", np.array([]))
-        if len(hybrid_scores) == 0:
+        hybrid_scores = np.asarray(scores_dict.get("hybrid", np.array([])), dtype="float32")
+        if hybrid_scores.size == 0:
             return 50  # Fallback if no scores available
 
         selected_scores = [hybrid_scores[i] for i in selected_indices if i < len(hybrid_scores)]
         if not selected_scores:
             return 50
 
+        # Detect score scale (raw cosine vs. z-score) and normalize accordingly
+        score_min, score_max = float(np.min(hybrid_scores)), float(np.max(hybrid_scores))
+        zscore_like = score_max > 1.2 or score_min < -0.2
+
         # Base confidence on top score (main signal)
         top_score = max(selected_scores)
 
-        # Normalize to 0-100 range
-        # Scores typically range from 0.0 to 1.0 for normalized vectors
-        # Map 0.0 -> 0, threshold -> 40, 0.5 -> 70, 1.0 -> 100
-        if top_score < threshold:
-            base_confidence = int(top_score / threshold * 40)
+        if zscore_like:
+            # Map top score to percentile against full distribution, then to 0-100
+            percentile = float(np.mean(hybrid_scores <= top_score))
+            base_confidence = int(40 + percentile * 60)
         else:
-            # Scale from threshold to 1.0 into range 40-100
-            normalized = (top_score - threshold) / (1.0 - threshold)
-            base_confidence = int(40 + normalized * 60)
+            # Normalize to 0-100 range for cosine-like scores
+            if top_score < threshold:
+                base_confidence = int(top_score / threshold * 40)
+            else:
+                # Scale from threshold to 1.0 into range 40-100
+                normalized = (top_score - threshold) / max(1e-6, (1.0 - threshold))
+                base_confidence = int(40 + normalized * 60)
 
         # Adjust based on score distribution (consistency boost)
         if len(selected_scores) >= 2:
@@ -613,9 +620,14 @@ def retrieve(
         _, cand = hnsw.knn_query(qv_n, k=max(config.ANN_CANDIDATE_MIN, top_k * config.FAISS_CANDIDATE_MULTIPLIER))
         candidate_idx = cand[0].tolist()
         dot_start = time.perf_counter()
-        dense_scores_full = vecs_n.dot(qv_n)
+        # Compute scores only for HNSW candidates to avoid full-matrix dot products
+        if candidate_idx:
+            dense_scores = np.array([float(vecs_n[idx].dot(qv_n)) for idx in candidate_idx], dtype=np.float32)
+        else:
+            dense_scores = np.array([], dtype=np.float32)
+        dense_scores_full = None
         dot_elapsed = time.perf_counter() - dot_start
-        dense_computed = n_chunks
+        dense_computed = len(candidate_idx)
     else:
         dot_start = time.perf_counter()
         dense_scores_full = vecs_n.dot(qv_n)
@@ -690,7 +702,6 @@ def retrieve(
         return penalized
 
     hybrid = alpha_hybrid * zs_bm + (1 - alpha_hybrid) * zs_dense
-    hybrid = _apply_hub_penalty(hybrid, candidate_idx_array)
     if hybrid.size:
         top_positions = np.argsort(hybrid)[::-1][:top_k]
         top_idx = candidate_idx_array[top_positions]
@@ -813,10 +824,12 @@ def rerank_with_llm(
     }
 
     rerank_scores = {}
+    rerank_model = getattr(config, "RERANK_MODEL", "") or config.RAG_CHAT_MODEL
+
     try:
         response = chat_completion(
             messages=messages,
-            model=config.RAG_CHAT_MODEL,
+            model=rerank_model,
             options=options,
             timeout=(config.CHAT_CONNECT_T, config.RERANK_READ_T),
             retries=retries,

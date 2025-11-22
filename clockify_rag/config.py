@@ -189,6 +189,10 @@ RAG_CHAT_MODEL = _get_env_value(
     default="qwen2.5:32b",
     legacy_keys=("GEN_MODEL", "CHAT_MODEL"),
 )
+RERANK_MODEL = _get_env_value(
+    "RERANK_MODEL",
+    default="",
+)
 RAG_CHAT_FALLBACK_MODEL = _get_env_value(
     "RAG_CHAT_FALLBACK_MODEL",
     default="gpt-oss:20b",
