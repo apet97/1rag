@@ -15,37 +15,35 @@ _QUERY_CACHE = None
 
 
 class RateLimiter:
-    """Rate limiter DISABLED for internal deployment (no-op for backward compatibility).
-
-    OPTIMIZATION: For internal use, rate limiting adds unnecessary overhead (~5-10ms per query).
-    This class is kept for API compatibility but all methods return permissive values.
-    """
+    """Simple thread-safe sliding-window rate limiter."""
 
     def __init__(self, max_requests=10, window_seconds=60):
-        """Initialize rate limiter (no-op for internal deployment).
-
-        Args:
-            max_requests: Ignored (kept for API compatibility)
-            window_seconds: Ignored (kept for API compatibility)
-        """
-        # No-op initialization - no state tracking for internal deployment
-        pass
+        """Initialize rate limiter."""
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._timestamps = deque()
+        self._lock = threading.RLock()
 
     def allow_request(self) -> bool:
-        """Always allow requests for internal deployment.
-
-        Returns:
-            Always True (no rate limiting for internal use)
-        """
-        return True  # Always allow for internal deployment
+        """Return True if request is allowed under the window."""
+        now = time.monotonic()
+        with self._lock:
+            window_start = now - self.window_seconds
+            while self._timestamps and self._timestamps[0] < window_start:
+                self._timestamps.popleft()
+            if len(self._timestamps) >= self.max_requests:
+                return False
+            self._timestamps.append(now)
+            return True
 
     def wait_time(self) -> float:
-        """Always return 0 for internal deployment.
-
-        Returns:
-            Always 0.0 (no waiting required)
-        """
-        return 0.0  # Never wait for internal deployment
+        """Return seconds until the next request is allowed (0 if available)."""
+        now = time.monotonic()
+        with self._lock:
+            if len(self._timestamps) < self.max_requests:
+                return 0.0
+            earliest = self._timestamps[0]
+            return max(0.0, (earliest + self.window_seconds) - now)
 
 
 # Global rate limiter (10 queries per minute by default)

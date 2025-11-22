@@ -14,7 +14,7 @@ import os
 
 import httpx
 
-from .config import RAG_OLLAMA_URL, LLM_MODEL, OLLAMA_TIMEOUT
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +85,19 @@ def get_llm_client(temperature: float = 0.0) -> ChatOllama:
         - If Ollama unreachable at startup, uses primary anyway (assumes VPN will reconnect)
         - All calls timeout after OLLAMA_TIMEOUT seconds (default 120s, configurable)
     """
+    model_name = config.get_llm_model()
     logger.debug(
-        f"Creating ChatOllama client: model={LLM_MODEL}, "
-        f"base_url={RAG_OLLAMA_URL}, timeout={OLLAMA_TIMEOUT}s, streaming=False"
+        f"Creating ChatOllama client: model={model_name}, "
+        f"base_url={config.RAG_OLLAMA_URL}, timeout={config.OLLAMA_TIMEOUT}s, streaming=False"
     )
 
     # Use httpx.Client with explicit timeout for version-robust timeout handling
     # Some langchain versions don't accept timeout= kwarg directly on ChatOllama
-    http_client = httpx.Client(timeout=OLLAMA_TIMEOUT)
+    http_client = httpx.Client(timeout=config.OLLAMA_TIMEOUT)
 
     return ChatOllama(
-        base_url=RAG_OLLAMA_URL,
-        model=LLM_MODEL,
+        base_url=config.RAG_OLLAMA_URL,
+        model=model_name,
         temperature=temperature,
         # VPN safety: never stream over flaky corporate networks
         # Non-streaming ensures predictable request completion time

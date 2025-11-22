@@ -421,7 +421,9 @@ def create_app() -> FastAPI:
     # ========================================================================
 
     @app.post("/v1/ingest", response_model=IngestResponse)
-    async def trigger_ingest(request: IngestRequest, background_tasks: BackgroundTasks) -> IngestResponse:
+    async def trigger_ingest(
+        request: IngestRequest, raw_request: Request, background_tasks: BackgroundTasks
+    ) -> IngestResponse:
         """Trigger index build/rebuild.
 
         Starts a background task to build the index from the knowledge base.
@@ -436,7 +438,7 @@ def create_app() -> FastAPI:
         Note:
             Build happens asynchronously. Check /health to verify completion.
         """
-        _require_api_key(request)
+        _require_api_key(raw_request)
         input_file, exists, candidates = resolve_corpus_path(request.input_file)
         if not exists:
             raise HTTPException(status_code=404, detail=f"Input file not found. Looked for: {', '.join(candidates)}")

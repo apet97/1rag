@@ -319,27 +319,38 @@ _LLM_MODEL_CACHE: Optional[str] = None
 
 
 def get_llm_model() -> str:
-    """Get the selected LLM model with lazy caching.
+    """Get the selected LLM model with lazy caching and safe offline fallback.
 
-    On first call, checks remote Ollama for available models and selects
-    primary or fallback. Subsequent calls return the cached value.
-
-    This avoids network calls at module import time, which is critical for
-    fast startup and avoiding hangs when VPN is down.
-
-    Returns:
-        Selected model name (primary or fallback)
+    Avoids network calls on import; only probes /api/tags when explicitly requested
+    and when not running in mock/CI/test modes.
     """
     global _LLM_MODEL_CACHE
-    if _LLM_MODEL_CACHE is None:
-        _LLM_MODEL_CACHE = _select_best_model(RAG_CHAT_MODEL, RAG_CHAT_FALLBACK_MODEL, RAG_OLLAMA_URL, timeout=5.0)
+
+    if _LLM_MODEL_CACHE is not None:
+        return _LLM_MODEL_CACHE
+
+    client_mode = (get_llm_client_mode("") or "").lower()
+    if client_mode in {"mock", "ci", "test"}:
+        _LLM_MODEL_CACHE = RAG_CHAT_MODEL
+        return _LLM_MODEL_CACHE
+
+    try:
+        _LLM_MODEL_CACHE = _select_best_model(
+            RAG_CHAT_MODEL,
+            RAG_CHAT_FALLBACK_MODEL,
+            RAG_OLLAMA_URL,
+            timeout=5.0,
+        )
+    except Exception as exc:
+        _logger.warning(f"LLM model selection fallback to primary due to error: {exc}")
+        _LLM_MODEL_CACHE = RAG_CHAT_MODEL
+
     return _LLM_MODEL_CACHE
 
 
-# Initialize LLM_MODEL lazily (only runs on first access to get_llm_model())
-# For backward compatibility, we still provide LLM_MODEL at module level,
-# but it now calls the lazy function
-LLM_MODEL = get_llm_model()
+# Initialize with primary to avoid network probe at import;
+# callers that need remote model discovery should call get_llm_model().
+LLM_MODEL = RAG_CHAT_MODEL
 
 # Backwards-compatible aliases (legacy code/tests expect these names)
 OLLAMA_URL = RAG_OLLAMA_URL

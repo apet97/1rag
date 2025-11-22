@@ -301,15 +301,33 @@ def ingest(
         console.print(f"❌ Input file not found. Looked for: {', '.join(candidates)}")
         raise typer.Exit(1)
 
-    console.print(f"📥 Ingesting: {input_file}")
-    console.print(f"📤 Output directory: {output_dir}")
+    input_file_abs = os.path.abspath(input_file)
+    output_dir_abs = os.path.abspath(output_dir)
+
+    console.print(f"📥 Ingesting: {input_file_abs}")
+    console.print(f"📤 Output directory: {output_dir_abs}")
 
     try:
-        build(input_file, retries=2)
+        orig_cwd = os.getcwd()
+        if output_dir_abs != orig_cwd:
+            os.makedirs(output_dir_abs, exist_ok=True)
+        try:
+            os.chdir(output_dir_abs)
+            build(input_file_abs, retries=2)
+        finally:
+            os.chdir(orig_cwd)
+
         console.print("✅ Index built successfully!")
 
         # Verify
-        idx_info = get_index_info()
+        verify_cwd = output_dir_abs
+        if verify_cwd != orig_cwd:
+            os.chdir(verify_cwd)
+        try:
+            idx_info = get_index_info()
+        finally:
+            if verify_cwd != orig_cwd:
+                os.chdir(orig_cwd)
         if idx_info["index_ready"]:
             console.print("✅ All artifacts verified")
         else:
