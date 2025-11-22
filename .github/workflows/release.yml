@@ -15,6 +15,9 @@ jobs:
     name: Build and Push Docker Image
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
     env:
       DOCKERHUB_USER: ${{ secrets.DOCKER_USERNAME }}
       DOCKERHUB_PASS: ${{ secrets.DOCKER_PASSWORD }}
