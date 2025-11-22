@@ -11,7 +11,6 @@ Provides REST API endpoints:
 import asyncio
 import json
 import logging
-import os
 import platform
 import threading
 import time

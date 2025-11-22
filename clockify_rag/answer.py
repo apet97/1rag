@@ -333,10 +333,12 @@ def generate_llm_answer(
 
     # Extract packed chunks if all data is provided (new code path)
     packed_chunks = None
+    structured_prompt = False
     if all_chunks is not None and packed_ids is not None:
         # Build list of chunk dicts for the packed IDs
         chunk_id_to_chunk = {c["id"]: c for c in all_chunks}
         packed_chunks = [chunk_id_to_chunk[cid] for cid in packed_ids if cid in chunk_id_to_chunk]
+        structured_prompt = True
 
     # Call LLM with new or legacy prompts
     raw_response = ask_llm(
@@ -374,11 +376,8 @@ def generate_llm_answer(
             if scores_dict is not None and selected_indices is not None:
                 confidence = compute_confidence_from_scores(scores_dict, selected_indices)
     else:
-        # Legacy prompts: plain text output
+        # Legacy prompts: plain text output (keep confidence unset)
         answer = raw_response
-        # Compute confidence from retrieval scores (legacy method)
-        if scores_dict is not None and selected_indices is not None:
-            confidence = compute_confidence_from_scores(scores_dict, selected_indices)
 
     client_mode = (get_llm_client_mode("") or "").lower()
 
@@ -389,7 +388,7 @@ def generate_llm_answer(
             if synthesized:
                 answer = f"{answer}\n\n[{synthesized}]"
         if client_mode == "mock":
-            if confidence is None:
+            if confidence is None and structured_prompt:
                 confidence = 100
             return answer, timing, confidence, reasoning, sources_used
         has_citations = bool(extract_citations(answer))
@@ -416,7 +415,7 @@ def generate_llm_answer(
                 else:
                     logger.warning(f"Answer contains invalid citations: {invalid_cites}")
 
-    if client_mode == "mock" and confidence is None:
+    if client_mode == "mock" and structured_prompt and confidence is None:
         confidence = 100
 
     return answer, timing, confidence, reasoning, sources_used

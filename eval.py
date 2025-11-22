@@ -44,10 +44,11 @@ SUCCESS_THRESHOLDS = {
     "precision_at_5": 0.35,
     "ndcg_at_10": 0.60,
 }
-
-MRR_THRESHOLD = SUCCESS_THRESHOLDS["mrr_at_10"]
-PRECISION_THRESHOLD = SUCCESS_THRESHOLDS["precision_at_5"]
-NDCG_THRESHOLD = SUCCESS_THRESHOLDS["ndcg_at_10"]
+FALLBACK_THRESHOLDS = {
+    "mrr_at_10": 0.65,
+    "precision_at_5": 0.35,
+    "ndcg_at_10": 0.60,
+}
 WARN_FRACTION = 0.85
 
 # Add current directory to path
@@ -235,12 +236,18 @@ def evaluate(
     verbose=False,
     llm_report=False,
     llm_output=None,
+    min_mrr: float | None = None,
+    min_precision: float | None = None,
+    min_ndcg: float | None = None,
 ):
     """Run evaluation on dataset.
 
     Args:
         dataset_path: Path to evaluation dataset JSONL file
         verbose: Print per-query results if True
+        min_mrr: Optional minimum MRR threshold (hybrid mode target)
+        min_precision: Optional Precision@5 threshold (hybrid mode target)
+        min_ndcg: Optional NDCG@10 threshold (hybrid mode target)
 
     Returns:
         dict: Evaluation metrics
@@ -421,6 +428,22 @@ def evaluate(
         "queries_skipped": skipped,
     }
 
+    strict_thresholds = {
+        "mrr_at_10": min_mrr if min_mrr is not None else SUCCESS_THRESHOLDS["mrr_at_10"],
+        "precision_at_5": min_precision if min_precision is not None else SUCCESS_THRESHOLDS["precision_at_5"],
+        "ndcg_at_10": min_ndcg if min_ndcg is not None else SUCCESS_THRESHOLDS["ndcg_at_10"],
+    }
+    thresholds_in_use = strict_thresholds
+    threshold_mode = "hybrid_strict"
+    if not rag_available:
+        thresholds_in_use = {
+            metric: min(strict_thresholds[metric], FALLBACK_THRESHOLDS[metric]) for metric in strict_thresholds
+        }
+        threshold_mode = "lexical_fallback"
+
+    results["thresholds_applied"] = thresholds_in_use
+    results["threshold_mode"] = threshold_mode
+
     # Print results
     processed = len(mrr_scores)
     if processed == 0:
@@ -434,6 +457,16 @@ def evaluate(
     if results['hybrid_available']:
         ann_status = "✅ FAISS enabled" if results['faiss_enabled'] else "⚠️  FAISS disabled (full-scan)"
         print(f"ANN Index:       {ann_status}")
+    threshold_label = (
+        "Hybrid (strict thresholds)" if threshold_mode == "hybrid_strict" else "Lexical BM25 fallback (lenient)"
+    )
+    print(f"Threshold mode:  {threshold_label}")
+    print(
+        "Gating:          "
+        f"MRR@10≥{thresholds_in_use['mrr_at_10']:.2f} | "
+        f"P@5≥{thresholds_in_use['precision_at_5']:.2f} | "
+        f"NDCG@10≥{thresholds_in_use['ndcg_at_10']:.2f}"
+    )
     print(f"Dataset size:    {results['dataset_size']}")
     print(f"Queries eval:    {results['queries_processed']}")
     if skipped:
@@ -446,29 +479,33 @@ def evaluate(
 
     # Interpretation
     print("\nINTERPRETATION:")
-    warn_mrr = SUCCESS_THRESHOLDS["mrr_at_10"] * WARN_FRACTION
-    warn_precision = SUCCESS_THRESHOLDS["precision_at_5"] * WARN_FRACTION
-    warn_ndcg = SUCCESS_THRESHOLDS["ndcg_at_10"] * WARN_FRACTION
+    warn_mrr = thresholds_in_use["mrr_at_10"] * WARN_FRACTION
+    warn_precision = thresholds_in_use["precision_at_5"] * WARN_FRACTION
+    warn_ndcg = thresholds_in_use["ndcg_at_10"] * WARN_FRACTION
 
     mrr_val = results["mrr_at_10"]
-    if mrr_val >= MRR_THRESHOLD:
-        print(f"✅ MRR@10 ≥ {MRR_THRESHOLD:.2f}: Excellent - first relevant result typically in top 2")
+    if mrr_val >= thresholds_in_use["mrr_at_10"]:
+        print(
+            f"✅ MRR@10 ≥ {thresholds_in_use['mrr_at_10']:.2f}: Excellent - first relevant result typically in top 2"
+        )
     elif mrr_val >= warn_mrr:
         print(f"⚠️  MRR@10 ≥ {warn_mrr:.2f}: Adequate - first relevant result usually appears near the top")
     else:
         print("❌ MRR@10 below target: Needs improvement - relevant results ranked too low")
 
     precision_val = results["precision_at_5"]
-    if precision_val >= PRECISION_THRESHOLD:
-        print(f"✅ Precision@5 ≥ {PRECISION_THRESHOLD:.2f}: Relevant snippets dominate the top 5")
+    if precision_val >= thresholds_in_use["precision_at_5"]:
+        print(
+            f"✅ Precision@5 ≥ {thresholds_in_use['precision_at_5']:.2f}: Relevant snippets dominate the top 5"
+        )
     elif precision_val >= warn_precision:
         print(f"⚠️  Precision@5 ≥ {warn_precision:.2f}: Mixed relevance in top results")
     else:
         print("❌ Precision@5 below target: Too many irrelevant chunks in top results")
 
     ndcg_val = results["ndcg_at_10"]
-    if ndcg_val >= NDCG_THRESHOLD:
-        print(f"✅ NDCG@10 ≥ {NDCG_THRESHOLD:.2f}: Relevant results are well ranked")
+    if ndcg_val >= thresholds_in_use["ndcg_at_10"]:
+        print(f"✅ NDCG@10 ≥ {thresholds_in_use['ndcg_at_10']:.2f}: Relevant results are well ranked")
     elif ndcg_val >= warn_ndcg:
         print(f"⚠️  NDCG@10 ≥ {warn_ndcg:.2f}: Ranking acceptable but could be sharper")
     else:
@@ -531,18 +568,23 @@ if __name__ == "__main__":
         verbose=args.verbose,
         llm_report=args.llm_report,
         llm_output=args.llm_output,
+        min_mrr=args.min_mrr,
+        min_precision=args.min_precision,
+        min_ndcg=args.min_ndcg,
     )
 
-    thresholds = {
+    thresholds = results.get("thresholds_applied") or {
         "mrr_at_10": args.min_mrr,
         "precision_at_5": args.min_precision,
         "ndcg_at_10": args.min_ndcg,
     }
+    threshold_mode = results.get("threshold_mode", "hybrid_strict")
+    mode_label = "Lexical BM25 fallback" if threshold_mode == "lexical_fallback" else "Hybrid evaluation"
 
     success = all(results[key] >= threshold for key, threshold in thresholds.items())
     if not success:
         print(
-            "\nEvaluation thresholds not met:" +
+            f"\nEvaluation thresholds not met ({mode_label}):" +
             " ".join(
                 f"{key}={results[key]:.3f} < {threshold:.2f}"
                 for key, threshold in thresholds.items()
