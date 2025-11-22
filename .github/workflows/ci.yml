@@ -110,11 +110,20 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Compute poetry.lock hash
+        id: lockhash
+        run: |
+          if [ -f poetry.lock ]; then
+            echo "lock_hash=$(sha256sum poetry.lock | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          else
+            echo "lock_hash=no-lock" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Cache Poetry packages
         uses: actions/cache@v3
         with:
           path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-${{ hashFiles('poetry.lock') }}
+          key: ${{ runner.os }}-poetry-${{ steps.lockhash.outputs.lock_hash }}
           restore-keys: |
             ${{ runner.os }}-poetry-
 
