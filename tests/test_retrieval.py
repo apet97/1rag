@@ -293,3 +293,77 @@ def test_retrieve_faiss_skips_full_dot(monkeypatch, sample_chunks, sample_embedd
     assert tracker.dot_calls == 0, "FAISS path should not compute full dot product"
     assert fake_index.search_calls == 1, "FAISS index should be used"
     assert isinstance(scores["dense"], DenseScoreStore), "Dense scores should use store in FAISS mode"
+
+
+def test_bm25_pruning_matches_full():
+    """BM25 pruning should preserve the top document selection."""
+
+    from clockify_rag.indexing import build_bm25, bm25_scores
+
+    docs = [
+        "time tracking basics guide",
+        "pricing plans cost tiers",
+        "advanced timer manual entry",
+    ]
+    chunks = [{"text": d} for d in docs]
+    bm = build_bm25(chunks)
+
+    query = "pricing plan tiers"
+
+    full_scores = bm25_scores(query, bm, top_k=None)
+    pruned_scores = bm25_scores(query, bm, top_k=1)
+
+    full_top = int(np.argmax(full_scores))
+    pruned_top = int(np.argmax(pruned_scores))
+
+    assert full_top == pruned_top, "Pruned BM25 should keep the same top document as full scoring"
+
+
+def test_intent_toggle_controls_boost(monkeypatch):
+    """Intent boosting should only apply when intent classification is enabled."""
+
+    import clockify_rag.config as config
+    import clockify_rag.retrieval as retrieval
+    from clockify_rag.intent_classification import IntentConfig
+
+    original_flag = config.USE_INTENT_CLASSIFICATION
+    try:
+        chunks = [
+            {"id": "a", "title": "Generic", "section": "", "text": "generic content", "metadata": {}},
+            {"id": "b", "title": "Pricing", "section": "", "text": "pricing details", "metadata": {}},
+        ]
+
+        # Deterministic embeddings and query vector
+        vecs_n = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        query_vec = np.array([1.0, 0.0], dtype=np.float32)
+
+        # Base BM25 scores (will be overridden by intent boost)
+        monkeypatch.setattr(retrieval, "bm25_scores", lambda *_args, **_kwargs: np.array([0.0, 0.0], dtype=np.float32))
+        monkeypatch.setattr(retrieval, "embed_query", lambda *_args, **_kwargs: query_vec)
+
+        def fake_classify_intent(_question):
+            return "pricing", IntentConfig("pricing", alpha_hybrid=0.9, boost_factor=2.0, description=""), 0.9
+
+        def fake_adjust_scores_by_intent(chunks_arg, scores_dict, intent_config):
+            # Boost pricing chunk (index 1) heavily in BM25 to swing the ranking when enabled
+            boosted = scores_dict["bm25"].copy()
+            boosted[1] = 10.0
+            scores_dict["bm25"] = boosted
+            return scores_dict
+
+        monkeypatch.setattr(retrieval, "classify_intent", fake_classify_intent)
+        monkeypatch.setattr(retrieval, "adjust_scores_by_intent", fake_adjust_scores_by_intent)
+
+        bm_dummy = {"idf": {}, "avgdl": 0, "doc_lens": [1, 1], "doc_tfs": [{}, {}]}
+
+        # Intent enabled: pricing chunk should be ranked first
+        config.USE_INTENT_CLASSIFICATION = True
+        selected_intent_on, _ = retrieval.retrieve("pricing question", chunks, vecs_n, bm_dummy, top_k=2)
+        assert selected_intent_on[0] == 1  # pricing chunk wins after boost
+
+        # Intent disabled: dense similarity favors first chunk
+        config.USE_INTENT_CLASSIFICATION = False
+        selected_intent_off, _ = retrieval.retrieve("pricing question", chunks, vecs_n, bm_dummy, top_k=2)
+        assert selected_intent_off[0] == 0  # falls back to base ranking
+    finally:
+        config.USE_INTENT_CLASSIFICATION = original_flag
