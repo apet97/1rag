@@ -288,7 +288,9 @@ def test_retrieve_faiss_skips_full_dot(monkeypatch, sample_chunks, sample_embedd
 
     monkeypatch.setattr(retrieval_module, "embed_query", lambda question, retries=0: query_vec, raising=False)
 
-    selected, scores = retrieve("How do I track time?", sample_chunks, tracker, sample_bm25, top_k=2, faiss_index_path=None)
+    selected, scores = retrieve(
+        "How do I track time?", sample_chunks, tracker, sample_bm25, top_k=2, faiss_index_path=None
+    )
 
     assert tracker.dot_calls <= 1, "FAISS path should avoid full dot products"
     assert fake_index.search_calls == 1, "FAISS index should be used"

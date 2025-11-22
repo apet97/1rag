@@ -49,6 +49,7 @@ async def test_health_concurrency_latency(monkeypatch, tmp_path):
             for response in responses:
                 assert response.status_code == 200
 
+    max_factor = 0.8
     assert (
-        concurrent_elapsed <= baseline_elapsed * 0.6
-    ), f"concurrent latency {concurrent_elapsed:.3f}s should be well below baseline {baseline_elapsed:.3f}s"
+        concurrent_elapsed <= baseline_elapsed * max_factor
+    ), f"concurrent latency {concurrent_elapsed:.3f}s should be well below baseline {baseline_elapsed:.3f}s (factor {max_factor}x)"

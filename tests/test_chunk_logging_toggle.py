@@ -9,6 +9,7 @@ import json
 import os
 import tempfile
 import pytest
+import clockify_rag.config as config_module
 
 
 def test_chunk_logging_disabled_by_default(monkeypatch):
@@ -17,9 +18,10 @@ def test_chunk_logging_disabled_by_default(monkeypatch):
         log_file = f.name
 
     try:
-        # Set log file BEFORE reloading config
+        # Set log file BEFORE reloading config and force logging on for test
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
         monkeypatch.setenv("RAG_LOG_ENABLED", "1")
+        monkeypatch.setattr(config_module, "QUERY_LOG_ENABLED", True, raising=False)
 
         # Reload config to pick up env var
         import importlib
@@ -80,6 +82,7 @@ def test_chunk_logging_enabled_when_flag_set(monkeypatch):
         monkeypatch.setenv("RAG_LOG_INCLUDE_CHUNKS", "1")
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
         monkeypatch.setenv("RAG_LOG_ENABLED", "1")
+        monkeypatch.setattr(config_module, "QUERY_LOG_ENABLED", True, raising=False)
 
         # Reload config to pick up env vars
         import importlib
@@ -142,6 +145,7 @@ def test_chunk_logging_independent_of_answer_logging(monkeypatch):
         monkeypatch.setenv("RAG_LOG_INCLUDE_CHUNKS", "1")
         monkeypatch.setenv("RAG_LOG_FILE", log_file)
         monkeypatch.setenv("RAG_LOG_ENABLED", "1")
+        monkeypatch.setattr(config_module, "QUERY_LOG_ENABLED", True, raising=False)
 
         # Reload config to pick up env vars
         import importlib
