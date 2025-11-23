@@ -6,6 +6,19 @@ RAG service that answers Clockify/CAKE support questions with citations. Default
 - Copy/paste commands: `RUN_ON_WORK_MAC.md` (CLI + API flows, zero env vars).
 - Defaults already point to the corporate Ollama + models; env vars still override if needed.
 
+## CLI: clone → ingest → query (single block)
+```bash
+git clone https://github.com/apet97/1rag.git
+cd 1rag
+conda create -n clockify-rag python=3.12 -y          # or python3.12 -m venv .venv
+conda activate clockify-rag                           # or source .venv/bin/activate
+conda install -c conda-forge faiss-cpu=1.8.0 -y       # optional ANN; skip for BM25/flat
+pip install --upgrade pip
+pip install -e ".[dev]"
+python -m clockify_rag.cli_modern ingest --force      # builds from clockify_help_corpus.en.md
+python -m clockify_rag.cli_modern query "How do I add time for others?"
+```
+
 ## Setup on macOS M1/M2/M3 (with FAISS)
 ```bash
 # 1) Create env (conda recommended for FAISS on Apple Silicon)
@@ -51,11 +64,11 @@ curl -X POST http://127.0.0.1:8000/v1/query \
 flowchart TD
     A[clockify_help_corpus.en.md] --> B[Chunker]
     A2[knowledge_full.md fallback] --> B
-    B --> C[Embeddings - Ollama nomic-embed-text (768d)]
-    C --> D[Indexes - BM25 + FAISS IVFFlat / IndexFlatIP]
-    D --> E[Retriever - MMR + intent-aware hybrid]
-    E --> F[LLM via Ollama qwen2.5:32b]
-    F --> G[Answer composer - citations + contract validation]
+    B --> C[Embeddings nomic-embed-text 768d]
+    C --> D[Indexes BM25 + FAISS IVFFlat or FlatIP]
+    D --> E[Retriever MMR + intent-aware hybrid]
+    E --> F[LLM qwen2.5:32b via Ollama]
+    F --> G[Answer composer citations + contract]
 ```
 
 ## Commands you’ll use
@@ -73,19 +86,6 @@ flowchart TD
 - Corpus resolution: prefers `clockify_help_corpus.en.md`, falls back to `knowledge_full.md`
 - Timeouts/retries: connect 3s, read 120s, retries 2 (VPN-friendly)
 - Env vars and `.env` still override; `validate_and_set_config()` refreshes derived dims/models.
-
-## CLI from scratch (clone → query)
-```bash
-git clone https://github.com/apet97/1rag.git
-cd 1rag
-conda create -n clockify-rag python=3.12 -y          # or python3.12 -m venv .venv
-conda activate clockify-rag                           # or source .venv/bin/activate
-conda install -c conda-forge faiss-cpu=1.8.0 -y       # optional ANN; skip for BM25/flat
-pip install --upgrade pip
-pip install -e ".[dev]"
-python -m clockify_rag.cli_modern ingest --force      # builds from clockify_help_corpus.en.md
-python -m clockify_rag.cli_modern query "How do I add time for others?"
-```
 
 ## Knowledge base & artifacts
 - Ingest reads `clockify_help_corpus.en.md` front matter; resolves via `resolve_corpus_path`.
