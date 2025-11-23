@@ -12,6 +12,8 @@ pip install --upgrade pip
 pip install -e ".[dev]"
 python -m clockify_rag.cli_modern ingest --force
 python -m clockify_rag.cli_modern query "How do I add time for others?"
+# Interactive chat (talk to it like a support agent)
+python -m clockify_rag.cli_modern chat
 ```
 
 FAISS (optional ANN speedup on macOS arm64): install via conda, not pip:
