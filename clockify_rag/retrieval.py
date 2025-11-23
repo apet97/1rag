@@ -989,7 +989,6 @@ def pack_snippets(
 
         # Render header and compute available budget for this article (including separator if needed)
         article_header = f"### Article: {title}\nURL: {url}\n\n"
-        header_tokens = count_tokens(article_header)
         sep_cost = sep_tokens if out_blocks else 0
         available_tokens = effective_budget - used_tokens - sep_cost
 
