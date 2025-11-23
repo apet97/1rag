@@ -87,7 +87,7 @@ Both targets eventually call `ragctl ingest`, which enforces a build lock (`.bui
 | API returns HTTP 500 | Check `logs/` or stderr for stack traces, run `ragctl doctor`, and rerun `scripts/smoke_rag.py` with `--debug`. |
 | Query log missing / not updating | `--no-log` flag used or `RAG_LOG_INCLUDE_*` set to 0 | Confirm CLI flags and `.env`.  Log path defaults to `rag_queries.jsonl`. |
 
-When in doubt, enable debug logging temporarily (`python3 clockify_support_cli_final.py --log DEBUG chat`) to inspect retrieval scores and chunk IDs.
+When in doubt, enable debug logging temporarily (`python -m clockify_rag.cli_modern chat --log DEBUG`) to inspect retrieval scores and chunk IDs.
 
 ## Logging & Metrics
 

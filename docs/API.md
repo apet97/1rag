@@ -104,4 +104,4 @@ Lightweight JSON metrics dump – useful until an external scraper is attached.
 For richer insights, consume the structured logs (`rag.query.start`, `rag.query.complete`, `rag.query.failure`) written to `$RAG_LOG_FILE`.
 
 ## CLI parity
-`ragctl query --json` and `clockify_support_cli_final.py ask --json` return the same payload as `/v1/query`, so scripts can switch between the CLI and HTTP API without adapting downstream tooling.
+`ragctl query --json` (or `python -m clockify_rag.cli_modern query --json`) returns the same payload as `/v1/query`, so scripts can switch between the CLI and HTTP API without adapting downstream tooling.

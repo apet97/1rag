@@ -68,13 +68,13 @@ pytest -v -s tests/test_chunker.py
 ### Development Workflow
 ```bash
 # Quick syntax check
-python -m py_compile clockify_support_cli_final.py
+python -m py_compile clockify_rag/cli_modern.py
 
 # Run a quick smoke test
 python -m pytest tests/test_chunker.py -v
 
 # Run self-test command (built into the CLI)
-python clockify_support_cli_final.py --selftest
+python -m clockify_rag.cli_modern doctor --json
 ```
 
 ### Full Test Suite

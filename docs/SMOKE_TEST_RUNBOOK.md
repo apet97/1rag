@@ -207,7 +207,7 @@ pip install --upgrade langchain-ollama
 # Build index from knowledge base
 make build
 # Or
-python clockify_support_cli_final.py build clockify_help_corpus.en.md
+python -m clockify_rag.cli_modern ingest --force
 ```
 
 ### Issue: Test Failures After Update

@@ -162,10 +162,10 @@ cp .env.example .env
 # Edit .env with your settings
 
 # 5. Build knowledge base
-python clockify_support_cli_final.py build clockify_help_corpus.en.md  # falls back to knowledge_full.md
+python -m clockify_rag.cli_modern ingest --force  # falls back to knowledge_full.md
 
 # 6. Start service
-python clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 ```
 
 ### Docker Deployment
@@ -193,7 +193,7 @@ Type=simple
 User=rag-user
 WorkingDirectory=/path/to/rag
 Environment=OLLAMA_URL=http://127.0.0.1:11434
-ExecStart=/path/to/venv/bin/python clockify_support_cli_final.py chat
+ExecStart=/path/to/venv/bin/python -m clockify_rag.cli_modern chat
 Restart=always
 
 [Install]
@@ -269,7 +269,7 @@ python -c "from clockify_rag.error_handlers import print_system_health; print_sy
 python -m clockify_rag.sanity_check
 
 # Run self-tests
-python clockify_support_cli_final.py --selftest
+python -m clockify_rag.cli_modern doctor --json
 ```
 
 ### Key Metrics to Monitor
@@ -306,7 +306,7 @@ python -c "import clockify_rag.config as c; print(f'URL: {c.OLLAMA_URL}, Model: 
 python -c "from clockify_rag.error_handlers import check_endpoint_health; print(check_endpoint_health())"
 
 # Run diagnostics
-python clockify_support_cli_final.py chat --debug
+python -m clockify_rag.cli_modern chat --log DEBUG
 ```
 
 ## Backup and Recovery

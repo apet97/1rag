@@ -35,7 +35,7 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
    ```bash
    ragctl ingest --input clockify_help_corpus.en.md
    # or the legacy wrapper:
-   python3 clockify_support_cli_final.py build clockify_help_corpus.en.md
+   python -m clockify_rag.cli_modern ingest --force
    ```
 
 4. **Run a smoke test**

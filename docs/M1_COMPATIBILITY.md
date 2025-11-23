@@ -93,7 +93,7 @@ pip install urllib3==2.2.3
    # The application automatically falls back to full-scan cosine similarity
    # if FAISS is not available or fails to load
    export USE_ANN=none
-   python3 clockify_support_cli_final.py chat
+   python -m clockify_rag.cli_modern chat
    ```
 
 3. **Build FAISS from source** (advanced):
@@ -275,7 +275,7 @@ make clean  # or: rm -f chunks.jsonl vecs_n.npy meta.jsonl bm25.json faiss.index
 
 # Rebuild with ARM-native Python
 source rag_env/bin/activate  # or conda activate
-python3 clockify_support_cli_final.py build clockify_help_corpus.en.md  # falls back to knowledge_full.md
+python -m clockify_rag.cli_modern ingest --force  # falls back to knowledge_full.md
 ```
 
 ## Testing on M1
@@ -288,7 +288,7 @@ bash scripts/smoke.sh
 bash scripts/acceptance_test.sh
 
 # Manual test
-python3 clockify_support_cli_final.py chat --debug
+python -m clockify_rag.cli_modern chat --log DEBUG
 > How do I track time in Clockify?
 # Should see: "macOS arm64 detected: using IndexFlatIP"
 ```
@@ -320,7 +320,7 @@ ping ollama-server.vpn  # or use VPN IP
 
 # Configure endpoint
 export OLLAMA_URL="http://10.x.x.x:11434"
-python3 clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 ```
 
 **Solution 3: VPN Requires HTTP Proxy**
@@ -329,7 +329,7 @@ python3 clockify_support_cli_final.py chat
 export ALLOW_PROXIES=1
 export http_proxy="http://proxy.company.com:8080"
 export OLLAMA_URL="http://127.0.0.1:11434"
-python3 clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 ```
 
 **Solution 4: Bind Ollama to Different Port**
@@ -353,18 +353,18 @@ export OLLAMA_URL="http://127.0.0.1:11435"
 ```bash
 # 1. Test with VPN connected (corporate Ollama default)
 export OLLAMA_URL="http://10.127.0.192:11434"
-python3 clockify_support_cli_final.py chat --debug
+python -m clockify_rag.cli_modern chat --log DEBUG
 
 # 2. Test with local Ollama (offline/local dev)
 export OLLAMA_URL="http://127.0.0.1:11434"
 curl "$OLLAMA_URL/api/version"  # Verify connectivity first
-python3 clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 
 # 3. Test with VPN proxy (if required)
 export ALLOW_PROXIES=1
 export http_proxy="http://proxy:8080"
 export https_proxy="http://proxy:8080"
-python3 clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 ```
 
 **Note**: Defaults now target the corporate host `http://10.127.0.192:11434` on VPN. Use `http://127.0.0.1:11434` only when running a local Ollama instance.

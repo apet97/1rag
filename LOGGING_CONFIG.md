@@ -29,7 +29,7 @@ Specifies where query logs are written. Each line is a JSON object containing:
 **Example**:
 ```bash
 export RAG_LOG_FILE="/var/log/rag/queries.jsonl"
-python3 clockify_support_cli_final.py chat
+python -m clockify_rag.cli_modern chat
 ```
 
 ### RAG_NO_LOG
