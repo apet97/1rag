@@ -6,37 +6,30 @@ RAG service that answers Clockify/CAKE support questions with citations. Default
 - Copy/paste commands: `RUN_ON_WORK_MAC.md` (CLI + API flows, zero env vars).
 - Defaults already point to the corporate Ollama + models; env vars still override if needed.
 
-## Launch the CLI (VPN, zero env vars)
-1) Clone and enter the repo  
-   ```bash
-   git clone https://github.com/apet97/1rag.git
-   cd 1rag
-   ```
-2) Create/activate env (conda shown; venv also works)  
-   ```bash
-   conda create -n clockify-rag python=3.12 -y
-   conda activate clockify-rag
-   # optional ANN on macOS arm64
-   conda install -c conda-forge faiss-cpu=1.8.0 -y
-   ```
-3) Install deps  
-   ```bash
-   pip install --upgrade pip
-   pip install -e ".[dev]"
-   ```
-4) Build the index (uses `clockify_help_corpus.en.md`, falls back to `knowledge_full.md`)  
-   ```bash
-   python -m clockify_rag.cli_modern ingest --force
-   ```
-5) Ask a question  
-   ```bash
-   python -m clockify_rag.cli_modern query "How do I add time for others?"
-   ```
-6) Optional chat REPL  
-   ```bash
-   python -m clockify_rag.cli_modern chat
-   ```
-If you skip FAISS, the system falls back to BM25 + flat dense search automatically.
+## Launch the CLI (best path, VPN, zero env vars)
+```bash
+# 1) Clone and enter the repo
+git clone https://github.com/apet97/1rag.git
+cd 1rag
+
+# 2) Create and activate conda env (Python 3.12)
+conda create -n clockify-rag python=3.12 -y
+conda activate clockify-rag
+
+# 3) Install FAISS (recommended on Apple Silicon)
+conda install -c conda-forge faiss-cpu -y
+
+# 4) Install project deps
+pip install --upgrade pip
+pip install -e ".[dev]"
+
+# 5) Build the index (uses clockify_help_corpus.en.md; falls back to knowledge_full.md)
+python -m clockify_rag.cli_modern ingest --force
+
+# 6) Start interactive chat (talk to it like a support agent)
+python -m clockify_rag.cli_modern chat
+```
+If you skip FAISS, it still works (BM25 + flat dense), just slower on large corpora. Defaults already point to the internal Ollama host/model and corpus fallback chain—no env vars needed.
 
 ## Run the API (localhost)
 ```bash
