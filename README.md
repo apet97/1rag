@@ -58,6 +58,14 @@ flowchart TD
     F --> G[Answer composer + citations]
 ```
 
+**What this means (plain English)**
+- Start with the help docs (primary file; backup file if needed).
+- Split docs into small sections so they’re easy to search.
+- Turn each section into numeric “fingerprints” (embeddings) and also keep a keyword index.
+- When you ask a question, search both indexes, blend the best matches, and pick the top snippets.
+- Send those snippets to the AI (Qwen 2.5 on our Ollama server) to draft the answer.
+- Return the answer with citations showing exactly which snippets were used.
+
 ## Commands you’ll use
 - Build index: `python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md --force`
 - CLI query: `python -m clockify_rag.cli_modern query "How do I add time for others?"`
