@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import platform
+import pathlib
 import re
 import tempfile
 import time
@@ -21,7 +22,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CORPUS_FILES = ["clockify_help_corpus.en.md", "knowledge_full.md"]
+DEFAULT_CORPUS_FILES = ["knowledge_base", "clockify_help_corpus.en.md", "knowledge_full.md"]
 
 
 def resolve_corpus_path(preferred: Optional[str] = None) -> tuple[str, bool, List[str]]:
@@ -364,6 +365,10 @@ def validate_and_set_config(
         config.FAISS_CANDIDATE_MULTIPLIER = faiss_multiplier
         logger.info(f"FAISS candidate multiplier: {config.FAISS_CANDIDATE_MULTIPLIER}")
 
+    # Recompute derived globals so downstream code sees consistent dims/models
+    if hasattr(config, "refresh_runtime_settings"):
+        config.refresh_runtime_settings()
+
 
 def validate_chunk_config():
     """Validate chunk parameters at startup."""
@@ -607,8 +612,24 @@ def approx_tokens(chars: int) -> int:
 
 
 def compute_sha256(filepath: str) -> str:
-    """Compute SHA256 hash of file."""
+    """Compute SHA256 hash of a file or directory (stable order)."""
     sha256 = hashlib.sha256()
+    path_obj = pathlib.Path(filepath)
+
+    if path_obj.is_dir():
+        # Hash relative paths + contents of all files to detect KB changes
+        files = sorted(p for p in path_obj.rglob("*") if p.is_file())
+        for file_path in files:
+            rel = file_path.relative_to(path_obj).as_posix()
+            sha256.update(rel.encode("utf-8"))
+            with open(file_path, "rb") as f:
+                while True:
+                    data = f.read(65536)
+                    if not data:
+                        break
+                    sha256.update(data)
+        return sha256.hexdigest()
+
     with open(filepath, "rb") as f:
         while True:
             data = f.read(65536)

@@ -8,8 +8,8 @@ This guide documents how to operate the Clockify RAG stack once it has been inst
 |------|---------|
 | Dependency health gate | `make deps-check` (pip check + pytest smoke) |
 | Verify workstation + config | `ragctl doctor --verbose` or `ragctl doctor --json` |
-| Build knowledge base | `make ingest` (alias for `ragctl ingest --input clockify_help_corpus.en.md`) |
-| Rebuild / refresh indexes | `make reindex` or `ragctl ingest --force --input clockify_help_corpus.en.md` |
+| Build knowledge base | `make ingest` (alias for `ragctl ingest --input knowledge_base`) |
+| Rebuild / refresh indexes | `make reindex` or `ragctl ingest --force --input knowledge_base` |
 | Smoke test end-to-end | `make smoke` *(defaults to the mock LLM client; see below)* |
 | Retrieval evaluation | `make eval-gate` *(MRR/NDCG thresholds using eval_datasets/clockify_v1.jsonl)* |
 | Run API locally | `uvicorn clockify_rag.api:app --host 0.0.0.0 --port 8000` |
@@ -38,7 +38,7 @@ This guide documents how to operate the Clockify RAG stack once it has been inst
 # Initial build (local embeddings for speed)
 make ingest
 
-# Force rebuild after editing clockify_help_corpus.en.md
+# Force rebuild after editing knowledge_base/ (or legacy corpus files)
 make reindex
 ```
 
@@ -72,7 +72,7 @@ Both targets eventually call `ragctl ingest`, which enforces a build lock (`.bui
 
 ### Rebuilding the Index After Content Changes
 
-1. Update `clockify_help_corpus.en.md` (or the directory passed to `ragctl ingest --input`).
+1. Update `knowledge_base/` (or the path passed to `ragctl ingest --input`; `clockify_help_corpus.en.md` still works as a fallback).
 2. Execute `make reindex` to delete stale artifacts, rebuild chunks/embeddings/FAISS + BM25, and regenerate metadata (`index.meta.json`).
 3. Run `make smoke` (mock) followed by `SMOKE_CLIENT=ollama make smoke` if the remote model is reachable.
 4. Redeploy or restart any running API servers to pick up the refreshed artifacts.

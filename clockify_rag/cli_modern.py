@@ -310,7 +310,7 @@ def ingest(
         None,
         "--input",
         "-i",
-        help="Input markdown file or directory (default: clockify_help_corpus.en.md, falls back to knowledge_full.md)",
+        help="Input markdown file or directory (default: knowledge_base/, falls back to clockify_help_corpus.en.md then knowledge_full.md)",
     ),
     output: Optional[str] = typer.Option(
         None, "--output", "-o", help="Output directory for index (default: current directory)"

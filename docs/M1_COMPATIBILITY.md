@@ -218,7 +218,7 @@ print(f"Processor: {platform.processor()}")
 
 ## Performance Benchmarks (M1 Pro, 16GB)
 
-### Build Phase (clockify_help_corpus.en.md → indexes)
+### Build Phase (knowledge_base/ → indexes)
 ```
 Chunking:         ~2 seconds
 Embedding:        ~30 seconds (384 chunks, local SentenceTransformer)

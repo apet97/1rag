@@ -71,7 +71,7 @@ Each `answer_once` call logs `rag.query.start`/`rag.query.complete` with questio
 
 1. Put the service in maintenance (optional) and stop the API process.
 2. `rm -f chunks.jsonl vecs_n.npy bm25.json index.meta.json`.
-3. `ragctl ingest --input clockify_help_corpus.en.md`.
+3. `ragctl ingest --input knowledge_base` (fallbacks: `clockify_help_corpus.en.md`, then `knowledge_full.md`).
 4. `make smoke` (mock), then `SMOKE_CLIENT=ollama make smoke SMOKE_ARGS="--question 'How do I track time?'"` against the production Ollama host.
 5. `make eval-gate` to verify retrieval metrics have not regressed.
 5. Restart the API (`uvicorn clockify_rag.api:app --port 8000`).

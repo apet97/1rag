@@ -151,6 +151,16 @@ def split_by_headings(body: str) -> list:
     return [p.strip() for p in parts if p.strip()]
 
 
+def _iter_markdown_sources(md_path: pathlib.Path):
+    """Yield (path, text) pairs from a file or directory of markdown."""
+    if md_path.is_dir():
+        files = sorted(p for p in md_path.rglob("*.md") if p.is_file())
+        for path in files:
+            yield path, path.read_text(encoding="utf-8", errors="ignore")
+    else:
+        yield md_path, md_path.read_text(encoding="utf-8", errors="ignore")
+
+
 def sliding_chunks(text: str, maxc: int = None, overlap: int = None) -> list:
     """Advanced overlapping chunks with multiple strategies and semantic awareness.
 
@@ -419,75 +429,75 @@ def build_chunks(md_path: str) -> list:
     Returns:
         List of chunk dictionaries with enhanced metadata
     """
-    raw = pathlib.Path(md_path).read_text(encoding="utf-8", errors="ignore")
+    path_obj = pathlib.Path(md_path)
     chunks = []
 
-    for art in parse_articles(raw):
-        meta = art.get("meta") or {}
-        doc_name = pathlib.Path(md_path).stem
-        article_id = str(meta.get("id") or doc_name).strip()
-        slug = re.sub(r"[^A-Za-z0-9_-]+", "-", article_id or doc_name).strip("-") or doc_name
-        title = norm_ws(meta.get("short_title") or art["title"])
-        source_url = meta.get("source_url") or art["url"]
+    for source_path, raw in _iter_markdown_sources(path_obj):
+        doc_name = source_path.stem
 
-        sects = split_by_headings(art["body"]) or [art["body"]]
+        for art in parse_articles(raw):
+            meta = dict(art.get("meta") or {})
+            article_id = str(meta.get("id") or meta.get("slug") or doc_name).strip()
+            slug = re.sub(r"[^A-Za-z0-9_-]+", "-", meta.get("slug") or article_id or doc_name).strip("-") or doc_name
+            meta.setdefault("slug", slug)
+            title = norm_ws(meta.get("short_title") or meta.get("title") or art["title"])
+            source_url = meta.get("source_url") or meta.get("url") or art.get("url")
 
-        for sect_idx, sect in enumerate(sects):
-            # Extract the section header/title from the content
-            head = sect.splitlines()[0] if sect else art["title"]
-            section_label = _clean_section_header(head)
+            sects = split_by_headings(art["body"]) or [art["body"]]
 
-            # Parse the section for any H3 or H4 headers as subsection indicators
-            subsection_headers = extract_subsection_headers(sect)
+            for sect_idx, sect in enumerate(sects):
+                # Extract the section header/title from the content
+                head = sect.splitlines()[0] if sect else art["title"]
+                section_label = _clean_section_header(head)
 
-            # Build breadcrumb-style hierarchy for disambiguation
-            clean_title = title.replace(" - Clockify Help", "").strip()
-            hierarchy = [clean_title] if clean_title else []
-            if section_label and section_label.lower() != clean_title.lower():
-                hierarchy.append(section_label)
+                # Build breadcrumb-style hierarchy for disambiguation
+                clean_title = title.replace(" - Clockify Help", "").strip()
+                hierarchy = [clean_title] if clean_title else []
+                if section_label and section_label.lower() != clean_title.lower():
+                    hierarchy.append(section_label)
 
-            subsection_headers = extract_subsection_headers(sect)
-            if subsection_headers:
-                hierarchy.append(subsection_headers[0])
+                subsection_headers = extract_subsection_headers(sect)
+                if subsection_headers:
+                    hierarchy.append(subsection_headers[0])
 
-            breadcrumb = " > ".join(hierarchy)
+                breadcrumb = " > ".join(hierarchy)
 
-            # Create chunks for this section
-            text_chunks = sliding_chunks(sect)
+                # Create chunks for this section
+                text_chunks = sliding_chunks(sect)
 
-            for chunk_idx, piece in enumerate(text_chunks):
-                # Create a meaningful ID that includes document structure info
-                cid = f"{slug}_{sect_idx}_{chunk_idx}_{str(uuid.uuid4())[:8]}"
+                for chunk_idx, piece in enumerate(text_chunks):
+                    # Create a meaningful ID that includes document structure info
+                    cid = f"{slug}_{sect_idx}_{chunk_idx}_{str(uuid.uuid4())[:8]}"
 
-                # Extract additional metadata
-                metadata = {**extract_metadata(piece), **meta}
-                if section_label:
-                    metadata.setdefault("section_type", section_label)
-                    importance = _section_importance(section_label)
-                    if importance:
-                        metadata["section_importance"] = importance
-                if breadcrumb:
-                    metadata["breadcrumb"] = breadcrumb
+                    # Extract additional metadata
+                    metadata = {**extract_metadata(piece), **meta}
+                    if section_label:
+                        metadata.setdefault("section_type", section_label)
+                        importance = _section_importance(section_label)
+                        if importance:
+                            metadata["section_importance"] = importance
+                    if breadcrumb:
+                        metadata["breadcrumb"] = breadcrumb
 
-                enriched_text = f"Context: {breadcrumb}\n\n{piece}" if breadcrumb else piece
-                chunk_obj = {
-                    "id": cid,
-                    "article_id": article_id,
-                    "title": title,
-                    "url": source_url,
-                    "section": section_label,
-                    "subsection": subsection_headers[0] if subsection_headers else "",
-                    "text": enriched_text,
-                    "doc_path": str(md_path),
-                    "doc_name": doc_name,
-                    "section_idx": sect_idx,
-                    "chunk_idx": chunk_idx,
-                    "char_count": len(enriched_text),
-                    "word_count": len(enriched_text.split()),
-                    "metadata": metadata,
-                }
+                    enriched_text = f"Context: {breadcrumb}\n\n{piece}" if breadcrumb else piece
+                    chunk_obj = {
+                        "id": cid,
+                        "article_id": article_id,
+                        "title": title,
+                        "url": source_url,
+                        "section": section_label,
+                        "subsection": subsection_headers[0] if subsection_headers else "",
+                        "text": enriched_text,
+                        "doc_path": str(source_path),
+                        "doc_name": doc_name,
+                        "section_idx": sect_idx,
+                        "chunk_idx": chunk_idx,
+                        "char_count": len(enriched_text),
+                        "word_count": len(enriched_text.split()),
+                        "metadata": metadata,
+                    }
 
-                chunks.append(chunk_obj)
+                    chunks.append(chunk_obj)
 
     return chunks
 

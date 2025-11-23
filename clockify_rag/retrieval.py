@@ -197,6 +197,40 @@ def validate_query_length(question: str, max_length: int = None) -> str:
     return question
 
 
+def normalize_query(text: str) -> str:
+    """Lightweight cleanup to make messy tickets retrievable without LLM pre-processing."""
+    if not text:
+        return ""
+
+    cleaned = text.replace("\r\n", "\n")
+    lines = cleaned.splitlines()
+    filtered: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        lower = stripped.lower()
+
+        # Drop common signatures/replies/auto-footers
+        if lower.startswith(("thanks", "thank you", "best,", "regards,")) and filtered:
+            continue
+        if "sent from my iphone" in lower or "sent from my android" in lower:
+            continue
+        if stripped.startswith(">"):
+            continue
+
+        # Remove obviously noisy long tokens (e.g., pasted hashes/base64)
+        if re.fullmatch(r"[A-Za-z0-9+/=]{60,}", stripped):
+            continue
+
+        filtered.append(stripped)
+
+    normalized = " ".join(filtered)
+    normalized = re.sub(r"\s{2,}", " ", normalized).strip()
+    return normalized or text.strip()
+
+
 # ====== QUERY EXPANSION ======
 QUERY_EXPANSIONS_ENV_VAR = "CLOCKIFY_QUERY_EXPANSIONS"
 _DEFAULT_QUERY_EXPANSION_PATH = pathlib.Path(__file__).resolve().parent.parent / "config" / "query_expansions.json"
@@ -529,7 +563,7 @@ def retrieve(
     # FIX (Error #5): Validate query at entry point
     global RETRIEVE_PROFILE_LAST
 
-    question = validate_query_length(question)
+    question = validate_query_length(normalize_query(question))
 
     # Use centralized config value if not specified
     requested_top_k = top_k
@@ -972,15 +1006,10 @@ def pack_snippets(
     # Cap the number of articles we attempt to pack
     article_order = article_order[:pack_top]
 
-    # Move the best (top-ranked) article to the end to place it closest to the user prompt
-    if best_article_key and best_article_key in article_order:
-        article_order = [k for k in article_order if k != best_article_key] + [best_article_key]
-
-    out_blocks: List[str] = []
-    packed_ids: List[Any] = []
-    article_blocks: List[Dict[str, Any]] = []
+    selected_blocks: List[Dict[str, Any]] = []
     used_tokens = 0
 
+    # Selection phase: walk in original rank order
     for art_pos, art_key in enumerate(article_order, start=1):
         if used_tokens >= effective_budget:
             break
@@ -997,15 +1026,12 @@ def pack_snippets(
             or art_key
         )
 
-        # Render header and compute available budget for this article (including separator if needed)
         article_header = f"### Article: {title}\nURL: {url}\n\n"
-        sep_cost = sep_tokens if out_blocks else 0
+        sep_cost = sep_tokens if selected_blocks else 0
         available_tokens = effective_budget - used_tokens - sep_cost
-
         if available_tokens <= 0:
             break
 
-        # Always include the header; truncate body to fit remaining budget
         body_parts: List[str] = []
         included_ids: List[Any] = []
         body_text = ""
@@ -1019,7 +1045,6 @@ def pack_snippets(
                 body_text = candidate_body
                 continue
 
-            # Try truncated chunk to fill remaining budget
             remaining_for_body = available_tokens - count_tokens(article_header + body_text)
             truncated = truncate_to_token_budget(chunk["text"], max(0, remaining_for_body))
             if truncated:
@@ -1029,41 +1054,56 @@ def pack_snippets(
             break
 
         if not body_parts:
-            # If nothing fits, skip this article
             continue
-
-        if sep_cost:
-            out_blocks.append(sep_text)
 
         article_body = "\n\n".join(body_parts)
         block_text = article_header + article_body
-        out_blocks.append(block_text)
-        used_tokens = count_tokens("".join(out_blocks))
+        block_tokens = count_tokens(block_text)
+        needed_tokens = sep_cost + block_tokens
+        if used_tokens + needed_tokens > effective_budget:
+            break
 
-        packed_ids.extend(included_ids)
-        article_blocks.append(
+        selected_blocks.append(
             {
-                "id": str(len(article_blocks) + 1),
+                "article_key": art_key,
                 "title": title,
                 "url": url,
                 "text": article_body,
                 "chunk_ids": included_ids,
+                "text_block": block_text,
+            }
+        )
+        used_tokens += needed_tokens
+
+    # Reorder phase: move best article to end for recency bias
+    if best_article_key:
+        for i, blk in enumerate(selected_blocks):
+            if blk["article_key"] == best_article_key:
+                best_blk = selected_blocks.pop(i)
+                selected_blocks.append(best_blk)
+                break
+
+    # Render final packed text and metadata
+    out_pieces: List[str] = []
+    packed_ids: List[Any] = []
+    article_blocks: List[Dict[str, Any]] = []
+    for blk in selected_blocks:
+        if out_pieces:
+            out_pieces.append(sep_text)
+        out_pieces.append(blk["text_block"])
+        packed_ids.extend(blk["chunk_ids"])
+        article_blocks.append(
+            {
+                "id": str(len(article_blocks) + 1),
+                "title": blk["title"],
+                "url": blk["url"],
+                "text": blk["text"],
+                "chunk_ids": blk["chunk_ids"],
             }
         )
 
-    packed_text = "".join(out_blocks)
-    packed_tokens = count_tokens(packed_text)
-
-    # Defensive trim if we somehow exceeded budget
-    while packed_tokens > effective_budget and out_blocks:
-        removed = out_blocks.pop()
-        packed_tokens = count_tokens("".join(out_blocks)) if out_blocks else 0
-        # If we removed a separator only, continue removing until balanced
-        if removed.strip() == "---" and out_blocks:
-            out_blocks.pop()
-            packed_tokens = count_tokens("".join(out_blocks)) if out_blocks else 0
-
-    used_tokens = packed_tokens
+    packed_text = "".join(out_pieces)
+    used_tokens = count_tokens(packed_text)
 
     return packed_text, packed_ids, used_tokens, article_blocks
 
@@ -1253,6 +1293,7 @@ __all__ = [
     "count_tokens",
     "truncate_to_token_budget",
     "RETRIEVE_PROFILE_LAST",
+    "normalize_query",
     "get_system_prompt",
     "SYSTEM_PROMPT",
     "USER_WRAPPER",

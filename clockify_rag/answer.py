@@ -351,18 +351,27 @@ def generate_llm_answer(
         packed_chunks = [chunk_id_to_chunk[cid] for cid in packed_ids if cid in chunk_id_to_chunk]
         structured_prompt = True
 
-    # Build set of valid URLs present in the provided context for source verification
-    valid_urls: set[str] = set()
+    def _normalize_url(url: str) -> str:
+        base = str(url).strip()
+        if not base:
+            return ""
+        base = base.split("#")[0].rstrip("/")
+        return base.lower()
+
+    # Build map of valid URLs present in the provided context for source verification
+    valid_url_map: dict[str, str] = {}
     if article_blocks:
         for blk in article_blocks:
             url_val = blk.get("url")
-            if url_val:
-                valid_urls.add(str(url_val).strip())
+            norm = _normalize_url(url_val) if url_val else ""
+            if norm:
+                valid_url_map.setdefault(norm, str(url_val).strip())
     elif packed_chunks:
         for ch in packed_chunks:
             url_val = ch.get("url") or ch.get("source_url") or (ch.get("metadata") or {}).get("source_url")
-            if url_val:
-                valid_urls.add(str(url_val).strip())
+            norm = _normalize_url(url_val) if url_val else ""
+            if norm:
+                valid_url_map.setdefault(norm, str(url_val).strip())
 
     # Call LLM with new or legacy prompts
     raw_response = ask_llm(
@@ -402,18 +411,19 @@ def generate_llm_answer(
             reasoning = parsed.get("reasoning", reasoning)
             parsed_sources = parsed.get("sources_used", sources_used)
             sources_used = parsed_sources if parsed_sources else None
-            if sources_used and valid_urls:
+            if sources_used and valid_url_map:
                 verified_sources: list[str] = []
                 for src in sources_used:
-                    src_str = str(src).strip()
-                    for v in valid_urls:
-                        if src_str in v or v in src_str:
-                            verified_sources.append(v)
-                            break
-                if verified_sources:
-                    sources_used = sorted(set(verified_sources))
-                else:
-                    sources_used = None
+                    norm_src = _normalize_url(src)
+                    match = valid_url_map.get(norm_src)
+                    if not match:
+                        for candidate_norm, canonical in valid_url_map.items():
+                            if norm_src and (norm_src in candidate_norm or candidate_norm in norm_src):
+                                match = canonical
+                                break
+                    if match:
+                        verified_sources.append(match)
+                sources_used = sorted(set(verified_sources)) if verified_sources else None
             logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used or [])}")
         else:
             # Legacy prompt: treat output as plain text without parsing

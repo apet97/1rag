@@ -14,7 +14,7 @@
 # ============================================================================
 data:
   # Path to knowledge base markdown file
-  kb_path: ./clockify_help_corpus.en.md  # falls back to ./knowledge_full.md if present
+  kb_path: ./knowledge_base  # falls back to ./clockify_help_corpus.en.md or ./knowledge_full.md if present
 
   # Output directory for index artifacts
   index_dir: ./var/index

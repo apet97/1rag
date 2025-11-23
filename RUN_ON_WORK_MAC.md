@@ -1,6 +1,6 @@
 # Run on Mac (Apple Silicon, VPN on)
 
-Defaults are set for the corporate Ollama on VPN: base URL `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings `nomic-embed-text` (768-dim), corpus `clockify_help_corpus.en.md` (falls back to `knowledge_full.md`). No environment variables are required.
+Defaults are set for the corporate Ollama on VPN: base URL `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings `nomic-embed-text` (768-dim), corpus directory `knowledge_base/` (falls back to `clockify_help_corpus.en.md`, then `knowledge_full.md`). No environment variables are required.
 
 Use `python3.12` if available; otherwise replace it with `python3`.
 

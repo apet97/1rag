@@ -1,6 +1,6 @@
 # Clockify RAG – Internal Support Assistant
 
-RAG service that answers Clockify/CAKE support questions with citations. Defaults are zero-config for an internal corporate setup on Mac (VPN): Ollama at `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings via Ollama `nomic-embed-text` (768-dim), corpus `clockify_help_corpus.en.md` (fallback `knowledge_full.md`).
+RAG service that answers Clockify/CAKE support questions with citations. Defaults are zero-config for an internal corporate setup on Mac (VPN): Ollama at `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings via Ollama `nomic-embed-text` (768-dim), corpus directory `knowledge_base/` (fallbacks: `clockify_help_corpus.en.md`, then `knowledge_full.md`).
 
 ## TL;DR – Run on a Mac (VPN on, no env vars)
 - Copy/paste commands: `RUN_ON_WORK_MAC.md` (CLI + API flows, zero env vars).
@@ -23,7 +23,7 @@ conda install -c conda-forge faiss-cpu -y
 pip install --upgrade pip
 pip install -e ".[dev]"
 
-# 5) Build the index (uses clockify_help_corpus.en.md; falls back to knowledge_full.md)
+# 5) Build the index (uses knowledge_base/; falls back to clockify_help_corpus.en.md, then knowledge_full.md)
 python -m clockify_rag.cli_modern ingest --force
 
 # 6) Start interactive chat (talk to it like a support agent)
@@ -42,8 +42,9 @@ curl -X POST http://127.0.0.1:8000/v1/query \
 ## Architecture at a glance
 ```mermaid
 flowchart TD
-    A[clockify_help_corpus.en.md] --> B[Chunker]
-    A2[knowledge_full.md fallback] --> B
+    A[knowledge_base directory] --> B[Chunker]
+    A2[clockify_help_corpus.en.md fallback] --> B
+    A3[knowledge_full.md legacy fallback] --> B
     B --> C[Embeddings nomic-embed-text 768d]
     C --> D[Indexes BM25 + FAISS IVFFlat / FlatIP]
     D --> E[Retriever hybrid + MMR]
@@ -60,7 +61,7 @@ flowchart TD
 - Return the answer with citations showing exactly which snippets were used.
 
 ## Commands you’ll use
-- Build index: `python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md --force`
+- Build index: `python -m clockify_rag.cli_modern ingest --input knowledge_base --force`
 - CLI query: `python -m clockify_rag.cli_modern query "How do I add time for others?"`
 - Chat REPL: `python -m clockify_rag.cli_modern chat`
 - Doctor: `python -m clockify_rag.cli_modern doctor --json`
@@ -73,12 +74,12 @@ Legacy CLIs (`clockify_rag/cli.py`, `clockify_support_cli_final.py`) remain for 
 - `RAG_CHAT_MODEL`: `qwen2.5:32b`
 - `RAG_EMBED_MODEL`: `nomic-embed-text` (768-dim)
 - `EMB_BACKEND`: `ollama` (set `local` for offline dev; conftest pins local for tests)
-- Corpus resolution: prefers `clockify_help_corpus.en.md`, falls back to `knowledge_full.md`
+- Corpus resolution: prefers `knowledge_base/`, then `clockify_help_corpus.en.md`, then `knowledge_full.md`
 - Timeouts/retries: connect 3s, read 120s, retries 2 (VPN-friendly)
 - Env vars and `.env` still override; `validate_and_set_config()` refreshes derived dims/models.
 
 ## Knowledge base & artifacts
-- Ingest reads `clockify_help_corpus.en.md` front matter; resolves via `resolve_corpus_path`.
+- Ingest reads `knowledge_base/` front matter; resolves via `resolve_corpus_path`.
 - Artifacts live beside the corpus unless `--output` is set: `chunks.jsonl`, `vecs_n.npy`, `bm25.json`, `faiss.index` (when FAISS present), `index.meta.json`.
 
 ## Testing
@@ -88,7 +89,7 @@ Legacy CLIs (`clockify_rag/cli.py`, `clockify_support_cli_final.py`) remain for 
 ## Troubleshooting
 - Ollama unreachable: check VPN and `curl $RAG_OLLAMA_URL/api/tags`; override to `http://127.0.0.1:11434` if running local.
 - FAISS missing on macOS arm64: install via conda (`conda install -c conda-forge faiss-cpu`); otherwise auto-falls back to flat search.
-- Corpus missing: ensure `clockify_help_corpus.en.md` is in repo root or pass `--input`; `knowledge_full.md` is auto fallback.
+- Corpus missing: ensure `knowledge_base/` is present (or pass `--input`); falls back to `clockify_help_corpus.en.md`, then `knowledge_full.md`.
 
 ## Docs map
 - `RUN_ON_WORK_MAC.md` – copy/paste commands for Mac + VPN (zero env vars)

@@ -130,13 +130,13 @@
 
 ### Knowledge Base Files
 
-#### `clockify_help_corpus.en.md` (Input, legacy: knowledge_full.md)
-- **Type**: Markdown file with YAML front matter
-- **Size**: ~7 MB (UpdateHelpGPT export)
+#### `knowledge_base/` (Input, fallbacks: clockify_help_corpus.en.md → knowledge_full.md)
+- **Type**: Directory of per-article Markdown files with YAML front matter (`title`, `url`, `category`, `slug`, plus optional UpdateHelpGPT fields).
+- **Size**: Many small files (preferred) or ~7 MB monolithic export.
 - **Content**: Clockify/CAKE help-center articles
-- **Format**: Front matter (`id`, `source_url`, `tags`, `suppress_from_rag`, etc.) followed by sections: Summary, Canonical answer, Body, Key points, Limits & gotchas, FAQ, Search hints, Internal notes.
+- **Format**: Front matter followed by sections: Summary, Canonical answer, Body, Key points, Limits & gotchas, FAQ, Search hints, Internal notes.
 - **Status**: Provided out-of-band; drop the latest export before ingesting
-- **Used by**: `python3 -m clockify_rag.cli_modern ingest`
+- **Used by**: `python3 -m clockify_rag.cli_modern ingest --input knowledge_base` (monolithic fallbacks still work)
 
 #### `chunks.jsonl` (Generated)
 - **Type**: JSON Lines format
