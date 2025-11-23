@@ -28,6 +28,38 @@ logger = logging.getLogger(__name__)
 QUERY_LOG_DISABLED = False
 
 
+def _extract_source_urls(chunks: list, result: dict) -> list[str]:
+    """Resolve URLs from sources_used or chunk ids."""
+    urls: set[str] = set()
+    meta = result.get("metadata") or {}
+    sources_used = result.get("sources_used") or meta.get("sources_used") or []
+    for src in sources_used:
+        if isinstance(src, str) and src.strip().lower().startswith("http"):
+            urls.add(src.strip())
+
+    if urls:
+        return sorted(urls)
+
+    id_to_chunk = {}
+    for c in chunks:
+        cid = c.get("id")
+        if cid is not None:
+            id_to_chunk[str(cid)] = c
+
+    candidates = []
+    candidates.extend(result.get("selected_chunk_ids") or [])
+    candidates.extend(meta.get("source_chunk_ids") or [])
+
+    for cand in candidates:
+        chunk = id_to_chunk.get(str(cand).strip())
+        if chunk:
+            url = chunk.get("url") or chunk.get("source_url") or chunk.get("doc_url")
+            if url:
+                urls.add(url)
+
+    return sorted(urls)
+
+
 def ensure_index_ready(retries=0) -> Tuple:
     """Ensure retrieval artifacts are present and return loaded index components.
 
@@ -283,6 +315,13 @@ def chat_repl(
             needs_human = bool(result.get("needs_human_escalation") or metadata.get("needs_human_escalation"))
             print(f"\nIntent: {intent} | Role: {role} | Security: {security} | Needs escalation: {needs_human}")
             print(f"\n{answer}")
+            urls = _extract_source_urls(chunks, result)
+            print("\nSources:")
+            if urls:
+                for url in urls:
+                    print(f"- {url}")
+            else:
+                print("(none)")
 
         # Show debug info if enabled
         if debug_enabled:

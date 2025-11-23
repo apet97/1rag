@@ -15,6 +15,8 @@ logger = logging.getLogger(__name__)
 # Global state for lazy-loaded sentence transformer
 _ST_ENCODER = None
 _ST_BATCH_SIZE = 32
+# Cap concurrent in-flight embedding requests to avoid socket exhaustion
+_MAX_OUTSTANDING_REQUESTS = 64
 
 # Global state for lazy-loaded cross-encoder (OPTIMIZATION: Fast, accurate reranking)
 _CROSS_ENCODER = None
@@ -152,7 +154,7 @@ def _embed_single_text(index: int, text: str, retries: int, total: int) -> tuple
         raise EmbeddingError(f"Embedding chunk {index}: {e}") from e
 
 
-def embed_texts(texts: list, retries=0) -> np.ndarray:
+def embed_texts(texts: list, retries: int | None = None, suppress_errors: bool = False) -> np.ndarray:
     """Embed texts using Ollama with parallel batching (Rank 10: 3-5x speedup).
 
     Uses ThreadPoolExecutor to send multiple embedding requests concurrently.
@@ -162,6 +164,7 @@ def embed_texts(texts: list, retries=0) -> np.ndarray:
         return np.zeros((0, config.EMB_DIM), dtype="float32")
 
     total = len(texts)
+    effective_retries = config.DEFAULT_RETRIES if retries is None else retries
 
     # OPTIMIZATION: Always use parallel batching for 3-5x speedup, even on small batches
     # This eliminates the sequential fallback that added 10x overhead on query embeddings
@@ -170,13 +173,15 @@ def embed_texts(texts: list, retries=0) -> np.ndarray:
 
     # Parallel batching mode (always enabled for internal deployment)
     # Priority #7: Cap outstanding futures to prevent socket exhaustion
-    logger.info(f"[Rank 10] Embedding {total} texts with {config.EMB_MAX_WORKERS} workers")
+    logger.info(
+        f"[Rank 10] Embedding {total} texts with {config.EMB_MAX_WORKERS} workers (retries={effective_retries})"
+    )
     results = [None] * total  # Pre-allocate to maintain order
     completed = 0
 
     # Priority #7: Limit outstanding futures to max_workers * config.EMB_BATCH_SIZE
     # This prevents memory exhaustion and socket exhaustion on large corpora
-    max_outstanding = config.EMB_MAX_WORKERS * config.EMB_BATCH_SIZE
+    max_outstanding = min(config.EMB_MAX_WORKERS * config.EMB_BATCH_SIZE, _MAX_OUTSTANDING_REQUESTS)
     logger.debug(f"[Priority #7] Capping outstanding futures at {max_outstanding}")
 
     try:
@@ -192,7 +197,7 @@ def embed_texts(texts: list, retries=0) -> np.ndarray:
                     i, text = next(text_iter)
                 except StopIteration:
                     break
-                future = executor.submit(_embed_single_text, i, text, retries, total)
+                future = executor.submit(_embed_single_text, i, text, effective_retries, total)
                 pending_futures[future] = i
 
             # Process completions and submit new tasks as slots open
@@ -214,7 +219,7 @@ def embed_texts(texts: list, retries=0) -> np.ndarray:
                 while len(pending_futures) < max_outstanding:
                     try:
                         i, text = next(text_iter)
-                        future = executor.submit(_embed_single_text, i, text, retries, total)
+                        future = executor.submit(_embed_single_text, i, text, effective_retries, total)
                         pending_futures[future] = i
                     except StopIteration:
                         # No more texts to process

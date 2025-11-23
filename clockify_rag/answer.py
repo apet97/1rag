@@ -432,7 +432,10 @@ def generate_llm_answer(
 
         # Skip noisy inline citation validation when sources_used are present
         has_citations = bool(extract_citations(answer))
-        if not has_citations and STRICT_CITATIONS and answer != REFUSAL_STR and not sources_used:
+        if sources_used:
+            # Treat provided sources as canonical; avoid invalid-citation noise
+            has_citations = True
+        elif not has_citations and STRICT_CITATIONS and answer != REFUSAL_STR:
             logger.warning("Answer lacks citations in strict mode, refusing answer")
             answer = REFUSAL_STR
             confidence = None
