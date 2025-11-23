@@ -3,7 +3,7 @@
 Core docs to use:
 - `README.md` and `RUN_ON_WORK_MAC.md` – zero-config setup and CLI/API commands (VPN defaults).
 - `docs/CONFIGURATION.md` – canonical config matrix and env overrides (corporate Ollama defaults).
-- `docs/ARCHITECTURE.md` / `docs/RAG_ARCHITECTURE.md` – component and flow details.
+- `docs/ARCHITECTURE.md` – component and flow details.
 - `docs/HELP_CORPUS.md` – corpus refresh/indexing details.
 - `docs/OPERATIONS.md` and `docs/SMOKE_TEST_RUNBOOK.md` – runbook, smoke tests.
 - `docs/API.md`, `docs/DEPLOYMENT.md`, `docs/PRODUCTION_GUIDE.md` – API and deployment specifics.
