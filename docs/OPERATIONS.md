@@ -61,12 +61,12 @@ Both targets eventually call `ragctl ingest`, which enforces a build lock (`.bui
 1. Pull the desired models on the Ollama host (one time):
    ```bash
    ollama pull qwen2.5:32b
-   ollama pull nomic-embed-text:latest
+   ollama pull nomic-embed-text
    ```
 2. Update `.env` (or runtime env vars):
    ```bash
    RAG_CHAT_MODEL=qwen2.5:32b
-   RAG_EMBED_MODEL=nomic-embed-text:latest
+   RAG_EMBED_MODEL=nomic-embed-text
    ```
 3. Restart services so the new configuration is logged at startup (`CONFIG ...` banner).
 

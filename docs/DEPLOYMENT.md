@@ -25,7 +25,7 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
    ```bash
    RAG_OLLAMA_URL=http://127.0.0.1:11434   # override for remote/VPN hosts if needed
    RAG_CHAT_MODEL=qwen2.5:32b
-   RAG_EMBED_MODEL=nomic-embed-text:latest
+   RAG_EMBED_MODEL=nomic-embed-text
    EMB_BACKEND=ollama                           # use remote embeddings in prod
    RAG_LLM_CLIENT=mock                         # optional, set to `mock` for CI/offline
    ```
@@ -57,11 +57,11 @@ The Clockify RAG stack is designed to run on both Apple Silicon laptops (for loc
 
 ## Remote Ollama host (VPN)
 
-- The default LLM endpoint is `http://127.0.0.1:11434`; if you maintain a shared Ollama host, override `RAG_OLLAMA_URL` accordingly.
+- The default LLM endpoint is `http://10.127.0.192:11434` (corporate/VPN); override to `http://127.0.0.1:11434` for a local Ollama host.
 - Make sure the models are pulled on the server once:
   ```bash
   ollama pull qwen2.5:32b
-  ollama pull nomic-embed-text:latest
+  ollama pull nomic-embed-text
   ```
 - Increase read timeouts when running across the VPN:
   ```bash
@@ -82,7 +82,7 @@ docker run -d \
   -p 8000:8000 \
   -e RAG_OLLAMA_URL=http://127.0.0.1:11434 \
   -e RAG_CHAT_MODEL=qwen2.5:32b \
-  -e RAG_EMBED_MODEL=nomic-embed-text:latest \
+  -e RAG_EMBED_MODEL=nomic-embed-text \
   -e EMB_BACKEND=ollama \
   -v $(pwd)/clockify_help_corpus.en.md:/app/clockify_help_corpus.en.md:ro \
   -v $(pwd)/data:/app/data \

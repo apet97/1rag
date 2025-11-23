@@ -37,7 +37,7 @@ ragctl query "question"
 ### Ollama / LLM Configuration
 
 #### `OLLAMA_URL`
-- **Default**: `http://127.0.0.1:11434`
+- **Default**: `http://10.127.0.192:11434` (corporate/VPN Ollama; use `http://127.0.0.1:11434` for local dev)
 - **Type**: URL
 - **Description**: Base URL for Ollama service
 - **Notes**:

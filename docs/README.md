@@ -154,7 +154,7 @@ See [docs/CONFIG.md](CONFIG.md) for detailed parameter documentation.
 Key environment variables:
 - `RAG_OLLAMA_URL`: Ollama service URL (default: http://10.127.0.192:11434)
 - `RAG_CHAT_MODEL`: Generation model (default: qwen2.5:32b)
-- `RAG_EMBED_MODEL`: Embedding model (default: nomic-embed-text:latest)
+- `RAG_EMBED_MODEL`: Embedding model (default: nomic-embed-text)
 - `DEFAULT_TOP_K`: Retrieval candidates (default: 15)
 - `DEFAULT_PACK_TOP`: Final context chunks (default: 8)
 - `DEFAULT_THRESHOLD`: Minimum similarity (default: 0.25)

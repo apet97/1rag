@@ -6,7 +6,7 @@ This repo hosts **Clockify RAG** (FastAPI + Typer CLI) for Clockify/CAKE interna
 - This laptop can edit the repo but cannot validate remote services directly; you’ll need to rely on local commands and push to GitHub for CI.
 - Language: Python 3.11–3.13 (3.14+ blocked).
 - Default stack: FastAPI API (`clockify_rag/api.py`), Typer CLI (`clockify_rag/cli_modern.py`), hybrid retrieval (`clockify_rag/retrieval.py`), ingestion/indexing (`clockify_rag/indexing.py`), embeddings/LLM via Ollama.
-- Default endpoints/models: `RAG_OLLAMA_URL=http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embed model `nomic-embed-text:latest`, `EMB_BACKEND=ollama` (tests pin to local embeddings).
+- Default endpoints/models: `RAG_OLLAMA_URL=http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embed model `nomic-embed-text`, `EMB_BACKEND=ollama` (tests pin to local embeddings).
 - Tests: pytest under `tests/` (many skips if FAISS/torch absent on arm64).
 
 ## How to run locally

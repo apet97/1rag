@@ -1,12 +1,13 @@
 """Configuration constants for Clockify RAG system.
 
 IMPORTANT: This module ships with VPN-safe, production-ready defaults for internal use.
-**No environment variables are required** for standard operation on corporate macOS (M1/M2/M3 Pro).
+**No environment variables are required** for standard operation on the corporate macOS
+(M1/M2/M3 Pro) laptops.
 
-Default Configuration (Zero-Config):
-- LLM endpoint: http://127.0.0.1:11434 (local Ollama)
+Default Configuration (Zero-Config on Aleksandar's work Mac over VPN):
+- LLM endpoint: http://10.127.0.192:11434 (corporate/local Ollama)
 - Chat model: qwen2.5:32b
-- Embeddings: Local SentenceTransformer (offline-friendly, 384-dim)
+- Embeddings: Remote Ollama `nomic-embed-text` (768-dim)
 - Retries: 2 (VPN resilience)
 - Timeouts: 120s read, 3s connect
 
@@ -202,7 +203,7 @@ RAG_CHAT_FALLBACK_MODEL = _get_env_value(
 # Embedding model (always remote via Ollama, no local fallback)
 RAG_EMBED_MODEL = _get_env_value(
     "RAG_EMBED_MODEL",
-    default="nomic-embed-text:latest",
+    default="nomic-embed-text",
     legacy_keys=("EMB_MODEL", "EMBED_MODEL"),
 )
 
@@ -342,6 +343,17 @@ def get_llm_model() -> str:
 # callers that need remote model discovery should call get_llm_model().
 LLM_MODEL = RAG_CHAT_MODEL
 
+
+def refresh_runtime_settings() -> None:
+    """Recompute derived globals after runtime config mutation."""
+
+    global EMB_DIM, LLM_MODEL, _LLM_MODEL_CACHE
+
+    EMB_DIM = EMB_DIM_LOCAL if EMB_BACKEND == "local" else EMB_DIM_OLLAMA
+    LLM_MODEL = RAG_CHAT_MODEL
+    _LLM_MODEL_CACHE = None
+
+
 # Backwards-compatible aliases (legacy code/tests expect these names)
 OLLAMA_URL = RAG_OLLAMA_URL
 GEN_MODEL = LLM_MODEL  # Use selected model, not raw config
@@ -411,7 +423,7 @@ MMR_LAMBDA = _parse_env_float("MMR_LAMBDA", 0.75, min_val=0.0, max_val=1.0)  # W
 CTX_TOKEN_BUDGET = _parse_env_int("CTX_BUDGET", 12000, min_val=100, max_val=100000)  # Was 6000, now 12000
 
 # ====== EMBEDDINGS BACKEND (v4.1) ======
-EMB_BACKEND = (_get_env_value("EMB_BACKEND", "ollama") or "ollama").lower()  # "ollama" or "local"
+EMB_BACKEND = (_get_env_value("EMB_BACKEND", "ollama") or "ollama").lower()  # "local" or "ollama"
 
 # Embedding dimensions:
 # - local (SentenceTransformer all-MiniLM-L6-v2): 384-dim

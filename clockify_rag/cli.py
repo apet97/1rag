@@ -421,7 +421,7 @@ def setup_cli_args():
         "--emb-model",
         type=str,
         default=None,
-        help="Embedding model name (default from RAG_EMBED_MODEL env or nomic-embed-text:latest)",
+        help="Embedding model name (default from RAG_EMBED_MODEL env or nomic-embed-text)",
     )
     ap.add_argument(
         "--ctx-budget", type=int, default=None, help="Context token budget (default from CTX_BUDGET env or 12000)"

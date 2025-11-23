@@ -30,14 +30,14 @@ data:
 # ============================================================================
 embedding:
   # Backend: "local" (SentenceTransformer) or "ollama" (remote)
-  backend: local
+  backend: ollama
 
   # Model identifier for local embeddings (SentenceTransformer)
   # Examples:
   #   - intfloat/multilingual-e5-base (recommended, 768-dim)
   #   - all-MiniLM-L6-v2 (fast, 384-dim)
   #   - sentence-transformers/all-mpnet-base-v2 (accurate, 768-dim)
-  model: intfloat/multilingual-e5-base
+  model: nomic-embed-text
 
   # Embedding dimension
   # - For local: typically 384 or 768
@@ -62,7 +62,7 @@ embedding:
 # ============================================================================
 ollama:
   # Base URL for Ollama service
-  url: http://127.0.0.1:11434
+  url: http://10.127.0.192:11434
 
   # Embedding model on Ollama server
   embedding_model: nomic-embed-text

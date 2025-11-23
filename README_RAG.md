@@ -54,7 +54,7 @@ This tool (`clockify_support_cli_final.py`) implements a production-ready RAG pi
 ### System Requirements
 
 - Python 3.7+
-- Ollama instance (local or remote) - default: `http://127.0.0.1:11434`
+- Ollama instance (local or remote) - default: `http://10.127.0.192:11434` (use `http://127.0.0.1:11434` for local dev)
 - Required Python packages: `requests`, `numpy`, `sentence-transformers` (optional, for local embeddings)
 
 ### Ollama Setup
@@ -149,7 +149,7 @@ Interactive commands:
 Configure the system via environment variables:
 
 ```bash
-# Ollama endpoint (default: http://127.0.0.1:11434)
+# Ollama endpoint (default: http://10.127.0.192:11434; use http://127.0.0.1:11434 for local dev)
 export OLLAMA_URL="http://your-ollama-host:11434"
 
 # Model configuration
@@ -157,7 +157,7 @@ export GEN_MODEL="qwen2.5:32b"              # LLM for answer generation
 export EMB_MODEL="nomic-embed-text"         # Embedding model (if using Ollama backend)
 
 # Embedding backend: "local" (SentenceTransformer) or "ollama"
-export EMB_BACKEND="local"
+export EMB_BACKEND="ollama"
 
 # Context budget in tokens
 export CTX_BUDGET="2800"

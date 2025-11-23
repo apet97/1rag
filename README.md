@@ -9,6 +9,10 @@ RAG service that answers Clockify/CAKE support questions from the internal help 
 - FastAPI API + Typer CLI (`clockify_rag.cli_modern`) for ingest/query/chat/demo.
 - Deterministic ingestion and build locks to keep artifacts consistent across environments.
 
+## Running on my work Mac (Aleksandar’s environment)
+- Defaults point to the corporate Ollama host (`http://10.127.0.192:11434`), chat model `qwen2.5:32b`, embed model `nomic-embed-text`, and the `clockify_help_corpus.en.md` knowledge base.
+- Env vars still override if needed; for a copy/paste setup see `RUN_ON_WORK_MAC.md`.
+
 ## MacBook Pro (Apple Silicon, M1 Pro) Quickstart
 
 Two options, both tested on arm64:
@@ -65,7 +69,7 @@ Two options, both tested on arm64:
    ```
 3) Place corpus, ingest, smoke-test, run API (same as steps 4–7 above).
 
-Offline defaults: set `RAG_LLM_CLIENT=mock` and keep `EMB_BACKEND=local` (default) to avoid VPN/Ollama. FAISS is optional; without it, BM25-only retrieval still works. 
+Offline mode: set `RAG_LLM_CLIENT=mock` and `EMB_BACKEND=local` to avoid VPN/Ollama (defaults assume the corporate Ollama host). FAISS is optional; without it, BM25-only retrieval still works.
 
 Rerank and CORS knobs:
 - `RERANK_MODEL` to use a lighter model for reranking (falls back to `RAG_CHAT_MODEL`).
@@ -81,7 +85,7 @@ Rerank and CORS knobs:
 ```bash
 export RAG_OLLAMA_URL=http://<internal-ollama-host>:11434   # on VPN
 export RAG_CHAT_MODEL=qwen2.5:32b
-export RAG_EMBED_MODEL=nomic-embed-text:latest
+export RAG_EMBED_MODEL=nomic-embed-text
 export EMB_BACKEND=ollama                                  # remote embeddings
 
 # Build or refresh the index from the help corpus

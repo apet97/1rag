@@ -74,9 +74,9 @@ This document describes the current Retrieval-Augmented Generation (RAG) stack t
 
 ## External Services & Dependencies
 
-- **Ollama-compatible LLM host** (default `RAG_OLLAMA_URL=http://127.0.0.1:11434`):
+- **Ollama-compatible LLM host** (default `RAG_OLLAMA_URL=http://10.127.0.192:11434`; use `http://127.0.0.1:11434` for local dev):
   - Chat/generation model: `RAG_CHAT_MODEL=qwen2.5:32b`
-  - Embedding model: `RAG_EMBED_MODEL=nomic-embed-text:latest`
+  - Embedding model: `RAG_EMBED_MODEL=nomic-embed-text`
   - Accessible only from the company Mac (VPN required). All network clients must handle timeouts, retries, and be mockable for offline testing.
 - **Local storage** for vector artifacts (FAISS/HNSW/BM25), chunk metadata, logs (`logs/`), and caches (`emb_cache.jsonl`, `rag_queries.jsonl`).
 - **Python runtime** (3.11+) with optional Apple Silicon acceleration (PyTorch MPS) and FAISS wheels. Dockerfile and `docker-compose.yml` support linux/amd64 and linux/arm64 (documented in `docs/DEPLOYMENT.md`).

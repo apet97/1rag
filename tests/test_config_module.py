@@ -89,7 +89,8 @@ def test_config_defaults_match_expected(monkeypatch: pytest.MonkeyPatch):
     cfg = _load_config_module(monkeypatch)
     assert cfg.RAG_OLLAMA_URL == "http://10.127.0.192:11434"
     assert cfg.RAG_CHAT_MODEL == "qwen2.5:32b"
-    assert cfg.RAG_EMBED_MODEL == "nomic-embed-text:latest"
+    assert cfg.RAG_EMBED_MODEL == "nomic-embed-text"
+    assert cfg.EMB_BACKEND == "ollama"
     assert cfg.DEFAULT_TOP_K == 15
     assert cfg.DEFAULT_NUM_PREDICT == 512
     assert cfg.FAISS_CANDIDATE_MULTIPLIER == 3
@@ -103,6 +104,7 @@ def test_config_env_overrides_take_precedence(monkeypatch: pytest.MonkeyPatch):
             "RAG_OLLAMA_URL": "http://example.com:11434",
             "RAG_CHAT_MODEL": "gpt-oss:20b",
             "RAG_EMBED_MODEL": "nomic-embed-text:latest",
+            "EMB_BACKEND": "local",
             "DEFAULT_TOP_K": "25",
             "DEFAULT_THRESHOLD": "0.4",
             "DEFAULT_NUM_PREDICT": "1024",
@@ -112,6 +114,8 @@ def test_config_env_overrides_take_precedence(monkeypatch: pytest.MonkeyPatch):
     )
     assert cfg.RAG_OLLAMA_URL == "http://example.com:11434"
     assert cfg.RAG_CHAT_MODEL == "gpt-oss:20b"
+    assert cfg.RAG_EMBED_MODEL == "nomic-embed-text:latest"
+    assert cfg.EMB_BACKEND == "local"
     assert cfg.DEFAULT_TOP_K == 25
     assert cfg.DEFAULT_THRESHOLD == 0.4
     assert cfg.DEFAULT_NUM_PREDICT == 1024
@@ -247,14 +251,14 @@ def test_check_remote_models_parses_valid_response(monkeypatch: pytest.MonkeyPat
                 "models": [
                     {"name": "qwen2.5:32b"},
                     {"name": "gpt-oss:20b"},
-                    {"name": "nomic-embed-text:latest"},
+                    {"name": "nomic-embed-text"},
                 ]
             }
 
     monkeypatch.setattr("requests.get", lambda *args, **kwargs: MockResponse())
 
     models = cfg._check_remote_models("http://ollama:11434", timeout=5.0)
-    assert models == ["qwen2.5:32b", "gpt-oss:20b", "nomic-embed-text:latest"]
+    assert models == ["qwen2.5:32b", "gpt-oss:20b", "nomic-embed-text"]
 
 
 def test_select_best_model_prefers_primary(monkeypatch: pytest.MonkeyPatch):

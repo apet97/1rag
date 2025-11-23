@@ -27,7 +27,7 @@ Returns the resolved runtime configuration (mainly for debugging):
 {
   "ollama_url": "http://127.0.0.1:11434",
   "gen_model": "qwen2.5:32b",
-  "emb_model": "nomic-embed-text:latest",
+  "emb_model": "nomic-embed-text",
   "chunk_size": 1600,
   "top_k": 15,
   "pack_top": 8,
