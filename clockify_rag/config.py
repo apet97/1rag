@@ -4,7 +4,7 @@ IMPORTANT: This module ships with VPN-safe, production-ready defaults for intern
 **No environment variables are required** for standard operation on the corporate macOS
 (M1/M2/M3 Pro) laptops.
 
-Default Configuration (Zero-Config on Aleksandar's work Mac over VPN):
+Default Configuration (Zero-Config on internal Mac over VPN):
 - LLM endpoint: http://10.127.0.192:11434 (corporate/local Ollama)
 - Chat model: qwen2.5:32b
 - Embeddings: Remote Ollama `nomic-embed-text` (768-dim)

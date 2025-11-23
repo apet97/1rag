@@ -1,8 +1,8 @@
 # Clockify RAG – Internal Support Assistant
 
-RAG service that answers Clockify/CAKE support questions with citations. Defaults are zero-config for Aleksandar’s work Mac on VPN: Ollama at `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings via Ollama `nomic-embed-text` (768-dim), corpus `clockify_help_corpus.en.md` (fallback `knowledge_full.md`).
+RAG service that answers Clockify/CAKE support questions with citations. Defaults are zero-config for an internal corporate setup on Mac (VPN): Ollama at `http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embeddings via Ollama `nomic-embed-text` (768-dim), corpus `clockify_help_corpus.en.md` (fallback `knowledge_full.md`).
 
-## TL;DR – Run on my work Mac (VPN on)
+## TL;DR – Run on a Mac (VPN on, no env vars)
 - Copy/paste commands: `RUN_ON_WORK_MAC.md` (CLI + API flows, zero env vars).
 - Defaults already point to the corporate Ollama + models; env vars still override if needed.
 
@@ -98,7 +98,7 @@ Legacy CLIs (`clockify_rag/cli.py`, `clockify_support_cli_final.py`) remain for 
 - Corpus missing: ensure `clockify_help_corpus.en.md` is in repo root or pass `--input`; `knowledge_full.md` is auto fallback.
 
 ## Docs map
-- `RUN_ON_WORK_MAC.md` – copy/paste commands for the work Mac (VPN, zero env vars)
+- `RUN_ON_WORK_MAC.md` – copy/paste commands for Mac + VPN (zero env vars)
 - `docs/CONFIGURATION.md` – env matrix and defaults
 - `docs/ARCHITECTURE.md` – deeper design notes
 - `docs/OPERATIONS.md` – runbook and smoke tests

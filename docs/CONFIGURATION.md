@@ -4,7 +4,7 @@
 
 ## ⚡ Default Values — No Configuration Required
 
-**For internal VPN use on macOS M1/M2/M3 Pro, no environment variables are required.** The system ships with production-ready defaults tuned for Aleksandar's work Mac:
+**For internal VPN use on macOS M1/M2/M3 Pro, no environment variables are required.** The system ships with production-ready defaults tuned for the internal corporate environment:
 
 | Setting | Default Value | Purpose |
 |---------|---------------|---------|
@@ -25,23 +25,10 @@
 
 See [README.md](../README.md) for the zero-config quickstart.
 
-## Quick presets
-**Local M1 dev (offline-friendly)**
-```bash
-RAG_OLLAMA_URL=http://127.0.0.1:11434   # run Ollama locally if not on VPN
-EMB_BACKEND=local                       # use local SentenceTransformer
-RAG_LLM_CLIENT=mock                     # optional offline smoke checks
-```
-
-**Internal deployment (VPN + internal Ollama/Qwen)**
-```bash
-RAG_OLLAMA_URL=http://<internal-ollama-host>:11434
-RAG_CHAT_MODEL=qwen2.5:32b
-RAG_EMBED_MODEL=nomic-embed-text
-EMB_BACKEND=ollama
-DEFAULT_RETRIES=2
-CHAT_READ_TIMEOUT=180
-```
+## Environment Profiles
+- **Internal (default):** Remote Ollama endpoint on corporate network, chat model `qwen2.5:32b`, embedding model `nomic-embed-text` (768-dim), `EMB_BACKEND=ollama`. No env vars required for normal use.
+- **Local dev:** Override via env vars if you run a local Ollama or want local embeddings: e.g., `RAG_OLLAMA_URL=http://127.0.0.1:11434`, `EMB_BACKEND=local`, `RAG_LLM_CLIENT=mock` for offline smoke tests.
+- **Mock/offline:** Set `RAG_LLM_CLIENT=mock` (and optionally `EMB_BACKEND=local`) for CI/offline scenarios.
 
 ## Ollama & models
 | Variable | Default | Purpose |
