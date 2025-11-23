@@ -1,0 +1,60 @@
+# Clockify FAQ candidates (one per line; comments start with #)
+
+# Getting started / access
+How do I sign up and create my Clockify workspace?
+How do I invite users and assign roles?
+How do I switch ownership of a workspace?
+How do I delete or archive a workspace?
+How do I back up or export my Clockify data?
+Where do I find my API key and how do I use it?
+
+# Time tracking basics
+How do I start and stop a timer?
+How do I add manual time entries?
+How do I add time for other users?
+How do I edit or split an existing time entry?
+How do I favorite or pin common tasks?
+How do I lock timesheets to prevent changes?
+How do I track breaks or use kiosk mode?
+How do I track time offline and sync later?
+
+# Projects, clients, budgets, rates
+How do I create projects and clients?
+How do I set hourly rates or task rates?
+How do I set budgets or estimates and get alerts?
+How do I manage people on projects and control access?
+How do I track billable vs non-billable time?
+
+# Reporting and approvals
+How do I use the Summary, Detailed, and Assignment reports?
+How do I export reports (CSV/PDF/XLSX) with custom fields?
+How do I schedule or share reports?
+How do I approve timesheets and expenses?
+
+# Expenses and invoices
+How do I track expenses?
+How do I create invoices from tracked time and expenses?
+How do I set taxes and currencies on invoices?
+How do I send invoice emails to clients?
+
+# Integrations and add-ons
+How do I integrate with Jira, QuickBooks, or other tools?
+How do I import data into Clockify?
+How do I use SSO (single sign-on) with Clockify?
+How do I enable screenshots, idle detection, or Pomodoro?
+
+# Subscription and billing
+How do I choose or change a subscription plan?
+How do I add or remove bundle seats?
+How do I cancel or downgrade my subscription?
+
+# Administration and security
+How do I manage user permissions and roles?
+How do I audit user activity and view logs?
+How do I change email addresses or reset passwords?
+How do I handle data regions and privacy settings?
+
+# Mobile and desktop apps
+How do I track time on the mobile app (iOS/Android)?
+How do I use the desktop app (Mac/Windows/Linux)?
+How do I use the browser extension to track time?
