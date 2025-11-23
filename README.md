@@ -6,50 +6,37 @@ RAG service that answers Clockify/CAKE support questions with citations. Default
 - Copy/paste commands: `RUN_ON_WORK_MAC.md` (CLI + API flows, zero env vars).
 - Defaults already point to the corporate Ollama + models; env vars still override if needed.
 
-## CLI: clone → ingest → query (single block)
-```bash
-git clone https://github.com/apet97/1rag.git
-cd 1rag
-conda create -n clockify-rag python=3.12 -y          # or python3.12 -m venv .venv
-conda activate clockify-rag                           # or source .venv/bin/activate
-conda install -c conda-forge faiss-cpu=1.8.0 -y       # optional ANN; skip for BM25/flat
-pip install --upgrade pip
-pip install -e ".[dev]"
-python -m clockify_rag.cli_modern ingest --force      # builds from clockify_help_corpus.en.md
-python -m clockify_rag.cli_modern query "How do I add time for others?"
-```
-
-## Setup on macOS M1/M2/M3 (with FAISS)
-```bash
-# 1) Create env (conda recommended for FAISS on Apple Silicon)
-conda create -n clockify-rag python=3.12 -y
-conda activate clockify-rag
-conda install -c conda-forge faiss-cpu=1.8.0 -y   # ANN speedup; optional
-
-# 2) Install project deps
-pip install --upgrade pip
-pip install -e ".[dev]"
-
-# 3) Build index (uses default corpus + Ollama embeddings)
-python -m clockify_rag.cli_modern ingest --force
-
-# 4) Ask something
-python -m clockify_rag.cli_modern query "How do I add time for others?"
-```
-If you skip conda/FAISS, the system falls back to BM25 + flat dense search automatically.
-
-### Full CLI flow (step-by-step)
-1) Ensure VPN is on and `clockify_help_corpus.en.md` is in repo root.  
-2) Activate your env (`conda activate clockify-rag` or `source .venv/bin/activate`).  
-3) Build/refresh index:  
+## Launch the CLI (VPN, zero env vars)
+1) Clone and enter the repo  
    ```bash
-   python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md --force
-   ```  
-4) Query:  
+   git clone https://github.com/apet97/1rag.git
+   cd 1rag
+   ```
+2) Create/activate env (conda shown; venv also works)  
+   ```bash
+   conda create -n clockify-rag python=3.12 -y
+   conda activate clockify-rag
+   # optional ANN on macOS arm64
+   conda install -c conda-forge faiss-cpu=1.8.0 -y
+   ```
+3) Install deps  
+   ```bash
+   pip install --upgrade pip
+   pip install -e ".[dev]"
+   ```
+4) Build the index (uses `clockify_help_corpus.en.md`, falls back to `knowledge_full.md`)  
+   ```bash
+   python -m clockify_rag.cli_modern ingest --force
+   ```
+5) Ask a question  
    ```bash
    python -m clockify_rag.cli_modern query "How do I add time for others?"
-   ```  
-5) Optional chat REPL: `python -m clockify_rag.cli_modern chat`
+   ```
+6) Optional chat REPL  
+   ```bash
+   python -m clockify_rag.cli_modern chat
+   ```
+If you skip FAISS, the system falls back to BM25 + flat dense search automatically.
 
 ## Run the API (localhost)
 ```bash
@@ -65,10 +52,10 @@ flowchart TD
     A[clockify_help_corpus.en.md] --> B[Chunker]
     A2[knowledge_full.md fallback] --> B
     B --> C[Embeddings nomic-embed-text 768d]
-    C --> D[Indexes BM25 + FAISS IVFFlat or FlatIP]
-    D --> E[Retriever MMR + intent-aware hybrid]
+    C --> D[Indexes BM25 + FAISS IVFFlat / FlatIP]
+    D --> E[Retriever hybrid + MMR]
     E --> F[LLM qwen2.5:32b via Ollama]
-    F --> G[Answer composer citations + contract]
+    F --> G[Answer composer + citations]
 ```
 
 ## Commands you’ll use
