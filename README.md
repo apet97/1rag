@@ -49,13 +49,13 @@ curl -X POST http://127.0.0.1:8000/v1/query \
 ## Architecture at a glance
 ```mermaid
 flowchart TD
-    A[clockify_help_corpus.en.md] --> B[Chunker (markdown-aware)]
+    A[clockify_help_corpus.en.md] --> B[Chunker]
     A2[knowledge_full.md (fallback)] --> B
-    B --> C[Embeddings\nOllama nomic-embed-text (768d)]
-    C --> D[Indexes\nBM25 + FAISS IVFFlat\n(fallback IndexFlatIP)]
-    D --> E[Retriever\nMMR + intent-aware hybrid]
-    E --> F[LLM via Ollama\nqwen2.5:32b]
-    F --> G[Answer composer\ncitations + contract validation]
+    B --> C[Embeddings (Ollama nomic-embed-text, 768d)]
+    C --> D[Indexes: BM25 + FAISS IVFFlat (fallback IndexFlatIP)]
+    D --> E[Retriever: MMR + intent-aware hybrid]
+    E --> F[LLM via Ollama qwen2.5:32b]
+    F --> G[Answer composer: citations + contract validation]
 ```
 
 ## Commands you’ll use
