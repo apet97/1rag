@@ -351,12 +351,12 @@ export OLLAMA_URL="http://127.0.0.1:11435"
 ### VPN Testing Checklist
 
 ```bash
-# 1. Test with VPN connected (Ollama local)
-export OLLAMA_URL="http://127.0.0.1:11434"
+# 1. Test with VPN connected (corporate Ollama default)
+export OLLAMA_URL="http://10.127.0.192:11434"
 python3 clockify_support_cli_final.py chat --debug
 
-# 2. Test with remote Ollama via VPN
-export OLLAMA_URL="http://10.x.x.x:11434"  # Replace with actual VPN IP
+# 2. Test with local Ollama (offline/local dev)
+export OLLAMA_URL="http://127.0.0.1:11434"
 curl "$OLLAMA_URL/api/version"  # Verify connectivity first
 python3 clockify_support_cli_final.py chat
 
@@ -367,7 +367,7 @@ export https_proxy="http://proxy:8080"
 python3 clockify_support_cli_final.py chat
 ```
 
-**Note**: The default `127.0.0.1` (localhost) configuration is VPN-safe and works in most VPN environments. Only configure remote endpoints if Ollama runs on a different machine.
+**Note**: Defaults now target the corporate host `http://10.127.0.192:11434` on VPN. Use `http://127.0.0.1:11434` only when running a local Ollama instance.
 
 ## Known Warnings (macOS M1 Pro)
 
