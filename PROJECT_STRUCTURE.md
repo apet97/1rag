@@ -11,7 +11,7 @@
 ├── 📚 Documentation/
 │   ├── INSTALLATION_SUMMARY.txt     ← Start here! (Setup guide)
 │   ├── QUICKSTART.md                ← Fast onboarding (10 min read)
-│   ├── README_RAG.md                ← Comprehensive guide (30 min read)
+│   ├── README.md                    ← Primary guide (10 min read)
 │   ├── TEST_GUIDE.md                ← Testing & validation
 │   ├── FILES_MANIFEST.md            ← File inventory & dependencies
 │   └── PROJECT_STRUCTURE.md         ← This file
@@ -60,7 +60,7 @@
 |------|------|---------|----------|-----------|
 | INSTALLATION_SUMMARY.txt | 6 KB | Overview & quick setup | Everyone | 5 min |
 | QUICKSTART.md | 4.7 KB | Fast onboarding guide | New users | 10 min |
-| README_RAG.md | 7.5 KB | Complete technical guide | Technical users | 30 min |
+| README.md | 7.5 KB | Complete technical guide | Technical users | 30 min |
 | TEST_GUIDE.md | ~12 KB | Testing & validation suite | QA/Testers | 20 min |
 | FILES_MANIFEST.md | 8.9 KB | File inventory & workflow | Developers | 15 min |
 | config_example.py | 6.6 KB | Configuration reference | Advanced users | 10 min |
