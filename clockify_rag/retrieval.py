@@ -1062,7 +1062,15 @@ def pack_snippets(
 def derive_role_security_hints(question: str) -> Tuple[str, str]:
     """Derive lightweight role/security hints from the raw ticket text."""
     text = (question or "").lower()
-    admin_markers = ["my team", "my users", "my employees", "i'm an admin", "im an admin", "i'm the owner", "i am the owner"]
+    admin_markers = [
+        "my team",
+        "my users",
+        "my employees",
+        "i'm an admin",
+        "im an admin",
+        "i'm the owner",
+        "i am the owner",
+    ]
     security_markers = [
         "screenshot",
         "screenshots",
@@ -1127,9 +1135,7 @@ def ask_llm(
     if chunks is not None:
         role_hint, security_hint = derive_role_security_hints(question)
         system_prompt = QWEN_SYSTEM_PROMPT
-        user_prompt = build_rag_user_prompt(
-            question, chunks, role_hint=role_hint, security_hint=security_hint
-        )
+        user_prompt = build_rag_user_prompt(question, chunks, role_hint=role_hint, security_hint=security_hint)
     else:
         # Legacy format for backward compatibility
         system_prompt = get_system_prompt()

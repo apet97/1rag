@@ -6,8 +6,22 @@ from clockify_rag.retrieval import pack_snippets
 def test_pack_snippets_groups_by_article_and_orders_chunks():
     """Chunks from the same article should be grouped and ordered."""
     chunks = [
-        {"id": "a-1", "text": "Alpha chunk one", "title": "Alpha", "url": "https://a", "section_idx": 0, "chunk_idx": 0},
-        {"id": "a-2", "text": "Alpha chunk two", "title": "Alpha", "url": "https://a", "section_idx": 0, "chunk_idx": 1},
+        {
+            "id": "a-1",
+            "text": "Alpha chunk one",
+            "title": "Alpha",
+            "url": "https://a",
+            "section_idx": 0,
+            "chunk_idx": 0,
+        },
+        {
+            "id": "a-2",
+            "text": "Alpha chunk two",
+            "title": "Alpha",
+            "url": "https://a",
+            "section_idx": 0,
+            "chunk_idx": 1,
+        },
         {"id": "b-1", "text": "Beta chunk one", "title": "Beta", "url": "https://b", "section_idx": 0, "chunk_idx": 0},
     ]
 
@@ -27,7 +41,14 @@ def test_pack_snippets_respects_budget_by_trimming_articles():
     """Token budget should trim trailing articles first."""
     chunks = [
         {"id": "a-1", "text": "alpha " * 200, "title": "Alpha", "url": "https://a", "section_idx": 0, "chunk_idx": 0},
-        {"id": "a-2", "text": "alpha two " * 200, "title": "Alpha", "url": "https://a", "section_idx": 0, "chunk_idx": 1},
+        {
+            "id": "a-2",
+            "text": "alpha two " * 200,
+            "title": "Alpha",
+            "url": "https://a",
+            "section_idx": 0,
+            "chunk_idx": 1,
+        },
         {"id": "b-1", "text": "beta " * 200, "title": "Beta", "url": "https://b", "section_idx": 0, "chunk_idx": 0},
     ]
 
