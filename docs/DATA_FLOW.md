@@ -54,7 +54,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
 ┌─────────────────┐
 │  User Query     │  "How do I track time in Clockify?"
 │  (Text Input)   │  • API: POST /v1/query {"question": "..."}
-│                 │  • CLI: ragctl ask "..."
+│                 │  • CLI: python -m clockify_rag.cli_modern query "..."
 └────────┬────────┘
          │
          ▼
@@ -63,7 +63,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
 │  & Validation   │  • Strip excessive whitespace
 │                 │  • Block XSS patterns (<script>, javascript:, eval)
 │                 │  • Reject non-printable characters
-│                 │  • Length limit: 1-10,000 chars
+│                 │  • Length limit: enforced via MAX_QUERY_LENGTH (default 1,000,000 chars; CLI/UX may set lower)
 └────────┬────────┘
          │
          ▼
@@ -77,8 +77,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
          ▼
 ┌─────────────────┐
 │   Retrieval     │  retrieval.py: retrieve_hybrid()
-│  Hybrid Search  │  • **BM25 (30%)**: Keyword matching (exact terms)
-│                 │  • **Dense (70%)**: Semantic similarity (cosine)
+│  Hybrid Search  │  • Balanced BM25 + dense (intent-aware alpha)
 │                 │  • Top-K: 15 candidates retrieved
 │                 │  • MMR: Maximal Marginal Relevance (λ=0.75)
 │                 │    - Diversifies results (avoid redundancy)
@@ -117,7 +116,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
 │ qwen2.5:32b     │  • Model: qwen2.5:32b (32k context window)
 │                 │  • Temperature: 0.0 (deterministic)
 │                 │  • System prompt: "Answer using only provided docs"
-│                 │  • Timeout: 180s read, 3s connect
+│                 │  • Timeout: 120s read, 3s connect (configurable)
 │                 │  • Retry: Max 1 retry on transient failures
 │                 │  • Input: system prompt + packed context + question
 └────────┬────────┘
