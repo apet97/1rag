@@ -50,96 +50,95 @@ logger = logging.getLogger(__name__)
 
 
 def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
-    """Parse and validate Qwen's JSON output.
+    """Parse Qwen JSON output for the ticket-answering contract with safe defaults."""
 
-    Expected schema:
-    {
-      "answer": str,           # Customer-ready reply in Markdown
-      "confidence": int,        # 0-100
-      "reasoning": str,         # Brief explanation (2-4 sentences)
-      "sources_used": [str]     # List of source IDs/URLs
+    allowed_intents = {
+        "feature_howto",
+        "troubleshooting",
+        "account_security",
+        "billing",
+        "workspace_admin",
+        "workspace_member",
+        "data_privacy",
+        "screenshots_troubleshooting",
+        "other",
     }
+    allowed_roles = {"admin", "manager", "regular_member", "external_client", "unknown"}
+    allowed_security = {"low", "medium", "high"}
 
-    Args:
-        raw_text: Raw text response from LLM
-
-    Returns:
-        Dict with validated fields
-
-    Raises:
-        json.JSONDecodeError: If text is not valid JSON
-        ValueError: If required fields missing or invalid types/ranges
-    """
-    # Strip markdown code blocks if present
     cleaned = raw_text.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
-        # Remove ```json and ``` markers
         if len(lines) >= 3 and lines[-1].strip() == "```":
             cleaned = "\n".join(lines[1:-1]).strip()
         elif len(lines) >= 2:
-            # Handle missing closing ```
             cleaned = "\n".join(lines[1:]).replace("```", "").strip()
 
-    # Parse JSON
-    try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        logger.error(f"Failed to parse Qwen JSON output: {e}")
-        logger.debug(f"Raw output (first 500 chars): {raw_text[:500]}")
-        raise
-
-    # Validate schema
+    data = json.loads(cleaned)
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object, got {type(data).__name__}")
 
-    # Check required fields (tolerate legacy keys by mapping)
-    required_fields = {"answer", "confidence", "reasoning", "sources_used"}
-    missing_fields = required_fields - set(data.keys())
-    if missing_fields:
-        # Map common legacy keys to sources_used
-        if "citations" in data and "sources_used" not in data:
-            data["sources_used"] = data["citations"]
-            missing_fields -= {"sources_used"}
-        if "sources" in data and "sources_used" not in data:
-            data["sources_used"] = data["sources"]
-            missing_fields -= {"sources_used"}
-    if missing_fields:
-        raise ValueError(f"Missing required fields: {missing_fields}")
+    def _get_str(key: str, default: str = "") -> str:
+        val = data.get(key)
+        if isinstance(val, str):
+            return val.strip()
+        if isinstance(val, (int, float, bool)):
+            return str(val)
+        return default
 
-    # Validate field types and ranges
-    if not isinstance(data["answer"], str):
-        raise ValueError(f"Field 'answer' must be string, got {type(data['answer']).__name__}")
+    def _coerce_list(key: str) -> List[str]:
+        src = data.get(key, [])
+        if not isinstance(src, list):
+            return []
+        out: List[str] = []
+        for item in src:
+            if isinstance(item, (str, int, float)):
+                text = str(item).strip()
+                if text:
+                    out.append(text)
+        return out
 
-    if not isinstance(data["confidence"], (int, float)):
-        raise ValueError(f"Field 'confidence' must be integer, got {type(data['confidence']).__name__}")
+    intent = _get_str("intent", "other").lower()
+    if intent not in allowed_intents:
+        intent = "other"
 
-    confidence = int(data["confidence"])
-    if not (0 <= confidence <= 100):
-        raise ValueError(f"Field 'confidence' must be in range 0-100, got {confidence}")
+    user_role = _get_str("user_role_inferred", "unknown").lower()
+    if user_role not in allowed_roles:
+        user_role = "unknown"
 
-    if not isinstance(data["reasoning"], str):
-        raise ValueError(f"Field 'reasoning' must be string, got {type(data['reasoning']).__name__}")
+    security = _get_str("security_sensitivity", "medium").lower()
+    if security not in allowed_security:
+        security = "medium"
 
-    if not isinstance(data["sources_used"], list):
-        raise ValueError(f"Field 'sources_used' must be list, got {type(data['sources_used']).__name__}")
+    short_intent = _get_str("short_intent_summary", "")
+    answer_style = _get_str("answer_style", "ticket_reply") or "ticket_reply"
+    needs_human = data.get("needs_human_escalation")
+    needs_human = bool(needs_human) if isinstance(needs_human, bool) else False
 
-    # Validate sources_used elements are non-empty strings and strip whitespace
-    sanitized_sources: List[str] = []
-    for i, source in enumerate(data["sources_used"]):
-        if not isinstance(source, (str, int, float)):
-            raise ValueError(f"Field 'sources_used[{i}]' must be string, got {type(source).__name__}")
-        cleaned = str(source).strip()
-        if cleaned == "":
-            raise ValueError(f"Field 'sources_used[{i}]' must not be empty")
-        sanitized_sources.append(cleaned)
+    sources_used = _coerce_list("sources_used")
+    if not sources_used and "sources" in data:
+        sources_used = _coerce_list("sources")
 
-    # Return validated data with normalized confidence
+    reasoning = _get_str("reasoning", "")
+
+    raw_conf = data.get("confidence")
+    confidence = None
+    if isinstance(raw_conf, (int, float)) and 0 <= int(raw_conf) <= 100:
+        confidence = int(raw_conf)
+
+    answer_val = _get_str("answer", cleaned)
+
     return {
-        "answer": data["answer"],
+        "answer": answer_val,
+        "intent": intent,
+        "user_role_inferred": user_role,
+        "security_sensitivity": security,
+        "answer_style": answer_style,
+        "short_intent_summary": short_intent,
+        "sources_used": sources_used,
+        "needs_human_escalation": needs_human,
+        "reasoning": reasoning,
         "confidence": confidence,
-        "reasoning": data["reasoning"],
-        "sources_used": sanitized_sources,
     }
 
 
@@ -311,7 +310,8 @@ def generate_llm_answer(
     all_chunks: Optional[List[Dict]] = None,
     selected_indices: Optional[List[int]] = None,
     scores_dict: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, float, Optional[int], Optional[str], Optional[List[str]]]:
+    article_blocks: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, float, Optional[int], Optional[str], Optional[List[str]], Dict[str, Any]]:
     """Generate answer from LLM with production-grade Qwen prompts.
 
     BREAKING CHANGE (v6.0): Qwen now returns structured JSON with confidence, reasoning, and sources.
@@ -328,12 +328,14 @@ def generate_llm_answer(
         scores_dict: Score arrays from retrieval (for confidence computation)
 
     Returns:
-        Tuple of (answer_text, timing, confidence, reasoning, sources_used)
+        Tuple of (answer_text, timing, confidence, reasoning, sources_used, structured_meta)
         - answer_text: The LLM's answer (customer-ready Markdown)
         - timing: Time taken for LLM call
-        - confidence: 0-100 score from LLM (new) or computed from retrieval scores (legacy)
-        - reasoning: Brief explanation from LLM (new), or None (legacy)
-        - sources_used: List of source IDs from LLM (new), or None (legacy)
+        - confidence: 0-100 score from LLM (if provided) or computed from retrieval scores
+        - reasoning: Brief explanation from LLM (if provided)
+        - sources_used: List of URLs/IDs the LLM says it used
+        - structured_meta: Dict with intent, user_role_inferred, security_sensitivity, short_intent_summary,
+          needs_human_escalation, answer_style
     """
     from .retrieval import compute_confidence_from_scores
 
@@ -356,7 +358,7 @@ def generate_llm_answer(
         num_ctx=num_ctx,
         num_predict=num_predict,
         retries=retries,
-        chunks=packed_chunks,  # None for legacy, list of dicts for new
+        chunks=article_blocks or packed_chunks,  # None for legacy, list of dicts for new
     ).strip()
     timing = time.time() - t0
 
@@ -365,14 +367,26 @@ def generate_llm_answer(
     confidence = None
     reasoning = None
     sources_used: Optional[List[str]] = None
+    intent = "other"
+    user_role_inferred = "unknown"
+    security_sensitivity = "medium"
+    answer_style = "ticket_reply"
+    short_intent_summary = ""
+    needs_human_escalation = False
     client_mode = (get_llm_client_mode("") or "").lower()
     try:
         if structured_prompt:
             parsed = parse_qwen_json(raw_response)
             answer = parsed["answer"]
-            confidence = parsed["confidence"]
-            reasoning = parsed["reasoning"]
-            sources_used = parsed["sources_used"]
+            intent = parsed.get("intent", intent)
+            user_role_inferred = parsed.get("user_role_inferred", user_role_inferred)
+            security_sensitivity = parsed.get("security_sensitivity", security_sensitivity)
+            answer_style = parsed.get("answer_style", answer_style)
+            short_intent_summary = parsed.get("short_intent_summary", short_intent_summary)
+            needs_human_escalation = parsed.get("needs_human_escalation", needs_human_escalation)
+            confidence = parsed.get("confidence", confidence)
+            reasoning = parsed.get("reasoning", reasoning)
+            sources_used = parsed.get("sources_used", sources_used)
             logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used)}")
         else:
             # Legacy prompt: treat output as plain text without parsing
@@ -390,64 +404,55 @@ def generate_llm_answer(
         sources_used = None
         # Do not synthesize citations in fallback; return raw text as-is
 
+    if confidence is None and scores_dict is not None and selected_indices is not None:
+        confidence = compute_confidence_from_scores(scores_dict, selected_indices)
+
     # Citation validation
     if packed_ids:
-        if structured_prompt and answer != REFUSAL_STR and client_mode == "mock" and not extract_citations(answer):
-            synthesized = ", ".join(str(pid) for pid in packed_ids[:3])
-            if synthesized:
-                answer = f"{answer}\n\n[{synthesized}]"
         if client_mode == "mock":
             if confidence is None and structured_prompt:
                 confidence = 100
-            return answer, timing, confidence, reasoning, sources_used
+            return (
+                answer,
+                timing,
+                confidence,
+                reasoning,
+                sources_used,
+                {
+                    "intent": intent,
+                    "user_role_inferred": user_role_inferred,
+                    "security_sensitivity": security_sensitivity,
+                    "short_intent_summary": short_intent_summary,
+                    "needs_human_escalation": needs_human_escalation,
+                    "answer_style": answer_style,
+                },
+            )
+
+        # Skip noisy inline citation validation when sources_used are present
         has_citations = bool(extract_citations(answer))
-
-        # If the model omitted inline citations but provided sources, append them.
-        if not has_citations and answer != REFUSAL_STR and sources_used:
-            cite_tokens: List[str] = []
-            if packed_chunks:
-                # Map context block index -> URL or ID
-                for src in sources_used:
-                    cite_val = src
-                    try:
-                        idx = int(str(src)) - 1
-                        if 0 <= idx < len(packed_chunks):
-                            cite_val = packed_chunks[idx].get("url") or packed_chunks[idx].get("id") or src
-                    except (ValueError, TypeError):
-                        pass
-                    cite_tokens.append(str(cite_val))
-            else:
-                cite_tokens = [str(s) for s in sources_used]
-            if cite_tokens:
-                answer = f"{answer}\n\n[{', '.join(cite_tokens)}]"
-                has_citations = True
-
-        if not has_citations and answer != REFUSAL_STR:
-            if STRICT_CITATIONS:
-                logger.warning("Answer lacks citations in strict mode, refusing answer")
-                answer = REFUSAL_STR
-                confidence = None
-            else:
-                logger.warning("Answer lacks citations (expected format: [id_123, id_456])")
-
-        # Validate citations reference actual chunks (only if not already refused)
-        if answer != REFUSAL_STR:
-            is_valid, valid_cites, invalid_cites = validate_citations(answer, packed_ids)
-
-            if invalid_cites:
-                if STRICT_CITATIONS:
-                    logger.warning(
-                        f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer"
-                    )
-                    answer = REFUSAL_STR
-                    confidence = None
-                else:
-                    logger.warning(f"Answer contains invalid citations: {invalid_cites}")
+        if not has_citations and STRICT_CITATIONS and answer != REFUSAL_STR and not sources_used:
+            logger.warning("Answer lacks citations in strict mode, refusing answer")
+            answer = REFUSAL_STR
+            confidence = None
 
     if client_mode == "mock" and structured_prompt and confidence is None:
         confidence = 100
 
-    return answer, timing, confidence, reasoning, sources_used
+    return (
+        answer,
+        timing,
+        confidence,
+        reasoning,
+        sources_used,
+        {
+            "intent": intent,
+            "user_role_inferred": user_role_inferred,
+            "security_sensitivity": security_sensitivity,
+            "short_intent_summary": short_intent_summary,
+            "needs_human_escalation": needs_human_escalation,
+            "answer_style": answer_style,
+        },
+    )
 
 
 def answer_once(
@@ -573,8 +578,10 @@ def answer_once(
         retries=retries,
     )
 
-    # Pack snippets
-    context_block, packed_ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx)
+    # Pack snippets grouped by article
+    context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
+        chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
+    )
 
     def _llm_failure(reason: str, error: Exception) -> Dict[str, Any]:
         total_time = time.time() - t_start
@@ -621,7 +628,7 @@ def answer_once(
 
     # Generate answer
     try:
-        answer, llm_time, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, llm_time, confidence, reasoning, sources_used, structured_meta = generate_llm_answer(
             question,
             context_block,
             seed=seed,
@@ -632,6 +639,7 @@ def answer_once(
             all_chunks=chunks,
             selected_indices=selected,
             scores_dict=scores,
+            article_blocks=article_blocks,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during answer generation: {exc}")
@@ -672,6 +680,13 @@ def answer_once(
         "answer": answer,
         "refused": refused,
         "confidence": confidence,
+        "intent": structured_meta.get("intent"),
+        "user_role_inferred": structured_meta.get("user_role_inferred"),
+        "security_sensitivity": structured_meta.get("security_sensitivity"),
+        "short_intent_summary": structured_meta.get("short_intent_summary"),
+        "answer_style": structured_meta.get("answer_style"),
+        "needs_human_escalation": structured_meta.get("needs_human_escalation"),
+        "sources_used": sources_used,
         "selected_chunks": _normalize_chunk_ids(selected),
         "packed_chunks": _normalize_chunk_ids(mmr_selected),
         "selected_chunk_ids": _normalize_chunk_ids(packed_ids),
@@ -692,6 +707,7 @@ def answer_once(
             "source_chunk_ids": _normalize_chunk_ids(packed_ids),
             "reasoning": reasoning,  # LLM's explanation (new JSON format)
             "sources_used": sources_used,  # LLM's cited sources (new JSON format)
+            **structured_meta,
         },
         "routing": routing,  # Add routing recommendation
     }

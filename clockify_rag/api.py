@@ -394,7 +394,11 @@ def create_app() -> FastAPI:
             metadata = result.get("metadata") or {}
             selected_chunks = result.get("selected_chunks", [])
             chunk_ids = result.get("selected_chunk_ids") or selected_chunks
-            sources = [str(identifier) for identifier in (chunk_ids or [])][:5]
+            sources_used = result.get("sources_used") or metadata.get("sources_used") or []
+            if sources_used:
+                sources = [str(identifier) for identifier in sources_used][:5]
+            else:
+                sources = [str(identifier) for identifier in (chunk_ids or [])][:5]
 
             return QueryResponse(
                 question=request.question,

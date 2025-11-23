@@ -50,7 +50,7 @@ def test_generate_llm_answer_handles_malformed_json(monkeypatch):
     chunks = [{"id": 1, "text": "body"}]
     scores = {"hybrid": [0.9], "dense": [0.9], "bm25": [0.5]}
 
-    answer, _, confidence, reasoning, sources = answer_mod.generate_llm_answer(
+    answer, _, confidence, reasoning, sources, meta = answer_mod.generate_llm_answer(
         question="q",
         context_block="ctx",
         packed_ids=[1],
@@ -63,3 +63,4 @@ def test_generate_llm_answer_handles_malformed_json(monkeypatch):
     assert isinstance(confidence, int)
     assert reasoning is None
     assert sources is None
+    assert meta["intent"] == "other"

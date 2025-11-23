@@ -147,6 +147,11 @@ def _extract_source_urls(result: dict, chunks: list) -> list[str]:
     urls: set[str] = set()
     meta = result.get("metadata", {}) or {}
 
+    sources_used = result.get("sources_used") or meta.get("sources_used") or []
+    for src in sources_used:
+        if isinstance(src, str) and src.strip().lower().startswith("http"):
+            urls.add(src.strip())
+
     candidates = []
     candidates.extend(result.get("selected_chunk_ids") or [])
     candidates.extend(meta.get("source_chunk_ids") or [])
@@ -410,6 +415,10 @@ def query(
         routing = result.get("routing")
         selected_chunks = result.get("selected_chunks", [])
         refused = result.get("refused", False)
+        intent = result.get("intent") or meta.get("intent") or "unknown"
+        user_role_inferred = result.get("user_role_inferred") or meta.get("user_role_inferred") or "unknown"
+        security_sensitivity = result.get("security_sensitivity") or meta.get("security_sensitivity") or "medium"
+        needs_human = bool(result.get("needs_human_escalation") or meta.get("needs_human_escalation"))
 
         if json_output:
             used_tokens = meta.get("used_tokens") or len(selected_chunks)
@@ -425,6 +434,13 @@ def query(
                 timing=timing,
                 refused=refused,
             )
+            payload["intent"] = intent
+            payload["user_role_inferred"] = user_role_inferred
+            payload["security_sensitivity"] = security_sensitivity
+            payload["needs_human_escalation"] = needs_human
+            payload["sources_used"] = result.get("sources_used") or meta.get("sources_used") or []
+            payload["short_intent_summary"] = result.get("short_intent_summary") or meta.get("short_intent_summary")
+            payload["answer_style"] = result.get("answer_style") or meta.get("answer_style")
             chunk_ids = result.get("selected_chunk_ids")
             sources = []
 
@@ -446,6 +462,11 @@ def query(
             console.print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
             urls = _extract_source_urls(result, chunks)
+            console.print()
+            console.print(f"Intent: {intent}")
+            console.print(f"Role inferred: {user_role_inferred}")
+            console.print(f"Security: {security_sensitivity}")
+            console.print(f"Needs escalation: {needs_human}")
             console.print()
             console.print("Answer:")
             console.print(answer)

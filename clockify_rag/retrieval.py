@@ -893,6 +893,37 @@ def _fmt_snippet_header(chunk):
     return hdr
 
 
+def _article_key(chunk: Dict[str, Any]) -> str:
+    """Return a stable article identifier for grouping chunks."""
+    meta = chunk.get("metadata", {}) or {}
+    for key in ("url", "source_url", "doc_url"):
+        val = chunk.get(key) or meta.get(key)
+        if val:
+            return str(val)
+    if chunk.get("article_id"):
+        return f"article:{chunk['article_id']}"
+    if meta.get("article_id"):
+        return f"article:{meta['article_id']}"
+    return str(chunk.get("doc_name") or chunk.get("id"))
+
+
+def _sort_article_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Sort chunks from the same article by structural position."""
+
+    def _sort_key(ch: Dict[str, Any]):
+        section_idx = ch.get("section_idx")
+        chunk_idx = ch.get("chunk_idx")
+        return (
+            section_idx if isinstance(section_idx, int) else 10_000,
+            chunk_idx if isinstance(chunk_idx, int) else 10_000,
+        )
+
+    try:
+        return sorted(chunks, key=_sort_key)
+    except Exception:
+        return chunks
+
+
 def pack_snippets(
     chunks,
     order,
@@ -900,13 +931,13 @@ def pack_snippets(
     budget_tokens: Optional[int] = None,
     num_ctx: Optional[int] = None,
 ):
-    """Pack snippets respecting strict token budget and hard snippet cap.
+    """Pack snippets by article, respecting token budget and hard caps.
 
-    Guarantees:
-    - Never exceeds min(config.CTX_TOKEN_BUDGET, num_ctx * 0.6)
-    - Respects model's actual context window via num_ctx
-    - First item always included (truncate body if needed; mark [TRUNCATED])
-    - Returns (block, ids, used_tokens)
+    Groups retrieved chunks by their source article (URL or article_id), preserves
+    retrieval order across articles, and concatenates chunks within each article
+    in document order. Returns a rendered context string, the list of chunk IDs
+    actually included, the token count used, and a list of article-level blocks
+    suitable for LLM prompting.
     """
     if pack_top is None:
         pack_top = config.DEFAULT_PACK_TOP
@@ -915,60 +946,137 @@ def pack_snippets(
     if num_ctx is None:
         num_ctx = config.DEFAULT_NUM_CTX
 
-    # Honor num_ctx: reserve 40% for system prompt + answer generation
-    # Use the minimum of the configured budget and 60% of model's context window
     effective_budget = min(budget_tokens, int(num_ctx * 0.6))
-
-    out = []
-    ids = []
-    used = 0
-    first_truncated = False
+    if effective_budget <= 0:
+        return "", [], 0, []
 
     sep_text = "\n\n---\n\n"
     sep_tokens = count_tokens(sep_text)
 
-    for idx_pos, idx in enumerate(order):
-        if len(ids) >= pack_top:
+    # Group chunks by article key in retrieval order
+    article_order: List[str] = []
+    article_chunks: Dict[str, List[Dict[str, Any]]] = {}
+    for idx in order:
+        chunk = chunks[idx]
+        key = _article_key(chunk)
+        if key not in article_order:
+            article_order.append(key)
+        article_chunks.setdefault(key, []).append(chunk)
+
+    # Cap the number of articles we attempt to pack
+    article_order = article_order[:pack_top]
+
+    out_blocks: List[str] = []
+    packed_ids: List[Any] = []
+    article_blocks: List[Dict[str, Any]] = []
+    used_tokens = 0
+
+    for art_pos, art_key in enumerate(article_order, start=1):
+        if used_tokens >= effective_budget:
             break
 
-        c = chunks[idx]
-        hdr = _fmt_snippet_header(c)
-        body = c["text"]
-
-        hdr_tokens = count_tokens(hdr + "\n")
-        body_tokens = count_tokens(body)
-        need_sep = 1 if out else 0
-        sep_cost = sep_tokens if need_sep else 0
-
-        if idx_pos == 0 and not ids:
-            # Always include first; truncate if needed to fit budget
-            item_tokens = hdr_tokens + body_tokens
-            if item_tokens > effective_budget:
-                allow_body = max(1, effective_budget - hdr_tokens)
-                body = truncate_to_token_budget(body, allow_body)
-                body_tokens = count_tokens(body)
-                item_tokens = hdr_tokens + body_tokens
-                first_truncated = True
-            out.append(hdr + "\n" + body)
-            ids.append(c["id"])
-            used += item_tokens
+        chunks_for_article = _sort_article_chunks(article_chunks.get(art_key, []))
+        if not chunks_for_article:
             continue
 
-        # For subsequent items, check sep + header + body within budget
-        item_tokens = hdr_tokens + body_tokens
-        if used + sep_cost + item_tokens <= effective_budget:
-            if need_sep:
-                out.append(sep_text)
-            out.append(hdr + "\n" + body)
-            ids.append(c["id"])
-            used += sep_cost + item_tokens
-        else:
+        title = chunks_for_article[0].get("title") or chunks_for_article[0].get("doc_name") or "Untitled Article"
+        url = (
+            chunks_for_article[0].get("url")
+            or chunks_for_article[0].get("source_url")
+            or (chunks_for_article[0].get("metadata") or {}).get("source_url")
+            or art_key
+        )
+
+        # Render header and compute available budget for this article (including separator if needed)
+        article_header = f"### Article: {title}\nURL: {url}\n\n"
+        header_tokens = count_tokens(article_header)
+        sep_cost = sep_tokens if out_blocks else 0
+        available_tokens = effective_budget - used_tokens - sep_cost
+
+        if available_tokens <= 0:
             break
 
-    if first_truncated and out:
-        out[0] = out[0].replace("]", " [TRUNCATED]]", 1)
+        # Always include the header; truncate body to fit remaining budget
+        body_parts: List[str] = []
+        included_ids: List[Any] = []
+        body_text = ""
+        for chunk in chunks_for_article:
+            addition = ("" if not body_parts else "\n\n") + chunk["text"]
+            candidate_body = body_text + addition
+            candidate_tokens = count_tokens(article_header + candidate_body)
+            if candidate_tokens <= available_tokens:
+                body_parts.append(chunk["text"])
+                included_ids.append(chunk["id"])
+                body_text = candidate_body
+                continue
 
-    return "".join(out), ids, used
+            # Try truncated chunk to fill remaining budget
+            remaining_for_body = available_tokens - count_tokens(article_header + body_text)
+            truncated = truncate_to_token_budget(chunk["text"], max(0, remaining_for_body))
+            if truncated:
+                body_parts.append(truncated)
+                included_ids.append(chunk["id"])
+                body_text = (body_text + ("\n\n" if body_text else "") + truncated) if truncated else body_text
+            break
+
+        if not body_parts:
+            # If nothing fits, skip this article
+            continue
+
+        if sep_cost:
+            out_blocks.append(sep_text)
+
+        article_body = "\n\n".join(body_parts)
+        block_text = article_header + article_body
+        out_blocks.append(block_text)
+        used_tokens = count_tokens("".join(out_blocks))
+
+        packed_ids.extend(included_ids)
+        article_blocks.append(
+            {
+                "id": str(len(article_blocks) + 1),
+                "title": title,
+                "url": url,
+                "text": article_body,
+                "chunk_ids": included_ids,
+            }
+        )
+
+    packed_text = "".join(out_blocks)
+    packed_tokens = count_tokens(packed_text)
+
+    # Defensive trim if we somehow exceeded budget
+    while packed_tokens > effective_budget and out_blocks:
+        removed = out_blocks.pop()
+        packed_tokens = count_tokens("".join(out_blocks)) if out_blocks else 0
+        # If we removed a separator only, continue removing until balanced
+        if removed.strip() == "---" and out_blocks:
+            out_blocks.pop()
+            packed_tokens = count_tokens("".join(out_blocks)) if out_blocks else 0
+
+    used_tokens = packed_tokens
+
+    return packed_text, packed_ids, used_tokens, article_blocks
+
+
+def derive_role_security_hints(question: str) -> Tuple[str, str]:
+    """Derive lightweight role/security hints from the raw ticket text."""
+    text = (question or "").lower()
+    admin_markers = ["my team", "my users", "my employees", "i'm an admin", "im an admin", "i'm the owner", "i am the owner"]
+    security_markers = [
+        "screenshot",
+        "screenshots",
+        "delete my account",
+        "account deletion",
+        "export data",
+        "privacy",
+        "gdpr",
+        "retention",
+    ]
+
+    role_hint = "admin" if any(marker in text for marker in admin_markers) else "unknown"
+    security_hint = "high" if any(marker in text for marker in security_markers) else "unknown"
+    return role_hint, security_hint
 
 
 def coverage_ok(selected, dense_scores, threshold):
@@ -1017,8 +1125,11 @@ def ask_llm(
 
     # Use new prompts if chunks provided, otherwise fall back to legacy
     if chunks is not None:
+        role_hint, security_hint = derive_role_security_hints(question)
         system_prompt = QWEN_SYSTEM_PROMPT
-        user_prompt = build_rag_user_prompt(question, chunks)
+        user_prompt = build_rag_user_prompt(
+            question, chunks, role_hint=role_hint, security_hint=security_hint
+        )
     else:
         # Legacy format for backward compatibility
         system_prompt = get_system_prompt()
@@ -1120,6 +1231,7 @@ __all__ = [
     "retrieve",
     "rerank_with_llm",
     "pack_snippets",
+    "derive_role_security_hints",
     "coverage_ok",
     "ask_llm",
     "tokenize",

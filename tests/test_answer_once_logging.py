@@ -63,12 +63,30 @@ def test_answer_once_logs_retrieved_chunks_with_cache(monkeypatch):
     monkeypatch.setattr(retrieval_module, "coverage_ok", lambda selected, dense_scores, threshold: True)
 
     def fake_pack_snippets(chunks_arg, selected, pack_top, budget_tokens, num_ctx):
-        return "context", [chunks_arg[i]["id"] for i in selected], 12
+        return "context", [chunks_arg[i]["id"] for i in selected], 12, []
 
     monkeypatch.setattr(retrieval_module, "pack_snippets", fake_pack_snippets)
     # Note: inject_policy_preamble may need to be updated when test is fixed
     # monkeypatch.setattr(answer_module, "inject_policy_preamble", lambda block, question: block)
-    monkeypatch.setattr(answer_module, "generate_llm_answer", lambda *args, **kwargs: ("answer", 0.01, 88))
+    monkeypatch.setattr(
+        answer_module,
+        "generate_llm_answer",
+        lambda *args, **kwargs: (
+            "answer",
+            0.01,
+            88,
+            "",
+            [],
+            {
+                "intent": "other",
+                "user_role_inferred": "unknown",
+                "security_sensitivity": "medium",
+                "short_intent_summary": "",
+                "needs_human_escalation": False,
+                "answer_style": "ticket_reply",
+            },
+        ),
+    )
 
     logged_calls = []
 

@@ -62,7 +62,7 @@ def patched_pipeline(monkeypatch, sample_chunks, sample_embeddings, sample_bm25)
 
     def fake_pack_snippets(chunks, selected, pack_top=8, num_ctx=2048):
         packed_ids = [chunks[idx]["id"] for idx in selected[:pack_top]]
-        return "context", packed_ids, 42
+        return "context", packed_ids, 42, []
 
     def fake_rerank(question, chunks, mmr_selected, scores, use_rerank, **kwargs):
         return mmr_selected, {}, False, "disabled", 0.0

@@ -277,6 +277,11 @@ def chat_repl(
             }
             print(json.dumps(output, ensure_ascii=False, indent=2))
         else:
+            intent = result.get("intent") or metadata.get("intent") or "unknown"
+            role = result.get("user_role_inferred") or metadata.get("user_role_inferred") or "unknown"
+            security = result.get("security_sensitivity") or metadata.get("security_sensitivity") or "medium"
+            needs_human = bool(result.get("needs_human_escalation") or metadata.get("needs_human_escalation"))
+            print(f"\nIntent: {intent} | Role: {role} | Security: {security} | Needs escalation: {needs_human}")
             print(f"\n{answer}")
 
         # Show debug info if enabled

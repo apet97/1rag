@@ -185,12 +185,17 @@ class TestGenerateLLMAnswer:
             "confidence": 85,
             "reasoning": "Based on context block 1 which describes timer functionality.",
             "sources_used": ["1"],
+            "intent": "feature_howto",
+            "user_role_inferred": "regular_member",
+            "security_sensitivity": "low",
+            "short_intent_summary": "User wants to track time",
+            "needs_human_escalation": False,
         }
         mock_ask_llm.return_value = json.dumps(payload)
 
         # Provide all_chunks so packed_chunks is set, triggering new prompt path
         chunks = [{"id": 1, "text": "Track time using timer."}]
-        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, timing, confidence, reasoning, sources_used, meta = generate_llm_answer(
             "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
@@ -198,6 +203,7 @@ class TestGenerateLLMAnswer:
         assert confidence == payload["confidence"]
         assert reasoning == payload["reasoning"]
         assert sources_used == payload["sources_used"]
+        assert meta["intent"] == "feature_howto"
         assert timing >= 0
 
     @patch("clockify_rag.answer.ask_llm")
@@ -208,11 +214,12 @@ class TestGenerateLLMAnswer:
             "confidence": 90,
             "reasoning": "Context 1 provides clear instructions.",
             "sources_used": ["1"],
+            "intent": "feature_howto",
         }
         mock_ask_llm.return_value = f"```json\n{json.dumps(payload)}\n```"
 
         chunks = [{"id": 1, "text": "Track time using timer."}]
-        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, timing, confidence, reasoning, sources_used, meta = generate_llm_answer(
             "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
@@ -220,6 +227,7 @@ class TestGenerateLLMAnswer:
         assert confidence == 90
         assert reasoning == "Context 1 provides clear instructions."
         assert sources_used == ["1"]
+        assert meta["intent"] == "feature_howto"
 
     @patch("clockify_rag.answer.ask_llm")
     def test_generate_with_numbered_answer_structure(self, mock_ask_llm):
@@ -229,11 +237,12 @@ class TestGenerateLLMAnswer:
             "confidence": 77,
             "reasoning": "Synthesized from context blocks 1 and 2.",
             "sources_used": ["1", "2"],
+            "intent": "feature_howto",
         }
         mock_ask_llm.return_value = json.dumps(payload)
 
         chunks = [{"id": 1, "text": "Track time using timer."}, {"id": 2, "text": "Manual entry option."}]
-        answer, _, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, _, confidence, reasoning, sources_used, meta = generate_llm_answer(
             "How to track time?",
             "[1] Track time using timer. [2] Manual entry option.",
             packed_ids=[1, 2],
@@ -244,6 +253,7 @@ class TestGenerateLLMAnswer:
         assert confidence == payload["confidence"]
         assert reasoning == payload["reasoning"]
         assert sources_used == payload["sources_used"]
+        assert meta["intent"] == "feature_howto"
 
     @patch("clockify_rag.answer.ask_llm")
     def test_generate_with_plain_text_legacy(self, mock_ask_llm):
@@ -251,7 +261,7 @@ class TestGenerateLLMAnswer:
         mock_ask_llm.return_value = "Track time using [1]."
 
         # Don't provide all_chunks, triggers legacy path
-        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, timing, confidence, reasoning, sources_used, meta = generate_llm_answer(
             "How to track time?", "[1] Track time using timer.", packed_ids=[1]
         )
 
@@ -267,7 +277,7 @@ class TestGenerateLLMAnswer:
         mock_ask_llm.return_value = '{"answer": "Track time using [1].", "confidence": 85}'
 
         chunks = [{"id": 1, "text": "Track time using timer."}]
-        answer, timing, confidence, reasoning, sources_used = generate_llm_answer(
+        answer, timing, confidence, reasoning, sources_used, meta = generate_llm_answer(
             "How to track time?", "[1] Track time using timer.", packed_ids=[1], all_chunks=chunks
         )
 
@@ -275,6 +285,7 @@ class TestGenerateLLMAnswer:
         assert "Track time using [1]." in answer
         assert reasoning is None  # Fallback path doesn't have reasoning
         assert sources_used is None  # Fallback path doesn't have sources
+        assert meta["intent"] == "other"
 
 
 class TestReranking:

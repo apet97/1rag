@@ -63,7 +63,7 @@ class TestContextWindowOverflow:
         pack_top = 5
         num_ctx = 100  # Very small budget
 
-        context_block, packed_ids, used_tokens = pack_snippets(
+        context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
             sample_chunks, selected, pack_top=pack_top, num_ctx=num_ctx
         )
 
@@ -78,7 +78,7 @@ class TestContextWindowOverflow:
         pack_top = 1
         num_ctx = 10  # Impossibly small budget
 
-        context_block, packed_ids, used_tokens = pack_snippets(
+        context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
             sample_chunks, selected, pack_top=pack_top, num_ctx=num_ctx
         )
 
@@ -101,7 +101,9 @@ class TestContextWindowOverflow:
         pack_top = 1
         num_ctx = 500  # Budget smaller than chunk
 
-        context_block, packed_ids, used_tokens = pack_snippets(chunks, selected, pack_top=pack_top, num_ctx=num_ctx)
+        context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
+            chunks, selected, pack_top=pack_top, num_ctx=num_ctx
+        )
 
         # Should truncate or handle gracefully
         assert isinstance(context_block, str)
@@ -120,7 +122,9 @@ class TestContextWindowOverflow:
         pack_top = 1
         num_ctx = 2800
 
-        context_block, packed_ids, used_tokens = pack_snippets(chunks, selected, pack_top=pack_top, num_ctx=num_ctx)
+        context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
+            chunks, selected, pack_top=pack_top, num_ctx=num_ctx
+        )
 
         # Should handle without errors
         assert isinstance(context_block, str)

@@ -20,6 +20,7 @@ Usage:
 import asyncio
 import json
 import logging
+import os
 import time
 from typing import Dict, List, Tuple, Optional, Any
 
@@ -149,7 +150,8 @@ async def async_generate_llm_answer(
     all_chunks: Optional[List[Dict]] = None,
     selected_indices: Optional[List[int]] = None,
     scores_dict: Optional[Dict[str, Any]] = None,
-) -> Tuple[str, float, Optional[int]]:
+    article_blocks: Optional[List[Dict[str, Any]]] = None,
+) -> Tuple[str, float, Optional[int], Optional[str], Optional[List[str]], Dict[str, Any]]:
     """Async version of generate_llm_answer with confidence scoring and citation validation.
 
     Args:
@@ -162,10 +164,9 @@ async def async_generate_llm_answer(
         scores_dict: Retrieval scores (for confidence computation)
 
     Returns:
-        Tuple of (answer_text, timing, confidence)
+        Tuple of (answer_text, timing, confidence, reasoning, sources_used, structured_meta)
     """
-    from .answer import extract_citations, validate_citations
-    from .config import STRICT_CITATIONS
+    from .answer import parse_qwen_json
 
     # Extract packed chunks if all data is provided (new code path)
     packed_chunks = None
@@ -182,47 +183,36 @@ async def async_generate_llm_answer(
             num_ctx,
             num_predict,
             retries,
-            chunks=packed_chunks,  # Pass chunks for new Qwen prompts
+            chunks=article_blocks or packed_chunks,  # Pass chunks for new Qwen prompts
         )
     ).strip()
     timing = time.time() - t0
 
     # Parse JSON response with confidence
     confidence = None
+    reasoning: Optional[str] = None
+    sources_used: Optional[List[str]] = None
+    intent = "other"
+    user_role_inferred = "unknown"
+    security_sensitivity = "medium"
+    short_intent_summary = ""
+    needs_human_escalation = False
+    answer_style = "ticket_reply"
     answer = raw_response  # Default to raw response if parsing fails
 
     try:
-        # Try to parse as JSON
-        cleaned = raw_response.strip()
-        if cleaned.startswith("```"):
-            # Extract content between ``` markers
-            lines = cleaned.split("\n")
-            if len(lines) >= 3 and lines[-1].strip() == "```":
-                cleaned = "\n".join(lines[1:-1]).strip()
-            elif len(lines) >= 2:
-                cleaned = "\n".join(lines[1:]).replace("```", "").strip()
-
-        parsed = json.loads(cleaned)
-
-        if isinstance(parsed, dict):
-            answer = parsed.get("answer", raw_response)
-            confidence = parsed.get("confidence")
-
-            # Validate confidence is in 0-100 range
-            if confidence is not None:
-                try:
-                    confidence = int(confidence)
-                    if not (0 <= confidence <= 100):
-                        logger.warning(f"Confidence out of range: {confidence}, ignoring")
-                        confidence = None
-                except (ValueError, TypeError):
-                    logger.warning(f"Invalid confidence value: {confidence}, ignoring")
-                    confidence = None
-        else:
-            answer = raw_response
-
-    except json.JSONDecodeError:
-        # Not JSON, use raw response
+        parsed = parse_qwen_json(raw_response)
+        answer = parsed["answer"]
+        intent = parsed.get("intent", intent)
+        user_role_inferred = parsed.get("user_role_inferred", user_role_inferred)
+        security_sensitivity = parsed.get("security_sensitivity", security_sensitivity)
+        short_intent_summary = parsed.get("short_intent_summary", short_intent_summary)
+        needs_human_escalation = parsed.get("needs_human_escalation", needs_human_escalation)
+        answer_style = parsed.get("answer_style", answer_style)
+        confidence = parsed.get("confidence", confidence)
+        reasoning = parsed.get("reasoning")
+        sources_used = parsed.get("sources_used")
+    except (json.JSONDecodeError, ValueError):
         answer = raw_response
 
     # Compute confidence from scores (preferred method, overrides LLM JSON confidence)
@@ -231,33 +221,21 @@ async def async_generate_llm_answer(
 
         confidence = compute_confidence_from_scores(scores_dict, selected_indices)
 
-    # Citation validation
-    if packed_ids:
-        has_citations = bool(extract_citations(answer))
-
-        if not has_citations and answer != REFUSAL_STR:
-            if STRICT_CITATIONS:
-                logger.warning("Answer lacks citations in strict mode, refusing answer")
-                answer = REFUSAL_STR
-                confidence = None
-            else:
-                logger.warning("Answer lacks citations (expected format: [id_123, id_456])")
-
-        # Validate citations reference actual chunks (only if not already refused)
-        if answer != REFUSAL_STR:
-            is_valid, valid_cites, invalid_cites = validate_citations(answer, packed_ids)
-
-            if invalid_cites:
-                if STRICT_CITATIONS:
-                    logger.warning(
-                        f"Answer contains invalid citations in strict mode: {invalid_cites}, refusing answer"
-                    )
-                    answer = REFUSAL_STR
-                    confidence = None
-                else:
-                    logger.warning(f"Answer contains invalid citations: {invalid_cites}")
-
-    return answer, timing, confidence
+    return (
+        answer,
+        timing,
+        confidence,
+        reasoning,
+        sources_used,
+        {
+            "intent": intent,
+            "user_role_inferred": user_role_inferred,
+            "security_sensitivity": security_sensitivity,
+            "short_intent_summary": short_intent_summary,
+            "needs_human_escalation": needs_human_escalation,
+            "answer_style": answer_style,
+        },
+    )
 
 
 async def async_answer_once(
@@ -352,7 +330,9 @@ async def async_answer_once(
         )
 
     # Pack snippets
-    context_block, packed_ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx)
+    context_block, packed_ids, used_tokens, article_blocks = pack_snippets(
+        chunks, mmr_selected, pack_top=pack_top, num_ctx=num_ctx
+    )
 
     def _failure(reason: str, error: Exception) -> Dict[str, Any]:
         total_time = time.time() - t_start
@@ -395,6 +375,7 @@ async def async_answer_once(
             all_chunks=chunks,
             selected_indices=selected,
             scores_dict=scores,
+            article_blocks=article_blocks,
         )
     except LLMUnavailableError as exc:
         logger.error(f"LLM unavailable during async answer generation: {exc}")
@@ -413,6 +394,13 @@ async def async_answer_once(
         "answer": answer,
         "refused": refused,
         "confidence": confidence,
+        "intent": (structured_meta or {}).get("intent"),
+        "user_role_inferred": (structured_meta or {}).get("user_role_inferred"),
+        "security_sensitivity": (structured_meta or {}).get("security_sensitivity"),
+        "short_intent_summary": (structured_meta or {}).get("short_intent_summary"),
+        "answer_style": (structured_meta or {}).get("answer_style"),
+        "needs_human_escalation": (structured_meta or {}).get("needs_human_escalation"),
+        "sources_used": sources_used,
         "selected_chunks": selected,
         "packed_chunks": mmr_selected,
         "context_block": context_block,
@@ -429,6 +417,9 @@ async def async_answer_once(
             "used_tokens": used_tokens,
             "rerank_applied": rerank_applied,
             "rerank_reason": rerank_reason,
+            "reasoning": reasoning,
+            "sources_used": sources_used,
+            **(structured_meta or {}),
         },
         "routing": routing,
     }

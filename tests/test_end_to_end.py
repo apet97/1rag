@@ -114,7 +114,7 @@ If you encounter issues, try rebuilding the index or checking your configuration
             assert all(i in selected for i in mmr_selected), "MMR selected items not in original results"
 
             # Test snippet packing
-            context_block, packed_ids, used_tokens = pack_snippets(chunks, mmr_selected, pack_top=3)
+            context_block, packed_ids, used_tokens, article_blocks = pack_snippets(chunks, mmr_selected, pack_top=3)
 
             assert len(context_block) > 0, "Context block is empty"
             assert len(packed_ids) == len(mmr_selected), "Packed IDs count doesn't match"

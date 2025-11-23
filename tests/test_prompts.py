@@ -8,9 +8,9 @@ def test_system_prompt_contains_key_phrases():
     # Check for key phrases that define the role and behavior
     assert "Clockify" in QWEN_SYSTEM_PROMPT
     assert "CAKE.com" in QWEN_SYSTEM_PROMPT
-    assert "CONTEXT" in QWEN_SYSTEM_PROMPT
-    assert "internal support" in QWEN_SYSTEM_PROMPT.lower()
-    assert "source of truth" in QWEN_SYSTEM_PROMPT.lower()
+    assert "support tickets" in QWEN_SYSTEM_PROMPT.lower()
+    assert "SECURITY & PRIVACY RULES".lower() in QWEN_SYSTEM_PROMPT.lower()
+    assert "OUTPUT FORMAT" in QWEN_SYSTEM_PROMPT
 
 
 def test_build_rag_user_prompt_with_basic_chunks():
@@ -24,8 +24,8 @@ def test_build_rag_user_prompt_with_basic_chunks():
     prompt = build_rag_user_prompt(question, chunks)
 
     # Check that prompt includes context blocks
-    assert "[CONTEXT_BLOCK id=1]" in prompt
-    assert "[CONTEXT_BLOCK id=2]" in prompt
+    assert "[ARTICLE id=1]" in prompt
+    assert "[ARTICLE id=2]" in prompt
 
     # Check that chunk content is included
     assert "This is the first chunk content." in prompt
@@ -33,7 +33,7 @@ def test_build_rag_user_prompt_with_basic_chunks():
 
     # Check that question is included
     assert "How do I track time?" in prompt
-    assert "USER QUESTION" in prompt
+    assert "USER TICKET" in prompt
 
 
 def test_build_rag_user_prompt_with_metadata():
@@ -59,14 +59,14 @@ def test_build_rag_user_prompt_with_metadata():
     prompt = build_rag_user_prompt(question, chunks)
 
     # Check context blocks
-    assert "[CONTEXT_BLOCK id=1]" in prompt
-    assert "[CONTEXT_BLOCK id=2]" in prompt
+    assert "[ARTICLE id=1]" in prompt
+    assert "[ARTICLE id=2]" in prompt
 
     # Check metadata is included
-    assert "source: https://support.clockify.me/articles/123" in prompt
+    assert "url: https://support.clockify.me/articles/123" in prompt
     assert "title: Time Tracking Guide" in prompt
     assert "section: Getting Started" in prompt
-    assert "source: https://support.clockify.me/articles/456" in prompt
+    assert "url: https://support.clockify.me/articles/456" in prompt
     assert "title: Manual Time Entry" in prompt
     assert "section: Advanced Features" in prompt
 
@@ -75,8 +75,7 @@ def test_build_rag_user_prompt_with_metadata():
     assert "Enter time manually in the time tracker." in prompt
 
     # Check instructions
-    assert "INSTRUCTIONS:" in prompt
-    assert "primary source of truth" in prompt.lower()
+    assert "META HINTS" in prompt
     assert "TASK:" in prompt
 
 
@@ -102,11 +101,11 @@ def test_build_rag_user_prompt_with_partial_metadata():
 
     # Should include available metadata
     assert "title: Article Title" in prompt
-    assert "source: https://example.com" in prompt
+    assert "url: https://example.com" in prompt
 
     # Should not crash on missing metadata
-    assert "[CONTEXT_BLOCK id=1]" in prompt
-    assert "[CONTEXT_BLOCK id=2]" in prompt
+    assert "[ARTICLE id=1]" in prompt
+    assert "[ARTICLE id=2]" in prompt
 
 
 def test_build_rag_user_prompt_with_empty_chunks():
@@ -118,8 +117,8 @@ def test_build_rag_user_prompt_with_empty_chunks():
 
     # Should still include question and structure
     assert "What happens with no context?" in prompt
-    assert "USER QUESTION" in prompt
-    assert "CONTEXT_BLOCKS" in prompt
+    assert "USER TICKET" in prompt
+    assert "CONTEXT ARTICLES" in prompt
 
 
 def test_build_rag_user_prompt_includes_citations_instruction():
@@ -134,32 +133,27 @@ def test_build_rag_user_prompt_includes_citations_instruction():
     # Check JSON output instructions (v6.0+)
     assert "JSON object" in prompt
     assert "sources_used" in prompt
-    # Should still mention CONTEXT_BLOCK IDs
-    assert "CONTEXT_BLOCK" in prompt
+    # Should still mention article IDs
+    assert "ARTICLE id=1" in prompt
 
 
 def test_system_prompt_structure():
     """Test that the system prompt has the expected structure."""
     # Should have main sections
-    assert "PRIMARY ROLE" in QWEN_SYSTEM_PROMPT
-    assert "KNOWLEDGE & SCOPE" in QWEN_SYSTEM_PROMPT
-    assert "RAG BEHAVIOR" in QWEN_SYSTEM_PROMPT
-    assert "STYLE & FORMAT" in QWEN_SYSTEM_PROMPT
-    # v6.0+: Changed from OUTPUT RULES to OUTPUT FORMAT
+    assert "MISSION & PIPELINE" in QWEN_SYSTEM_PROMPT
+    assert "ROLE & SECURITY HINTS" in QWEN_SYSTEM_PROMPT
+    assert "SECURITY & PRIVACY RULES" in QWEN_SYSTEM_PROMPT
     assert "OUTPUT FORMAT" in QWEN_SYSTEM_PROMPT
     assert "STRICT" in QWEN_SYSTEM_PROMPT  # Emphasizes mandatory JSON
-
-    # Should emphasize importance of context
-    assert "VERY IMPORTANT" in QWEN_SYSTEM_PROMPT
 
 
 def test_system_prompt_json_schema():
     """Test that the system prompt includes the required JSON schema (v6.0+)."""
     # Check for JSON schema fields
     assert '"answer"' in QWEN_SYSTEM_PROMPT
-    assert '"confidence"' in QWEN_SYSTEM_PROMPT
-    assert '"reasoning"' in QWEN_SYSTEM_PROMPT
     assert '"sources_used"' in QWEN_SYSTEM_PROMPT
-
-    # Check confidence range is specified
-    assert "0-100" in QWEN_SYSTEM_PROMPT or "0 to 100" in QWEN_SYSTEM_PROMPT
+    assert '"intent"' in QWEN_SYSTEM_PROMPT
+    assert '"user_role_inferred"' in QWEN_SYSTEM_PROMPT
+    assert '"security_sensitivity"' in QWEN_SYSTEM_PROMPT
+    assert '"short_intent_summary"' in QWEN_SYSTEM_PROMPT
+    assert '"needs_human_escalation"' in QWEN_SYSTEM_PROMPT

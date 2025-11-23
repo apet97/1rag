@@ -22,6 +22,11 @@ def test_query_command_surfaces_metadata(monkeypatch, cli_runner):
         "selected_chunks": [10, 20],
         "selected_chunk_ids": ["doc-10", "doc-20"],
         "metadata": {"used_tokens": 42},
+        "intent": "feature_howto",
+        "user_role_inferred": "admin",
+        "security_sensitivity": "low",
+        "needs_human_escalation": False,
+        "sources_used": ["https://example.com/doc-10"],
     }
 
     monkeypatch.setattr(cli_modern, "answer_once", lambda *_, **__: result_payload)
@@ -56,6 +61,10 @@ def test_query_default_output_includes_sources(monkeypatch, cli_runner):
         "answer": "Mocked answer",
         "selected_chunk_ids": ["doc-2", "doc-1"],
         "metadata": {"sources_used": ["doc-2", "doc-1"]},
+        "intent": "troubleshooting",
+        "user_role_inferred": "admin",
+        "security_sensitivity": "high",
+        "needs_human_escalation": True,
     }
 
     monkeypatch.setattr(cli_modern, "answer_once", lambda *_, **__: result_payload)
@@ -64,6 +73,10 @@ def test_query_default_output_includes_sources(monkeypatch, cli_runner):
 
     assert response.exit_code == 0
     out = response.stdout
+    assert "Intent: troubleshooting" in out
+    assert "Role inferred: admin" in out
+    assert "Security: high" in out
+    assert "Needs escalation: True" in out
     assert "Answer:" in out
     assert "Mocked answer" in out
     assert "Sources:" in out
@@ -82,6 +95,10 @@ def test_query_default_output_no_sources(monkeypatch, cli_runner):
         "answer": "No source answer",
         "selected_chunk_ids": ["doc-1"],
         "metadata": {"sources_used": ["doc-1"]},
+        "intent": "other",
+        "user_role_inferred": "unknown",
+        "security_sensitivity": "medium",
+        "needs_human_escalation": False,
     }
 
     monkeypatch.setattr(cli_modern, "answer_once", lambda *_, **__: result_payload)
