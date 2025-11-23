@@ -132,6 +132,6 @@ TASK:
 - Read ALL article blocks above as cohesive documents (treat each block as the full article content for that source).
 - Infer intent, role, and sensitivity from the ticket + hints.
 - Answer ONLY using these articles; if details are missing, say so and be conservative.
-- Output ONLY the JSON object described in the system prompt (no code fences, no extra text)."""
+- Output ONLY the JSON object described in the system prompt (no code fences, no extra text). Include the sources_used URLs from the articles you actually used."""
 
     return user_prompt

@@ -364,7 +364,7 @@ async def async_answer_once(
 
     # Generate answer (async)
     try:
-        answer, llm_time, confidence = await async_generate_llm_answer(
+        answer, llm_time, confidence, reasoning, sources_used, structured_meta = await async_generate_llm_answer(
             question,
             context_block,
             seed=seed,

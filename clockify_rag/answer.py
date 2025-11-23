@@ -119,7 +119,8 @@ def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
     if not sources_used and "sources" in data:
         sources_used = _coerce_list("sources")
 
-    reasoning = _get_str("reasoning", "")
+    reasoning_val = data.get("reasoning")
+    reasoning = _get_str("reasoning", "") if isinstance(reasoning_val, str) else None
 
     raw_conf = data.get("confidence")
     confidence = None
@@ -386,8 +387,9 @@ def generate_llm_answer(
             needs_human_escalation = parsed.get("needs_human_escalation", needs_human_escalation)
             confidence = parsed.get("confidence", confidence)
             reasoning = parsed.get("reasoning", reasoning)
-            sources_used = parsed.get("sources_used", sources_used)
-            logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used)}")
+            parsed_sources = parsed.get("sources_used", sources_used)
+            sources_used = parsed_sources if parsed_sources else None
+            logger.debug(f"Parsed Qwen JSON: confidence={confidence}, sources={len(sources_used or [])}")
         else:
             # Legacy prompt: treat output as plain text without parsing
             answer = raw_response
