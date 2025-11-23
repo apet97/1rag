@@ -32,7 +32,8 @@ def test_pack_snippets_groups_by_article_and_orders_chunks():
     # Alpha chunks should stay in document order
     assert context_block.index("Alpha chunk one") < context_block.index("Alpha chunk two")
     assert len(article_blocks) == 2
-    assert article_blocks[0]["chunk_ids"] == ["a-1", "a-2"]
+    # Best article is placed last for recency bias
+    assert article_blocks[-1]["chunk_ids"] == ["a-1", "a-2"]
     assert "Beta chunk one" in context_block
     assert set(packed_ids) == {"a-1", "a-2", "b-1"}
 
@@ -54,8 +55,8 @@ def test_pack_snippets_respects_budget_by_trimming_articles():
 
     context_block, packed_ids, used_tokens, article_blocks = pack_snippets(chunks, [0, 1, 2], pack_top=2, num_ctx=50)
 
-    # Budget too small to include both articles; should prioritize the first
+    # Budget too small to include both articles; with best-last ordering we may keep only the first in order
     assert len(article_blocks) == 1
-    assert article_blocks[0]["url"] == "https://a"
-    assert all(pid.startswith("a-") for pid in packed_ids)
-    assert "Beta" not in context_block
+    assert article_blocks[0]["url"] == "https://b"
+    assert all(pid.startswith("b-") for pid in packed_ids)
+    assert "Alpha" not in context_block

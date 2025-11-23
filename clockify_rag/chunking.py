@@ -440,6 +440,18 @@ def build_chunks(md_path: str) -> list:
             # Parse the section for any H3 or H4 headers as subsection indicators
             subsection_headers = extract_subsection_headers(sect)
 
+            # Build breadcrumb-style hierarchy for disambiguation
+            clean_title = title.replace(" - Clockify Help", "").strip()
+            hierarchy = [clean_title] if clean_title else []
+            if section_label and section_label.lower() != clean_title.lower():
+                hierarchy.append(section_label)
+
+            subsection_headers = extract_subsection_headers(sect)
+            if subsection_headers:
+                hierarchy.append(subsection_headers[0])
+
+            breadcrumb = " > ".join(hierarchy)
+
             # Create chunks for this section
             text_chunks = sliding_chunks(sect)
 
@@ -454,7 +466,10 @@ def build_chunks(md_path: str) -> list:
                     importance = _section_importance(section_label)
                     if importance:
                         metadata["section_importance"] = importance
+                if breadcrumb:
+                    metadata["breadcrumb"] = breadcrumb
 
+                enriched_text = f"Context: {breadcrumb}\n\n{piece}" if breadcrumb else piece
                 chunk_obj = {
                     "id": cid,
                     "article_id": article_id,
@@ -462,13 +477,13 @@ def build_chunks(md_path: str) -> list:
                     "url": source_url,
                     "section": section_label,
                     "subsection": subsection_headers[0] if subsection_headers else "",
-                    "text": piece,
+                    "text": enriched_text,
                     "doc_path": str(md_path),
                     "doc_name": doc_name,
                     "section_idx": sect_idx,
                     "chunk_idx": chunk_idx,
-                    "char_count": len(piece),
-                    "word_count": len(piece.split()),
+                    "char_count": len(enriched_text),
+                    "word_count": len(enriched_text.split()),
                     "metadata": metadata,
                 }
 

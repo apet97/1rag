@@ -956,6 +956,12 @@ def pack_snippets(
     # Group chunks by article key in retrieval order
     article_order: List[str] = []
     article_chunks: Dict[str, List[Dict[str, Any]]] = {}
+    best_article_key = None
+    if order:
+        try:
+            best_article_key = _article_key(chunks[order[0]])
+        except Exception:
+            best_article_key = None
     for idx in order:
         chunk = chunks[idx]
         key = _article_key(chunk)
@@ -965,6 +971,10 @@ def pack_snippets(
 
     # Cap the number of articles we attempt to pack
     article_order = article_order[:pack_top]
+
+    # Move the best (top-ranked) article to the end to place it closest to the user prompt
+    if best_article_key and best_article_key in article_order:
+        article_order = [k for k in article_order if k != best_article_key] + [best_article_key]
 
     out_blocks: List[str] = []
     packed_ids: List[Any] = []
