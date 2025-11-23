@@ -135,6 +135,35 @@ def get_index_info() -> dict:
     }
 
 
+def _extract_source_urls(result: dict, chunks: list) -> list[str]:
+    """Return sorted, deduplicated source URLs from answer result and chunk metadata."""
+
+    id_to_chunk = {}
+    for c in chunks:
+        cid = c.get("id")
+        if cid is not None:
+            id_to_chunk[str(cid)] = c
+
+    urls: set[str] = set()
+    meta = result.get("metadata", {}) or {}
+
+    candidates = []
+    candidates.extend(result.get("selected_chunk_ids") or [])
+    candidates.extend(meta.get("source_chunk_ids") or [])
+    candidates.extend(meta.get("sources_used") or [])
+
+    for cand in candidates:
+        cid = str(cand).strip()
+        chunk = id_to_chunk.get(cid)
+        url = None
+        if chunk:
+            url = chunk.get("url") or chunk.get("source_url") or chunk.get("doc_url")
+        if url:
+            urls.add(url)
+
+    return sorted(urls)
+
+
 @app.command()
 def doctor(
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Detailed output"),
@@ -351,7 +380,7 @@ def query(
     top_k: int = typer.Option(config.DEFAULT_TOP_K, "--top-k", help="Number of chunks to retrieve"),
     pack_top: int = typer.Option(config.DEFAULT_PACK_TOP, "--pack-top", help="Number of chunks to include in context"),
     threshold: float = typer.Option(config.DEFAULT_THRESHOLD, "--threshold", help="Minimum similarity threshold"),
-    json_output: bool = typer.Option(False, "--json", help="JSON output"),
+    json_output: bool = typer.Option(False, "--json", help="Return raw JSON instead of formatted answer/sources"),
     debug: bool = typer.Option(False, "--debug", help="Debug output"),
 ) -> None:
     """Ask a single question and get an answer.
@@ -416,8 +445,17 @@ def query(
             payload["num_sources"] = len(sources)
             console.print(json.dumps(payload, indent=2, ensure_ascii=False))
         else:
+            urls = _extract_source_urls(result, chunks)
             console.print()
+            console.print("Answer:")
             console.print(answer)
+            console.print()
+            console.print("Sources:")
+            if urls:
+                for url in urls:
+                    console.print(f"- {url}")
+            else:
+                console.print("(none)")
             if debug:
                 console.print()
                 debug_line = (
