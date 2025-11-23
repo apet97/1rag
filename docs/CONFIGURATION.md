@@ -21,6 +21,7 @@
 - ✅ **VPN-safe defaults**: Internal Ollama URL hard-coded; lazy model selection avoids startup failures.
 - ✅ **Remote-first**: Corporate Ollama embeddings by default; set `EMB_BACKEND=local` for offline/dev.
 - ✅ **Override when needed**: Set `RAG_OLLAMA_URL=http://127.0.0.1:11434` for local Ollama; default uses the corporate host.
+- ✅ **macOS arm64**: Install FAISS via conda (`conda install -c conda-forge faiss-cpu`) if you want ANN speedups; otherwise BM25/flat search is used.
 
 See [README.md](../README.md) for the zero-config quickstart.
 

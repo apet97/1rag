@@ -25,6 +25,19 @@ python -m clockify_rag.cli_modern query "How do I add time for others?"
 ```
 If you skip conda/FAISS, the system falls back to BM25 + flat dense search automatically.
 
+### Full CLI flow (step-by-step)
+1) Ensure VPN is on and `clockify_help_corpus.en.md` is in repo root.  
+2) Activate your env (`conda activate clockify-rag` or `source .venv/bin/activate`).  
+3) Build/refresh index:  
+   ```bash
+   python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md --force
+   ```  
+4) Query:  
+   ```bash
+   python -m clockify_rag.cli_modern query "How do I add time for others?"
+   ```  
+5) Optional chat REPL: `python -m clockify_rag.cli_modern chat`
+
 ## Run the API (localhost)
 ```bash
 uvicorn clockify_rag.api:app --host 0.0.0.0 --port 8000
@@ -36,12 +49,13 @@ curl -X POST http://127.0.0.1:8000/v1/query \
 ## Architecture at a glance
 ```mermaid
 flowchart TD
-    A[clockify_help_corpus.en.md<br/>(+ knowledge_full.md fallback)] --> B[Chunker<br/>markdown-aware]
-    B --> C[Embeddings<br/>Ollama nomic-embed-text (768d)]
-    C --> D[Indexes<br/>BM25 + FAISS IVFFlat (fallback IndexFlatIP)]
-    D --> E[Retriever + MMR + intent-aware hybrid]
-    E --> F[LLM via Ollama<br/>qwen2.5:32b]
-    F --> G[Answer composer<br/>citations + contract]
+    A[clockify_help_corpus.en.md] --> B[Chunker (markdown-aware)]
+    A2[knowledge_full.md (fallback)] --> B
+    B --> C[Embeddings\nOllama nomic-embed-text (768d)]
+    C --> D[Indexes\nBM25 + FAISS IVFFlat\n(fallback IndexFlatIP)]
+    D --> E[Retriever\nMMR + intent-aware hybrid]
+    E --> F[LLM via Ollama\nqwen2.5:32b]
+    F --> G[Answer composer\ncitations + contract validation]
 ```
 
 ## Commands you’ll use
