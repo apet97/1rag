@@ -290,19 +290,19 @@ class TestQwenJSONContract:
         with pytest.raises(ValueError, match="Field 'sources_used' must be list"):
             parse_qwen_json(invalid_json)
 
-    def test_parse_invalid_sources_used_element_type(self):
-        """Test that non-string elements in 'sources_used' raise ValueError."""
-        invalid_json = json.dumps(
+    def test_parse_numeric_sources_used_elements_are_cast(self):
+        """Test that numeric sources_used elements are accepted and cast to strings."""
+        numeric_sources = json.dumps(
             {
                 "answer": "Test answer",
                 "confidence": 80,
                 "reasoning": "Test reasoning",
-                "sources_used": [1, 2, 3],  # Should be strings
+                "sources_used": [1, 2, 3],  # Should be cast to strings
             }
         )
 
-        with pytest.raises(ValueError, match="Field 'sources_used\\[0\\]' must be string"):
-            parse_qwen_json(invalid_json)
+        parsed = parse_qwen_json(numeric_sources)
+        assert parsed["sources_used"] == ["1", "2", "3"]
 
     def test_parse_sources_used_with_empty_string_raises_error(self):
         """Test that empty or whitespace-only sources are rejected."""
@@ -318,9 +318,9 @@ class TestQwenJSONContract:
         with pytest.raises(ValueError, match="sources_used\\[0\\].*empty"):
             parse_qwen_json(invalid_json)
 
-    def test_parse_sources_used_with_mixed_types(self):
-        """Test that mixed types in sources_used raise ValueError."""
-        invalid_json = json.dumps(
+    def test_parse_sources_used_with_mixed_types_is_sanitized(self):
+        """Test that mixed numeric/string sources_used are sanitized to strings."""
+        mixed_sources = json.dumps(
             {
                 "answer": "Test answer",
                 "confidence": 80,
@@ -329,8 +329,8 @@ class TestQwenJSONContract:
             }
         )
 
-        with pytest.raises(ValueError, match="Field 'sources_used\\[1\\]' must be string"):
-            parse_qwen_json(invalid_json)
+        parsed = parse_qwen_json(mixed_sources)
+        assert parsed["sources_used"] == ["1", "2", "3"]
 
     def test_parse_json_with_extra_fields_ignored(self):
         """Test that extra fields in JSON are ignored (forward compatibility)."""

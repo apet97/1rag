@@ -93,9 +93,17 @@ def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"Expected JSON object, got {type(data).__name__}")
 
-    # Check required fields
+    # Check required fields (tolerate legacy keys by mapping)
     required_fields = {"answer", "confidence", "reasoning", "sources_used"}
     missing_fields = required_fields - set(data.keys())
+    if missing_fields:
+        # Map common legacy keys to sources_used
+        if "citations" in data and "sources_used" not in data:
+            data["sources_used"] = data["citations"]
+            missing_fields -= {"sources_used"}
+        if "sources" in data and "sources_used" not in data:
+            data["sources_used"] = data["sources"]
+            missing_fields -= {"sources_used"}
     if missing_fields:
         raise ValueError(f"Missing required fields: {missing_fields}")
 
@@ -119,9 +127,9 @@ def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
     # Validate sources_used elements are non-empty strings and strip whitespace
     sanitized_sources: List[str] = []
     for i, source in enumerate(data["sources_used"]):
-        if not isinstance(source, str):
+        if not isinstance(source, (str, int, float)):
             raise ValueError(f"Field 'sources_used[{i}]' must be string, got {type(source).__name__}")
-        cleaned = source.strip()
+        cleaned = str(source).strip()
         if cleaned == "":
             raise ValueError(f"Field 'sources_used[{i}]' must not be empty")
         sanitized_sources.append(cleaned)
@@ -357,7 +365,7 @@ def generate_llm_answer(
     confidence = None
     reasoning = None
     sources_used: Optional[List[str]] = None
-
+    client_mode = (get_llm_client_mode("") or "").lower()
     try:
         if structured_prompt:
             parsed = parse_qwen_json(raw_response)
@@ -382,8 +390,6 @@ def generate_llm_answer(
         sources_used = None
         # Do not synthesize citations in fallback; return raw text as-is
 
-    client_mode = (get_llm_client_mode("") or "").lower()
-
     # Citation validation
     if packed_ids:
         if structured_prompt and answer != REFUSAL_STR and client_mode == "mock" and not extract_citations(answer):
@@ -395,6 +401,26 @@ def generate_llm_answer(
                 confidence = 100
             return answer, timing, confidence, reasoning, sources_used
         has_citations = bool(extract_citations(answer))
+
+        # If the model omitted inline citations but provided sources, append them.
+        if not has_citations and answer != REFUSAL_STR and sources_used:
+            cite_tokens: List[str] = []
+            if packed_chunks:
+                # Map context block index -> URL or ID
+                for src in sources_used:
+                    cite_val = src
+                    try:
+                        idx = int(str(src)) - 1
+                        if 0 <= idx < len(packed_chunks):
+                            cite_val = packed_chunks[idx].get("url") or packed_chunks[idx].get("id") or src
+                    except (ValueError, TypeError):
+                        pass
+                    cite_tokens.append(str(cite_val))
+            else:
+                cite_tokens = [str(s) for s in sources_used]
+            if cite_tokens:
+                answer = f"{answer}\n\n[{', '.join(cite_tokens)}]"
+                has_citations = True
 
         if not has_citations and answer != REFUSAL_STR:
             if STRICT_CITATIONS:
