@@ -32,7 +32,7 @@ When you want to inspect actual answers, enable the answer pass:
 RAG_LLM_CLIENT=mock python eval.py --dataset eval_datasets/clockify_v1.jsonl --llm-report
 
 # Real Ollama host (VPN)
-RAG_OLLAMA_URL=http://127.0.0.1:11434 python eval.py \
+RAG_OLLAMA_URL=http://10.127.0.192:11434 python eval.py \
     --dataset eval_datasets/clockify_v1.jsonl \
     --llm-report \
     --llm-output eval_reports/qwen_answers.jsonl

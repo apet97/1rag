@@ -69,10 +69,10 @@ export APP_ENV=production
 # Environment Type (CRITICAL)
 ENVIRONMENT=production                   # Controls dependency enforcement (prod/ci/dev)
 
-# Ollama Configuration
-OLLAMA_URL=http://your-ollama-host:11434  # Your Ollama endpoint
-GEN_MODEL=qwen2.5:32b                     # Generation model
-EMB_MODEL=nomic-embed-text               # Embedding model
+# Ollama Configuration (defaults for corporate VPN host)
+RAG_OLLAMA_URL=http://10.127.0.192:11434  # Corporate Ollama (override to http://127.0.0.1:11434 for local)
+RAG_CHAT_MODEL=qwen2.5:32b                # Generation model
+RAG_EMBED_MODEL=nomic-embed-text          # Embedding model (768-dim)
 
 # Performance Tuning
 CTX_BUDGET=12000                         # Context token budget

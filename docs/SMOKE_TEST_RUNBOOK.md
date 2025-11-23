@@ -132,8 +132,8 @@ else:
 ### 4. Connectivity
 
 ```bash
-# Verify Ollama endpoint is reachable
-curl -s "${RAG_OLLAMA_URL:-http://127.0.0.1:11434}/api/tags" | head -20
+# Verify Ollama endpoint is reachable (defaults to corporate host)
+curl -s "${RAG_OLLAMA_URL:-http://10.127.0.192:11434}/api/tags" | head -20
 
 # Or use Python helper
 python -c "
@@ -185,11 +185,12 @@ pip install --upgrade langchain-ollama
 
 **Symptom:**
 ```
-❌ Ollama timeout at http://127.0.0.1:11434 (service down?)
+❌ Ollama timeout at http://10.127.0.192:11434 (VPN down or host offline?)
 ```
 
 **Fix:**
-1. Check local Ollama: `curl http://127.0.0.1:11434/api/tags`
+1. Check corporate host (on VPN): `curl http://10.127.0.192:11434/api/tags`
+2. Check local Ollama: `curl http://127.0.0.1:11434/api/tags`
 2. Verify the daemon is running (restart `ollama serve` if needed)
 3. Check firewall settings
 4. Increase timeout: `export OLLAMA_TIMEOUT=300`

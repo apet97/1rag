@@ -229,6 +229,8 @@ ollama list
 # - qwen2.5:32b (or alternative)
 
 # Test API
+curl http://10.127.0.192:11434/api/version   # corporate default (VPN)
+# or local fallback if running your own Ollama
 curl http://127.0.0.1:11434/api/version
 # Output: {"version":"x.x.x"}
 ```
@@ -397,6 +399,8 @@ ps aux | grep ollama
 ollama serve
 
 # Check URL
+curl http://10.127.0.192:11434/api/version   # corporate default (VPN)
+# or local fallback
 curl http://127.0.0.1:11434/api/version
 
 # If using Docker

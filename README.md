@@ -73,6 +73,8 @@ flowchart TD
 - Doctor: `python -m clockify_rag.cli_modern doctor --json`
 - API: `uvicorn clockify_rag.api:app --host 0.0.0.0 --port 8000`
 
+Legacy CLIs (`clockify_rag/cli.py`, `clockify_support_cli_final.py`) remain for backward compatibility only; use `clockify_rag.cli_modern` for all new usage.
+
 ## Defaults (zero env required on VPN)
 - `RAG_OLLAMA_URL`: `http://10.127.0.192:11434` (override for local with `http://127.0.0.1:11434`)
 - `RAG_CHAT_MODEL`: `qwen2.5:32b`
