@@ -8,10 +8,10 @@ Core docs to use:
 - `docs/OPERATIONS.md` and `docs/SMOKE_TEST_RUNBOOK.md` – runbook, smoke tests.
 - `docs/API.md`, `docs/DEPLOYMENT.md`, `docs/PRODUCTION_GUIDE.md` – API and deployment specifics.
 - Platform: `docs/M1_COMPATIBILITY.md`, `docs/INSTALL_macOS_ARM64.md` (Apple Silicon/FAISS).
-- Extras: `docs/FAQ_CACHE_USAGE.md`, `docs/THREAD_SAFETY.md`, `docs/DATA_FLOW.md`.
+- Extras: `docs/FAQ_CACHE_USAGE.md`, `docs/THREAD_SAFETY.md`, `docs/DATA_FLOW.md`, `docs/EVALUATION.md`.
 
 Deprecated/historical:
-- `docs/CONFIG.md` (pointer only), `docs/PLUGIN_GUIDE.md`, `docs/operator_authentication.md`, `docs/PRODUCTION_GUIDE.md` sections about old defaults.
+- `docs/CONFIG.md` (pointer only).
 
 ---
 
