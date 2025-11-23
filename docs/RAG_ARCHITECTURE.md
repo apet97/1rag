@@ -8,7 +8,7 @@ This document describes the current Retrieval-Augmented Generation (RAG) stack t
 |-------|----------------|---------------------|
 | **Ingestion & Normalization** | Convert Markdown/HTML/PDF/txt/docx sources into normalized Markdown with UpdateHelpGPT front matter (or legacy `# [ARTICLE]` convention). Supports single files or entire trees. | `clockify_rag/ingestion.py`, `clockify_help_corpus.en.md`, `docs/INGESTION.md` |
 | **Chunking** | Parse Markdown articles, split by headings/sentences with overlap, and emit normalized chunks with stable IDs. | `clockify_rag/chunking.py`, `CHUNKING.md` |
-| **Embedding Layer** | Produce semantic vectors using local SentenceTransformers (default) or the Ollama embedding endpoint. Handles batching, retries, caching, and validation. | `clockify_rag/embedding.py`, `emb_cache.jsonl` |
+| **Embedding Layer** | Produce semantic vectors using the Ollama embedding endpoint (default) with local SentenceTransformers as a fallback. Handles batching, retries, caching, and validation. | `clockify_rag/embedding.py`, `emb_cache.jsonl` |
 | **Vector & Lexical Indexes** | Maintain FAISS IVFFlat (primary), HNSW (fallback), and BM25 sparse indexes. Persist artifacts for reuse. | `clockify_rag/indexing.py`, files under `config.FILES` |
 | **Retriever & Reranker** | Execute BM25 + dense dual retrieval, reciprocal-rank fusion, intent-aware weighting, optional LLM reranking, MMR diversification, and snippet packing. | `clockify_rag/retrieval.py`, `clockify_rag/intent_classification.py` |
 | **Answer Orchestration** | Drive the end-to-end `answer_once` flow: validation, caching, retrieval, reranking, prompt construction, LLM call, citation validation, and response shaping. | `clockify_rag/answer.py`, `clockify_rag/caching.py`, `clockify_rag/error_handlers.py` |
@@ -76,8 +76,8 @@ This document describes the current Retrieval-Augmented Generation (RAG) stack t
 
 - **Ollama-compatible LLM host** (default `RAG_OLLAMA_URL=http://10.127.0.192:11434`; use `http://127.0.0.1:11434` for local dev):
   - Chat/generation model: `RAG_CHAT_MODEL=qwen2.5:32b`
-  - Embedding model: `RAG_EMBED_MODEL=nomic-embed-text`
-  - Accessible only from the company Mac (VPN required). All network clients must handle timeouts, retries, and be mockable for offline testing.
+  - Embedding model: `RAG_EMBED_MODEL=nomic-embed-text` (768-dim)
+  - Accessible only from the company Mac (VPN required). All network clients must handle timeouts, retries, and be mockable for offline testing. Local embeddings remain a fallback for offline/CI.
 - **Local storage** for vector artifacts (FAISS/HNSW/BM25), chunk metadata, logs (`logs/`), and caches (`emb_cache.jsonl`, `rag_queries.jsonl`).
 - **Python runtime** (3.11+) with optional Apple Silicon acceleration (PyTorch MPS) and FAISS wheels. Dockerfile and `docker-compose.yml` support linux/amd64 and linux/arm64 (documented in `docs/DEPLOYMENT.md`).
 
