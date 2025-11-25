@@ -1009,8 +1009,8 @@ def pack_snippets(
     selected_blocks: List[Dict[str, Any]] = []
     used_tokens = 0
 
-    # Selection phase: walk in original rank order
-    for art_pos, art_key in enumerate(article_order, start=1):
+    # Selection phase: walk in reverse rank order so the last/best article is packed first under tight budgets
+    for art_pos, art_key in enumerate(reversed(article_order), start=1):
         if used_tokens >= effective_budget:
             break
 

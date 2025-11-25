@@ -1,5 +1,3 @@
-from pathlib import Path
-
 from clockify_rag.chunking import build_chunks
 from clockify_rag.retrieval import _article_key
 
