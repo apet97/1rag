@@ -287,7 +287,7 @@ curl http://localhost:8000/v1/metrics | jq '.query_latency_ms'
 
 1. Enable FAISS if not using:
    ```bash
-   USE_ANN=faiss python -m clockify_rag.cli_modern ingest --force
+   ANN=faiss python -m clockify_rag.cli_modern ingest --force
    ```
 
 2. Reduce pack_top for faster responses:

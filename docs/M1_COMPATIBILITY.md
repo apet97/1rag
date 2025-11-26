@@ -92,7 +92,7 @@ pip install urllib3==2.2.3
    ```bash
    # The application automatically falls back to full-scan cosine similarity
    # if FAISS is not available or fails to load
-   export USE_ANN=none
+   export ANN=none
    python -m clockify_rag.cli_modern chat
    ```
 
@@ -241,7 +241,7 @@ Total latency:    ~6-11 seconds
 
 ```bash
 # Force FAISS fallback if needed
-export USE_ANN="none"
+export ANN="none"
 
 # Reduce FAISS clusters for smaller KBs (already set to 64 for ARM)
 export ANN_NLIST="64"
