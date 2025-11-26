@@ -489,12 +489,19 @@ def build(md_path: str, retries=None):
         logger.info("=" * 70)
 
 
-def load_index():
-    """Load all index artifacts with dimension validation.
+def load_index(kb_path: str = None):
+    """Load all index artifacts with dimension and freshness validation.
 
     FIX: Validates that stored embeddings match the current config.EMB_BACKEND and config.EMB_DIM
     to prevent runtime crashes from dimension mismatches (e.g., switching from
     local 384-dim to ollama 768-dim without rebuilding).
+
+    FIX: Validates knowledge base SHA256 hash to detect stale indexes when the
+    knowledge base has been updated but the index hasn't been rebuilt.
+
+    Args:
+        kb_path: Optional path to knowledge base for freshness validation.
+                 If provided, compares stored hash with current KB hash.
 
     Returns:
         dict with index artifacts, or None if validation fails (requiring rebuild)
@@ -505,6 +512,22 @@ def load_index():
 
     with open(config.FILES["index_meta"], encoding="utf-8") as f:
         meta = json.load(f)
+
+    # Validate knowledge base freshness (warning only, not blocking)
+    stored_kb_sha = meta.get("kb_sha256")
+    if kb_path and stored_kb_sha:
+        try:
+            current_kb_sha = compute_sha256(kb_path)
+            if current_kb_sha != stored_kb_sha:
+                logger.warning("⚠️  Knowledge base has changed since index was built")
+                logger.warning(f"   Stored hash:  {stored_kb_sha[:16]}...")
+                logger.warning(f"   Current hash: {current_kb_sha[:16]}...")
+                logger.warning("   💡 Consider rebuilding: ragctl ingest --input knowledge_base --force")
+                # Store stale flag in meta for reporting
+                meta["_stale"] = True
+                meta["_current_kb_sha"] = current_kb_sha
+        except Exception as e:
+            logger.debug(f"Could not validate KB hash: {e}")
 
     # Validate backend compatibility
     stored_backend = meta.get("emb_backend")

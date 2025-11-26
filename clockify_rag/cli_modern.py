@@ -108,7 +108,7 @@ def get_dependency_info() -> dict:
 
 
 def get_index_info() -> dict:
-    """Check index files and their status."""
+    """Check index files and their status, including cache statistics."""
     info = {}
     required_files = [
         config.FILES["chunks"],
@@ -129,9 +129,37 @@ def get_index_info() -> dict:
         }
 
     all_required = all(os.path.exists(fname) for fname in required_files)
+
+    # Cache statistics
+    cache_stats = {
+        "entries": 0,
+        "size_mb": 0,
+        "exists": False,
+    }
+    cache_path = config.FILES.get("emb_cache", "emb_cache.jsonl")
+    if os.path.exists(cache_path):
+        cache_stats["exists"] = True
+        cache_stats["size_mb"] = round(os.path.getsize(cache_path) / (1024 * 1024), 2)
+        try:
+            with open(cache_path, "r", encoding="utf-8") as f:
+                cache_stats["entries"] = sum(1 for _ in f)
+        except Exception:
+            pass
+
+    # Index metadata (build info, staleness)
+    index_meta = {}
+    if os.path.exists(config.FILES["index_meta"]):
+        try:
+            with open(config.FILES["index_meta"], "r", encoding="utf-8") as f:
+                index_meta = json.load(f)
+        except Exception:
+            pass
+
     return {
         "files": info,
         "index_ready": all_required,
+        "cache": cache_stats,
+        "meta": index_meta,
     }
 
 
@@ -264,6 +292,20 @@ def doctor(
     index_ready = index_info["index_ready"]
     index_emoji = "✅" if index_ready else "❌"
     console.print(f"{index_emoji} Index Status: {'READY' if index_ready else 'NOT READY (run: ragctl ingest)'}")
+
+    # Cache Statistics
+    cache = index_info.get("cache", {})
+    if cache.get("exists"):
+        console.print(f"📦 Embedding Cache: {cache['entries']} entries ({cache['size_mb']} MB)")
+    else:
+        console.print("📦 Embedding Cache: Not found")
+
+    # Index Build Info
+    meta = index_info.get("meta", {})
+    if meta.get("built_at"):
+        console.print(f"🕐 Last Built: {meta['built_at']}")
+        if meta.get("chunks"):
+            console.print(f"📄 Chunks: {meta['chunks']}")
     console.print()
 
     # Ollama Connectivity
