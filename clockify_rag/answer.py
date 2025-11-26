@@ -124,8 +124,16 @@ def parse_qwen_json(raw_text: str) -> Dict[str, Any]:
 
     raw_conf = data.get("confidence")
     confidence = None
-    if isinstance(raw_conf, (int, float)) and 0 <= int(raw_conf) <= 100:
-        confidence = int(raw_conf)
+    if raw_conf is not None:
+        try:
+            # Handle string, int, float - convert to float first, then validate range
+            conf_float = float(raw_conf)
+            if 0 <= conf_float <= 100:
+                # Round to nearest int, clamping to valid range
+                confidence = max(0, min(100, round(conf_float)))
+        except (TypeError, ValueError):
+            # Silently ignore unparseable confidence values
+            pass
 
     answer_val = _get_str("answer", cleaned)
 

@@ -133,10 +133,10 @@ def test_retrieve_scores_structure(sample_chunks, sample_embeddings, sample_bm25
 
 def test_normalize_scores_zscore_edge_cases():
     """Test score normalization edge cases."""
-    # All equal scores (std=0)
+    # All equal scores (std=0) - should return zeros since there's no discriminative signal
     scores = [0.5, 0.5, 0.5]
     result = normalize_scores_zscore(scores)
-    assert np.allclose(result, [0.5, 0.5, 0.5]), "Should preserve values when std=0"
+    assert np.allclose(result, [0.0, 0.0, 0.0]), "Should return zeros when std=0 (no signal)"
 
     # Empty array
     result = normalize_scores_zscore([])

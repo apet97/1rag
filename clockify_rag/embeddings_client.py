@@ -214,7 +214,7 @@ def embed_texts(texts: List[str], retries: Optional[int] = None) -> np.ndarray:
     def _embed_batch() -> np.ndarray:
         # Use the REST API directly to guarantee timeout/retry control
         payloads = []
-        for text in texts:
+        for idx, text in enumerate(texts):
             resp = http_post_with_retries(
                 f"{RAG_OLLAMA_URL}/api/embeddings",
                 {"model": RAG_EMBED_MODEL, "prompt": text},
@@ -223,7 +223,16 @@ def embed_texts(texts: List[str], retries: Optional[int] = None) -> np.ndarray:
             )
             if not isinstance(resp, dict) or "embedding" not in resp:
                 raise EmbeddingError("Embedding response missing 'embedding' field")
-            payloads.append(resp["embedding"])
+
+            embedding = resp["embedding"]
+            # Per-call dimension validation to catch model mismatches early
+            actual_dim = len(embedding)
+            if actual_dim != EMB_DIM:
+                raise EmbeddingError(
+                    f"Embedding dimension mismatch at index {idx}: got {actual_dim}, expected {EMB_DIM}. "
+                    f"Check that EMB_DIM config matches the model '{RAG_EMBED_MODEL}' output."
+                )
+            payloads.append(embedding)
 
         embeddings_array = _normalize_vectors(payloads)
         logger.debug("Successfully embedded and normalized %d texts: shape %s", len(texts), embeddings_array.shape)
@@ -260,6 +269,15 @@ def embed_query(text: str, retries: Optional[int] = None) -> np.ndarray:
         if not isinstance(embedding_list, list):
             raise EmbeddingError("Embedding response missing 'embedding' list")
         embedding_array = np.array(embedding_list, dtype=np.float32)
+
+        # Per-call dimension validation to catch model mismatches early
+        actual_dim = len(embedding_array)
+        if actual_dim != EMB_DIM:
+            raise EmbeddingError(
+                f"Embedding dimension mismatch: got {actual_dim}, expected {EMB_DIM}. "
+                f"Check that EMB_DIM config matches the model '{RAG_EMBED_MODEL}' output."
+            )
+
         norm = np.linalg.norm(embedding_array) + 1e-9
         embedding_array = embedding_array / norm
         logger.debug("Successfully embedded and normalized query: shape %s", embedding_array.shape)

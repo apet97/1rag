@@ -417,6 +417,9 @@ def create_app() -> FastAPI:
             logger.warning(f"Validation error: {e}")
             # ValidationError messages are safe user-facing messages
             raise HTTPException(status_code=400, detail=str(e))
+        except HTTPException:
+            # Re-raise HTTP exceptions (like 429 rate limit) without modification
+            raise
         except Exception as e:
             # Generic exceptions may contain internal details - sanitize
             logger.error(f"Query error: {e}", exc_info=True)

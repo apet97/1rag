@@ -11,12 +11,17 @@ the corporate Ollama instance. Designed for VPN environments with:
 
 import logging
 import os
+import threading
 
 import httpx
 
 from . import config
 
 logger = logging.getLogger(__name__)
+
+# Cached HTTP client for connection pool reuse
+_HTTP_CLIENT = None
+_HTTP_CLIENT_LOCK = threading.Lock()
 
 # Import strategy: Prefer langchain-ollama (newer, better maintained)
 # In production, fail fast if not available. In dev, allow fallback with warning.
@@ -51,6 +56,27 @@ except ImportError as e:
                 "Neither langchain-ollama nor langchain-community is available. "
                 "Install langchain-ollama: pip install langchain-ollama"
             ) from e2
+
+
+def _get_http_client() -> httpx.Client:
+    """Get or create the cached HTTP client for connection pool reuse.
+
+    Thread-safe lazy initialization ensures:
+    - Single httpx.Client instance across all LLM calls
+    - Connection pool reuse for better performance
+    - Proper timeout configuration
+
+    Returns:
+        Cached httpx.Client instance with configured timeout
+    """
+    global _HTTP_CLIENT
+    if _HTTP_CLIENT is None:
+        with _HTTP_CLIENT_LOCK:
+            # Double-checked locking pattern
+            if _HTTP_CLIENT is None:
+                _HTTP_CLIENT = httpx.Client(timeout=config.OLLAMA_TIMEOUT)
+                logger.debug(f"Created cached HTTP client with timeout={config.OLLAMA_TIMEOUT}s")
+    return _HTTP_CLIENT
 
 
 def get_llm_client(temperature: float = 0.0) -> ChatOllama:
@@ -91,10 +117,6 @@ def get_llm_client(temperature: float = 0.0) -> ChatOllama:
         f"base_url={config.RAG_OLLAMA_URL}, timeout={config.OLLAMA_TIMEOUT}s, streaming=False"
     )
 
-    # Use httpx.Client with explicit timeout for version-robust timeout handling
-    # Some langchain versions don't accept timeout= kwarg directly on ChatOllama
-    http_client = httpx.Client(timeout=config.OLLAMA_TIMEOUT)
-
     return ChatOllama(
         base_url=config.RAG_OLLAMA_URL,
         model=model_name,
@@ -102,9 +124,9 @@ def get_llm_client(temperature: float = 0.0) -> ChatOllama:
         # VPN safety: never stream over flaky corporate networks
         # Non-streaming ensures predictable request completion time
         streaming=False,
-        # Pass httpx client with timeout configured
-        # This is the most version-robust way to set timeouts in langchain
-        client=http_client,
+        # Reuse cached HTTP client for connection pool efficiency
+        # This avoids creating new connection pools on every call
+        client=_get_http_client(),
     )
 
 

@@ -562,6 +562,22 @@ MAX_QUERY_EXPANSION_FILE_SIZE = _parse_env_int(
     "MAX_QUERY_EXPANSION_FILE_SIZE", 10485760, min_val=1024, max_val=104857600
 )  # 10MB default, 100MB max
 
+# Maximum number of entries in query expansion dictionary (prevents memory DoS)
+MAX_QUERY_EXPANSION_ENTRIES = _parse_env_int(
+    "MAX_QUERY_EXPANSION_ENTRIES", 10000, min_val=100, max_val=100000
+)  # 10K default, 100K max
+
+# ====== CIRCUIT BREAKER CONFIGURATION ======
+# Circuit breaker prevents cascading failures by temporarily blocking requests
+# to unhealthy services after repeated failures
+CIRCUIT_BREAKER_THRESHOLD = _parse_env_int(
+    "CIRCUIT_BREAKER_THRESHOLD", 5, min_val=1, max_val=100
+)  # Number of failures before opening circuit
+
+CIRCUIT_BREAKER_RESET_TIMEOUT = _parse_env_float(
+    "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0, min_val=5.0, max_val=600.0
+)  # Seconds before testing recovery
+
 # ====== PROXY CONFIGURATION ======
 # Optional HTTP proxy support (disabled by default for security)
 ALLOW_PROXIES = allow_proxies_enabled()  # Enable proxy usage when set to 1/true/yes

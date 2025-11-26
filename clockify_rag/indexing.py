@@ -310,7 +310,7 @@ def bm25_scores(query: str, bm: dict, k1: float = None, b: float = None, top_k: 
 
 
 # ====== BUILD FUNCTION ======
-def build(md_path: str, retries=0):
+def build(md_path: str, retries=None):
     """Build knowledge base with atomic writes and locking."""
     with build_lock():
         logger.info("=" * 70)
@@ -338,6 +338,7 @@ def build(md_path: str, retries=0):
 
         logger.info(f"\n[2/4] Embedding with {config.EMB_BACKEND}...")
         emb_cache = load_embedding_cache()
+        effective_retries = config.DEFAULT_RETRIES if retries is None else retries
 
         # Compute content hashes
         chunk_hashes = []
@@ -366,7 +367,7 @@ def build(md_path: str, retries=0):
             if config.EMB_BACKEND == "local":
                 new_embeddings = embed_local_batch(texts_to_embed, normalize=False)
             else:
-                new_embeddings = embed_texts(texts_to_embed, retries=retries)
+                new_embeddings = embed_texts(texts_to_embed, retries=effective_retries)
 
             for i, idx in enumerate(cache_miss_indices):
                 chunk_hash = chunk_hashes[idx]
@@ -440,6 +441,11 @@ def build(md_path: str, retries=0):
                 logger.info("\n[3.1/4] Building FAISS ANN index...")
                 faiss_index = build_faiss_index(vecs_n, nlist=config.ANN_NLIST)
                 if faiss_index is not None:
+                    # FIX: Reset cache BEFORE saving to prevent race condition
+                    # where concurrent readers could get stale cached index
+                    # between save and reset. After reset, readers will re-load
+                    # from disk (getting either old or new version, both valid).
+                    reset_faiss_index()
                     save_faiss_index(faiss_index, config.FILES["faiss_index"])
                     logger.info(f"  Saved FAISS index to {config.FILES['faiss_index']}")
             except Exception as e:
@@ -462,8 +468,7 @@ def build(md_path: str, retries=0):
         atomic_write_json(config.FILES["index_meta"], index_meta)
         logger.info("  Saved index metadata")
 
-        # Invalidate global FAISS cache to force reload of new index
-        reset_faiss_index()
+        # Note: FAISS cache reset moved to before save_faiss_index() to prevent race condition
 
         duration_ms = (time.time() - ingest_start) * 1000
         metrics.observe_histogram(MetricNames.INGESTION_LATENCY, duration_ms)

@@ -269,6 +269,8 @@ def _read_query_expansion_file(path):
     import clockify_rag.config as config
 
     MAX_EXPANSION_FILE_SIZE = config.MAX_QUERY_EXPANSION_FILE_SIZE
+    MAX_EXPANSION_ENTRIES = config.MAX_QUERY_EXPANSION_ENTRIES
+
     try:
         file_size = os.path.getsize(path)
         if file_size > MAX_EXPANSION_FILE_SIZE:
@@ -305,6 +307,14 @@ def _read_query_expansion_file(path):
 
         if cleaned:
             normalized[term.lower()] = cleaned
+
+    # Validate entry count to prevent memory DoS from malicious expansion files
+    if len(normalized) > MAX_EXPANSION_ENTRIES:
+        raise ValueError(
+            f"Query expansion file has {len(normalized)} entries, "
+            f"max allowed is {MAX_EXPANSION_ENTRIES}. "
+            f"Set MAX_QUERY_EXPANSION_ENTRIES env var to override."
+        )
 
     return normalized
 
@@ -456,13 +466,26 @@ def expand_query(question: str) -> str:
 
 
 def normalize_scores_zscore(arr: np.ndarray) -> np.ndarray:
-    """Z-score normalize."""
+    """Z-score normalize scores to have mean=0 and std=1.
+
+    When all scores are identical (std=0), returns zeros since there's no
+    discriminative signal between items. This preserves the invariant that
+    normalized scores are centered around 0.
+
+    Args:
+        arr: Array of scores to normalize
+
+    Returns:
+        Normalized array with mean=0, std=1 (or zeros if no variance)
+    """
     a = np.asarray(arr, dtype="float32")
     if a.size == 0:
         return a
     m, s = a.mean(), a.std()
     if s == 0:
-        return a  # Preserve original when no variance
+        # All scores identical = no discriminative signal, return zeros
+        # This maintains the invariant that normalized scores center around 0
+        return np.zeros_like(a)
     return (a - m) / s
 
 
