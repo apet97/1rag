@@ -3,10 +3,11 @@
 This repo hosts **Clockify RAG** (FastAPI + Typer CLI) for Clockify/CAKE internal support. Use this as the contract for any Claude Code (Sonnet 4.5) sessions.
 
 ## Project snapshot (work laptop constraints)
-- This laptop can edit the repo but cannot validate remote services directly; you’ll need to rely on local commands and push to GitHub for CI.
+- This laptop can edit the repo but cannot validate remote services directly; rely on local commands and push to GitHub for CI.
 - Language: Python 3.11–3.13 (3.14+ blocked).
 - Default stack: FastAPI API (`clockify_rag/api.py`), Typer CLI (`clockify_rag/cli_modern.py`), hybrid retrieval (`clockify_rag/retrieval.py`), ingestion/indexing (`clockify_rag/indexing.py`), embeddings/LLM via Ollama.
 - Default endpoints/models: `RAG_OLLAMA_URL=http://10.127.0.192:11434`, chat model `qwen2.5:32b`, embed model `nomic-embed-text`, `EMB_BACKEND=ollama` (tests pin to local embeddings).
+- Corpus resolution: prefers `knowledge_base/` directory (input-only); fallbacks `clockify_help_corpus.en.md`, `knowledge_full.md`.
 - Tests: pytest under `tests/` (many skips if FAISS/torch absent on arm64).
 
 ## How to run locally
@@ -20,7 +21,7 @@ ruff check clockify_rag tests
 ```
 For ingestion/query (requires corpus file and Ollama):
 ```bash
-python -m clockify_rag.cli_modern ingest --input clockify_help_corpus.en.md
+python -m clockify_rag.cli_modern ingest --input knowledge_base --force
 python -m clockify_rag.cli_modern query "How do I lock timesheets?"
 ```
 
@@ -30,6 +31,7 @@ python -m clockify_rag.cli_modern query "How do I lock timesheets?"
 3) **Testing**: Run `pytest -q` after behavior changes. Use `ruff`/`black` if formatting/lint is touched. If a command cannot be run locally due to host limits, note it and rely on GH CI.
 4) **Risk controls**: Avoid infra/CI changes unless asked. Do not touch auth/CI/secrets. Keep defaults intact unless explicitly requested.
 5) **Output expectations**: Summaries first, then findings with file:line refs, then concrete actions. Include “how to verify” for risky changes.
+6) **Input-only KB**: Never modify files under `knowledge_base/`; treat them as source data only.
 
 ### If asked to do a repo-wide issue/improvement sweep
 - First, read the docs (README, docs/ARCHITECTURE.md, docs/CONFIGURATION.md, AGENTS/CLAUDE if present) and map the code layout (core modules, tests, workflows).
@@ -38,11 +40,11 @@ python -m clockify_rag.cli_modern query "How do I lock timesheets?"
 - Validate locally where possible (`pytest -q`, `ruff`, `black`); if something can’t run locally, flag it for GH CI.
 
 ## Hotspots / priorities
-- Retrieval pipeline: BM25/dense/MMR, pack_snippets budgeting, rerank fallbacks (`clockify_rag/retrieval.py`).
-|- Answer orchestration and citation validation (`clockify_rag/answer.py`).
-|- Embedding backends and FAISS fallback on M1 (`clockify_rag/embedding.py`, `clockify_rag/indexing.py`, `embeddings_client.py`).
-|- API/CLI consistency and thread safety (`clockify_rag/api.py`, `clockify_rag/cli_modern.py`, `clockify_rag/cli.py`).
-|- Logging/metrics toggles (`caching.py`, `logging_utils.py`, `metrics.py`).
+- Retrieval pipeline: BM25/dense/MMR, `normalize_query`, pack_snippets budgeting, rerank fallbacks (`clockify_rag/retrieval.py`).
+- Answer orchestration and citation validation (`clockify_rag/answer.py`).
+- Embedding backends and FAISS fallback on M1 (`clockify_rag/embedding.py`, `clockify_rag/indexing.py`, `embeddings_client.py`).
+- API/CLI consistency and thread safety (`clockify_rag/api.py`, `clockify_rag/cli_modern.py`, `clockify_rag/cli.py`).
+- Logging/metrics toggles (`caching.py`, `logging_utils.py`, `metrics.py`).
 
 ## Quick repo map
 - Core: `clockify_rag/` (config, api, cli_modern, retrieval, answer, indexing, embedding, embeddings_client, llm_client, caching, utils, prompts, intent_classification, confidence_routing).
