@@ -12,11 +12,9 @@ Run with: pytest tests/test_load.py -v --timeout=120
 
 import gc
 import os
-import sys
 import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
 
 import pytest
 import numpy as np
@@ -229,7 +227,7 @@ class TestNormalizationLoad:
         times = []
         for _ in range(100):
             start = time.perf_counter()
-            result = normalize_scores_zscore(scores)
+            _ = normalize_scores_zscore(scores)
             times.append(time.perf_counter() - start)
 
         # No degradation
@@ -329,7 +327,6 @@ class TestConcurrencyStress:
         from clockify_rag.retrieval import (
             normalize_scores_zscore,
             expand_query,
-            validate_query_length,
         )
         from clockify_rag.indexing import build_bm25, bm25_scores
 
