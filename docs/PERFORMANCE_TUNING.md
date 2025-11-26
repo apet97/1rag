@@ -20,7 +20,7 @@ FAISS provides approximate nearest neighbor (ANN) search for 10-50x speedup.
 
 **Enable FAISS:**
 ```bash
-USE_ANN=faiss python -m clockify_rag.cli_modern ingest --force
+ANN=faiss python -m clockify_rag.cli_modern ingest --force
 ```
 
 **Tuning parameters:**
@@ -62,7 +62,7 @@ Control the balance between dense (semantic) and lexical (BM25) search.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `ALPHA_HYBRID` | 0.5 | BM25 weight (0=pure dense, 1=pure BM25) |
+| `ALPHA` | 0.5 | BM25 weight (0=pure dense, 1=pure BM25) |
 | `MMR_LAMBDA` | 0.75 | Relevance vs diversity (higher = more relevance) |
 
 **Query type recommendations:**
@@ -75,7 +75,7 @@ Control the balance between dense (semantic) and lexical (BM25) search.
 
 ```bash
 # For technical support queries
-ALPHA_HYBRID=0.6 python -m clockify_rag.cli_modern query "..."
+ALPHA=0.6 python -m clockify_rag.cli_modern query "..."
 ```
 
 ---
@@ -373,7 +373,7 @@ CACHE_MAXSIZE=200
 DEFAULT_PACK_TOP=12
 CTX_TOKEN_BUDGET=15000
 ANN_NPROBE=32
-ALPHA_HYBRID=0.4
+ALPHA=0.4
 ```
 
 ### Resource Constrained

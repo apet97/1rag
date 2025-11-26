@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import platform
+import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -251,18 +252,35 @@ def create_app() -> FastAPI:
     # ========================================================================
     # Correlation ID Middleware
     # ========================================================================
+    # Pattern for safe correlation IDs: alphanumeric, dash, underscore only
+    _SAFE_CORRELATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+    def _validate_correlation_id(raw_id: Optional[str]) -> Optional[str]:
+        """Validate correlation ID to prevent log injection and oversized headers.
+
+        Args:
+            raw_id: Raw correlation ID from request header
+
+        Returns:
+            Validated ID if safe, None otherwise
+        """
+        if not raw_id:
+            return None
+        # Max 64 chars, alphanumeric + dash/underscore only
+        if len(raw_id) <= 64 and _SAFE_CORRELATION_ID_PATTERN.match(raw_id):
+            return raw_id
+        return None
+
     @app.middleware("http")
     async def correlation_id_middleware(request: Request, call_next):
         """Add correlation ID to request context for distributed tracing.
 
         Extracts correlation ID from incoming headers (X-Correlation-ID or X-Request-ID)
-        or generates a new one. The ID is set in context for logging and added to
-        response headers.
+        or generates a new one. Validates input to prevent log injection.
         """
-        # Extract from headers (common patterns)
-        correlation_id = (
-            request.headers.get("x-correlation-id") or request.headers.get("x-request-id") or generate_correlation_id()
-        )
+        # Extract and validate from headers
+        raw_id = request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+        correlation_id = _validate_correlation_id(raw_id) or generate_correlation_id()
 
         # Set in context for logging (propagates to thread pool via ContextVar)
         set_correlation_id(correlation_id)
@@ -287,6 +305,30 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=401, detail="Missing API key")
         if api_key not in config.API_ALLOWED_KEYS:
             raise HTTPException(status_code=403, detail="Invalid API key")
+
+    # ========================================================================
+    # Exception Handlers (ensure correlation ID on error responses)
+    # ========================================================================
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        """Handle HTTP exceptions with correlation ID header."""
+        correlation_id = get_correlation_id() or generate_correlation_id()
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={"x-correlation-id": correlation_id},
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        """Handle unexpected exceptions with correlation ID header."""
+        correlation_id = get_correlation_id() or generate_correlation_id()
+        logger.exception(f"Unhandled exception [correlation_id={correlation_id}]: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+            headers={"x-correlation-id": correlation_id},
+        )
 
     # ========================================================================
     # Health Check Endpoint
