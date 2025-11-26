@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import platform
-import re
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -37,6 +36,7 @@ from .correlation import (
     get_correlation_id,
     set_correlation_id,
     clear_correlation_id,
+    validate_correlation_id,
 )
 from .exceptions import ValidationError
 from .indexing import build
@@ -252,25 +252,6 @@ def create_app() -> FastAPI:
     # ========================================================================
     # Correlation ID Middleware
     # ========================================================================
-    # Pattern for safe correlation IDs: alphanumeric, dash, underscore only
-    _SAFE_CORRELATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
-
-    def _validate_correlation_id(raw_id: Optional[str]) -> Optional[str]:
-        """Validate correlation ID to prevent log injection and oversized headers.
-
-        Args:
-            raw_id: Raw correlation ID from request header
-
-        Returns:
-            Validated ID if safe, None otherwise
-        """
-        if not raw_id:
-            return None
-        # Max 64 chars, alphanumeric + dash/underscore only
-        if len(raw_id) <= 64 and _SAFE_CORRELATION_ID_PATTERN.match(raw_id):
-            return raw_id
-        return None
-
     @app.middleware("http")
     async def correlation_id_middleware(request: Request, call_next):
         """Add correlation ID to request context for distributed tracing.
@@ -280,7 +261,7 @@ def create_app() -> FastAPI:
         """
         # Extract and validate from headers
         raw_id = request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
-        correlation_id = _validate_correlation_id(raw_id) or generate_correlation_id()
+        correlation_id = validate_correlation_id(raw_id) or generate_correlation_id()
 
         # Set in context for logging (propagates to thread pool via ContextVar)
         set_correlation_id(correlation_id)

@@ -338,6 +338,7 @@ def log_query(
         LOG_QUERY_INCLUDE_CHUNKS,
         QUERY_LOG_FILE,
     )
+    from .correlation import get_correlation_id
     from .logging_config import get_query_logger
     from .utils import sanitize_for_log
 
@@ -391,6 +392,7 @@ def log_query(
 
     # FIX (Error #6): Sanitize query and answer to prevent log injection
     log_entry = {
+        "correlation_id": get_correlation_id() or "-",
         "timestamp": time.time(),
         "timestamp_iso": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "query": sanitize_for_log(query, max_length=2000),

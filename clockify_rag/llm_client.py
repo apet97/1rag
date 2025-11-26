@@ -9,6 +9,7 @@ the corporate Ollama instance. Designed for VPN environments with:
 - VPN-safe error handling (no indefinite hangs)
 """
 
+import asyncio
 import logging
 import os
 import threading
@@ -220,23 +221,27 @@ def invoke_llm(
 async def invoke_llm_async(
     prompt: Union[str, List[BaseMessage]],
     temperature: float = 0.0,
+    timeout: float = 120.0,
 ) -> str:
-    """Invoke the LLM asynchronously with circuit breaker protection.
+    """Invoke the LLM asynchronously with circuit breaker protection and timeout.
 
     This is the async equivalent of invoke_llm(), providing:
     - Circuit breaker protection to prevent hammering unresponsive services
     - Automatic failure tracking and recovery
     - Non-blocking LLM calls suitable for async FastAPI endpoints
+    - Per-call timeout enforcement
 
     Args:
         prompt: Either a string prompt or a list of LangChain messages
         temperature: Sampling temperature (0.0-1.0; 0.0 = deterministic)
+        timeout: Maximum time in seconds to wait for LLM response (default 120.0)
 
     Returns:
         The LLM response content as a string
 
     Raises:
         CircuitOpenError: If the LLM service circuit breaker is open
+        asyncio.TimeoutError: If the LLM call exceeds the timeout
         Exception: Any underlying LLM errors (connection, timeout, etc.)
 
     Usage:
@@ -255,6 +260,9 @@ async def invoke_llm_async(
             HumanMessage(content="What is 2+2?"),
         ]
         response = await invoke_llm_async(messages)
+
+        # With custom timeout
+        response = await invoke_llm_async("Quick question", timeout=30.0)
         ```
     """
     cb = get_ollama_circuit_breaker()
@@ -264,10 +272,13 @@ async def invoke_llm_async(
 
     try:
         llm = get_llm_client_async(temperature)
-        # Use ainvoke for async operation
-        response = await llm.ainvoke(prompt)
+        # Use ainvoke for async operation with timeout enforcement
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
         cb.record_success()
         return response.content
+    except asyncio.TimeoutError:
+        cb.record_failure()
+        raise
     except Exception:
         cb.record_failure()
         raise

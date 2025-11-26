@@ -14,9 +14,13 @@ Usage:
     corr_id = get_correlation_id()  # Returns "req-abc123"
 """
 
+import re
 import uuid
 from contextvars import ContextVar
 from typing import Optional
+
+# Pattern for safe correlation IDs: alphanumeric, dash, underscore only
+_SAFE_CORRELATION_ID_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
 
 # Thread-safe context variable for correlation ID
 # Defaults to None when not set (e.g., outside of request context)
@@ -53,6 +57,23 @@ def set_correlation_id(correlation_id: Optional[str]) -> None:
 def clear_correlation_id() -> None:
     """Clear the correlation ID from the current context."""
     _correlation_id.set(None)
+
+
+def validate_correlation_id(raw_id: Optional[str], max_length: int = 64) -> Optional[str]:
+    """Validate correlation ID to prevent log injection and oversized headers.
+
+    Args:
+        raw_id: Raw correlation ID from request header
+        max_length: Maximum allowed length (default 64)
+
+    Returns:
+        Validated ID if safe, None otherwise
+    """
+    if not raw_id:
+        return None
+    if len(raw_id) <= max_length and _SAFE_CORRELATION_ID_PATTERN.match(raw_id):
+        return raw_id
+    return None
 
 
 class CorrelationIdFilter:
