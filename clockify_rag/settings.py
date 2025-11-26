@@ -18,7 +18,6 @@ The settings are cached after first load for performance.
 """
 
 from functools import lru_cache
-from typing import Optional, Set
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 

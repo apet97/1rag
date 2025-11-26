@@ -417,7 +417,7 @@ def log_query(
     try:
         # PERF FIX: Use rotating logger to prevent unbounded disk usage
         # Default: 10MB max file size, keeps 5 backups (rag_queries.jsonl.1, .2, etc.)
-        from .logging_config import flush_query_logger, reset_query_logger
+        from .logging_config import flush_query_logger
 
         # Reset logger if file path changed (e.g., in tests)
         # This ensures we get a fresh logger with the correct path
