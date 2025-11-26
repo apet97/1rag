@@ -9,7 +9,6 @@ These tests verify:
 """
 
 import pytest
-from datetime import datetime
 from unittest.mock import patch, MagicMock
 
 from fastapi.testclient import TestClient

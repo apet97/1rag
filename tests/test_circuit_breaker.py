@@ -2,7 +2,6 @@
 
 import pytest
 import time
-import threading
 from concurrent.futures import ThreadPoolExecutor
 
 from clockify_rag.circuit_breaker import (
@@ -11,7 +10,6 @@ from clockify_rag.circuit_breaker import (
     CircuitOpenError,
     get_circuit_breaker,
     reset_circuit_breaker,
-    reset_all_circuit_breakers,
     circuit_breaker,
 )
 

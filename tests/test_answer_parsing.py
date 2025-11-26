@@ -1,6 +1,5 @@
 """Tests for answer.py JSON parsing and type coercion."""
 
-import pytest
 import json
 
 from clockify_rag.answer import parse_qwen_json, extract_citations, validate_citations
