@@ -68,3 +68,45 @@ def test_x_request_id_also_accepted():
     client = TestClient(app)
     resp = client.get("/health", headers={"x-request-id": "req-12345"})
     assert resp.headers["x-correlation-id"] == "req-12345"
+
+
+def test_correlation_id_preserved_on_http_exception():
+    """Verify client-provided correlation ID is preserved on HTTPException errors.
+
+    This tests that the middleware stores the ID in request.state so that
+    exception handlers can access it even after ContextVar is cleared.
+    """
+    from clockify_rag.api import create_app
+
+    app = create_app()
+    client = TestClient(app)
+
+    # /v1/query without index ready returns 503 (HTTPException)
+    custom_id = "error-test-503"
+    resp = client.post(
+        "/v1/query",
+        json={"question": "test question"},
+        headers={"x-correlation-id": custom_id},
+    )
+    # Should be 503 (index not ready) and preserve the SAME correlation ID
+    assert resp.status_code == 503
+    assert resp.headers["x-correlation-id"] == custom_id
+
+
+def test_correlation_id_preserved_on_validation_error():
+    """Verify correlation ID preserved on validation errors (422)."""
+    from clockify_rag.api import create_app
+
+    app = create_app()
+    client = TestClient(app)
+
+    custom_id = "error-test-422"
+    # Send invalid JSON to trigger validation error
+    resp = client.post(
+        "/v1/query",
+        json={"question": ""},  # Empty question triggers validation error
+        headers={"x-correlation-id": custom_id},
+    )
+    # Should be 422 (validation error) and preserve the correlation ID
+    assert resp.status_code == 422
+    assert resp.headers["x-correlation-id"] == custom_id

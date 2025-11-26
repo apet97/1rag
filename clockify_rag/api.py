@@ -265,6 +265,9 @@ def create_app() -> FastAPI:
 
         # Set in context for logging (propagates to thread pool via ContextVar)
         set_correlation_id(correlation_id)
+        # Also store on request.state so exception handlers can access it
+        # after the ContextVar is cleared in finally
+        request.state.correlation_id = correlation_id
 
         try:
             response = await call_next(request)
@@ -293,7 +296,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
         """Handle HTTP exceptions with correlation ID header."""
-        correlation_id = get_correlation_id() or generate_correlation_id()
+        # Read from request.state first (survives middleware finally block),
+        # fall back to ContextVar, then generate new if neither available
+        correlation_id = (
+            getattr(request.state, "correlation_id", None) or get_correlation_id() or generate_correlation_id()
+        )
         return JSONResponse(
             status_code=exc.status_code,
             content={"detail": exc.detail},
@@ -303,7 +310,11 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def general_exception_handler(request: Request, exc: Exception):
         """Handle unexpected exceptions with correlation ID header."""
-        correlation_id = get_correlation_id() or generate_correlation_id()
+        # Read from request.state first (survives middleware finally block),
+        # fall back to ContextVar, then generate new if neither available
+        correlation_id = (
+            getattr(request.state, "correlation_id", None) or get_correlation_id() or generate_correlation_id()
+        )
         logger.exception(f"Unhandled exception [correlation_id={correlation_id}]: {exc}")
         return JSONResponse(
             status_code=500,
