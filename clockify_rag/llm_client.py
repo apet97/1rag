@@ -12,10 +12,13 @@ the corporate Ollama instance. Designed for VPN environments with:
 import logging
 import os
 import threading
+from typing import List, Union
 
 import httpx
+from langchain_core.messages import BaseMessage
 
 from . import config
+from .circuit_breaker import CircuitOpenError, get_ollama_circuit_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -145,3 +148,56 @@ def get_llm_client_async(temperature: float = 0.0) -> ChatOllama:
     """
     # TODO: Switch to async client once langchain-community adds native async support
     return get_llm_client(temperature)
+
+
+def invoke_llm(
+    prompt: Union[str, List[BaseMessage]],
+    temperature: float = 0.0,
+) -> str:
+    """Invoke the LLM with circuit breaker protection.
+
+    This is the recommended way to call the LLM as it provides:
+    - Circuit breaker protection to prevent hammering unresponsive services
+    - Automatic failure tracking and recovery
+    - Clean error handling with CircuitOpenError
+
+    Args:
+        prompt: Either a string prompt or a list of LangChain messages
+        temperature: Sampling temperature (0.0-1.0; 0.0 = deterministic)
+
+    Returns:
+        The LLM response content as a string
+
+    Raises:
+        CircuitOpenError: If the LLM service circuit breaker is open
+        Exception: Any underlying LLM errors (connection, timeout, etc.)
+
+    Usage:
+        ```python
+        from clockify_rag.llm_client import invoke_llm
+
+        # Simple string prompt
+        response = invoke_llm("What is 2+2?")
+
+        # With messages
+        from langchain_core.messages import HumanMessage, SystemMessage
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            HumanMessage(content="What is 2+2?"),
+        ]
+        response = invoke_llm(messages)
+        ```
+    """
+    cb = get_ollama_circuit_breaker()
+
+    if not cb.allow_request():
+        raise CircuitOpenError("ollama_llm", cb.get_retry_after())
+
+    try:
+        llm = get_llm_client(temperature)
+        response = llm.invoke(prompt)
+        cb.record_success()
+        return response.content
+    except Exception:
+        cb.record_failure()
+        raise
