@@ -38,20 +38,19 @@ T = TypeVar("T")
 
 class CircuitState(Enum):
     """Circuit breaker states."""
-    CLOSED = "closed"      # Normal operation, requests allowed
-    OPEN = "open"          # Failing fast, requests blocked
+
+    CLOSED = "closed"  # Normal operation, requests allowed
+    OPEN = "open"  # Failing fast, requests blocked
     HALF_OPEN = "half_open"  # Testing if service recovered
 
 
 class CircuitOpenError(Exception):
     """Raised when circuit is open and requests are blocked."""
+
     def __init__(self, name: str, retry_after: float):
         self.name = name
         self.retry_after = retry_after
-        super().__init__(
-            f"Circuit breaker '{name}' is open. "
-            f"Retry after {retry_after:.1f}s"
-        )
+        super().__init__(f"Circuit breaker '{name}' is open. " f"Retry after {retry_after:.1f}s")
 
 
 class CircuitBreaker:
@@ -99,11 +98,7 @@ class CircuitBreaker:
         if self._state == CircuitState.OPEN and self._last_failure_time:
             elapsed = time.time() - self._last_failure_time
             if elapsed >= self.reset_timeout:
-                logger.info(
-                    "circuit_breaker: name=%s transition=open->half_open "
-                    "elapsed=%.1fs",
-                    self.name, elapsed
-                )
+                logger.info("circuit_breaker: name=%s transition=open->half_open " "elapsed=%.1fs", self.name, elapsed)
                 self._state = CircuitState.HALF_OPEN
                 self._half_open_calls = 0
 
@@ -138,9 +133,9 @@ class CircuitBreaker:
                 self._success_count += 1
                 if self._success_count >= self.half_open_max_calls:
                     logger.info(
-                        "circuit_breaker: name=%s transition=half_open->closed "
-                        "successes=%d",
-                        self.name, self._success_count
+                        "circuit_breaker: name=%s transition=half_open->closed " "successes=%d",
+                        self.name,
+                        self._success_count,
                     )
                     self._state = CircuitState.CLOSED
                     self._failure_count = 0
@@ -157,11 +152,7 @@ class CircuitBreaker:
             self._last_failure_time = time.time()
 
             if self._state == CircuitState.HALF_OPEN:
-                logger.warning(
-                    "circuit_breaker: name=%s transition=half_open->open "
-                    "reason=test_failed",
-                    self.name
-                )
+                logger.warning("circuit_breaker: name=%s transition=half_open->open " "reason=test_failed", self.name)
                 self._state = CircuitState.OPEN
                 self._half_open_calls = 0
                 self._success_count = 0
@@ -169,9 +160,10 @@ class CircuitBreaker:
             elif self._state == CircuitState.CLOSED:
                 if self._failure_count >= self.failure_threshold:
                     logger.warning(
-                        "circuit_breaker: name=%s transition=closed->open "
-                        "failures=%d threshold=%d",
-                        self.name, self._failure_count, self.failure_threshold
+                        "circuit_breaker: name=%s transition=closed->open " "failures=%d threshold=%d",
+                        self.name,
+                        self._failure_count,
+                        self.failure_threshold,
                     )
                     self._state = CircuitState.OPEN
 
@@ -230,21 +222,14 @@ def get_circuit_breaker(
     """
     with _REGISTRY_LOCK:
         if name not in _CIRCUIT_BREAKERS:
-            threshold = failure_threshold or getattr(
-                config, "CIRCUIT_BREAKER_THRESHOLD", 5
-            )
-            timeout = reset_timeout or getattr(
-                config, "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0
-            )
+            threshold = failure_threshold or getattr(config, "CIRCUIT_BREAKER_THRESHOLD", 5)
+            timeout = reset_timeout or getattr(config, "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0)
             _CIRCUIT_BREAKERS[name] = CircuitBreaker(
                 name=name,
                 failure_threshold=threshold,
                 reset_timeout=timeout,
             )
-            logger.debug(
-                "circuit_breaker: created name=%s threshold=%d timeout=%.1fs",
-                name, threshold, timeout
-            )
+            logger.debug("circuit_breaker: created name=%s threshold=%d timeout=%.1fs", name, threshold, timeout)
         return _CIRCUIT_BREAKERS[name]
 
 
@@ -299,6 +284,7 @@ def circuit_breaker(
         def call_ollama(prompt):
             return ollama_client.generate(prompt)
     """
+
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
         @wraps(func)
         def wrapper(*args, **kwargs) -> T:
@@ -307,10 +293,7 @@ def circuit_breaker(
             if not cb.allow_request():
                 retry_after = cb.get_retry_after()
                 if fallback is not None:
-                    logger.debug(
-                        "circuit_breaker: name=%s using_fallback retry_after=%.1fs",
-                        name, retry_after
-                    )
+                    logger.debug("circuit_breaker: name=%s using_fallback retry_after=%.1fs", name, retry_after)
                     return fallback(*args, **kwargs)
                 raise CircuitOpenError(name, retry_after)
 
@@ -323,6 +306,7 @@ def circuit_breaker(
                 raise
 
         return wrapper
+
     return decorator
 
 

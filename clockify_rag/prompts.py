@@ -27,12 +27,12 @@ def _escape_chunk_text(text: str) -> str:
     if not text:
         return text
     # Escape triple quotes that could break our content delimiters
-    escaped = text.replace('"""', '\u201c\u201d\u201d')  # Replace with smart quotes
+    escaped = text.replace('"""', "\u201c\u201d\u201d")  # Replace with smart quotes
     # Neutralize fake article markers that could confuse the LLM
-    escaped = re.sub(r'\[ARTICLE\s+id=', '[CONTENT id=', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r"\[ARTICLE\s+id=", "[CONTENT id=", escaped, flags=re.IGNORECASE)
     # Neutralize other potential injection patterns
-    escaped = re.sub(r'\[/?CONTEXT\s*', '[CONTENT ', escaped, flags=re.IGNORECASE)
-    escaped = re.sub(r'\[/?SYSTEM\s*', '[CONTENT ', escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r"\[/?CONTEXT\s*", "[CONTENT ", escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r"\[/?SYSTEM\s*", "[CONTENT ", escaped, flags=re.IGNORECASE)
     return escaped
 
 

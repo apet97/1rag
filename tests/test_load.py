@@ -23,8 +23,7 @@ import numpy as np
 
 # Skip all tests if running in CI without explicit flag
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_LOAD_TESTS", "0") != "1",
-    reason="Load tests skipped by default. Set RUN_LOAD_TESTS=1 to run."
+    os.environ.get("RUN_LOAD_TESTS", "0") != "1", reason="Load tests skipped by default. Set RUN_LOAD_TESTS=1 to run."
 )
 
 
@@ -39,13 +38,15 @@ class TestRetrievalLoad:
         # Create sample chunks
         chunks = []
         for i in range(100):
-            chunks.append({
-                "id": f"chunk_{i}",
-                "text": f"This is sample content for chunk {i}. It contains information about Clockify features and time tracking. Users can track their time, generate reports, and manage projects.",
-                "title": f"Article {i // 10}",
-                "section": f"Section {i % 5}",
-                "url": f"https://example.com/article-{i // 10}",
-            })
+            chunks.append(
+                {
+                    "id": f"chunk_{i}",
+                    "text": f"This is sample content for chunk {i}. It contains information about Clockify features and time tracking. Users can track their time, generate reports, and manage projects.",
+                    "title": f"Article {i // 10}",
+                    "section": f"Section {i % 5}",
+                    "url": f"https://example.com/article-{i // 10}",
+                }
+            )
 
         # Create BM25 index
         bm = build_bm25(chunks)
@@ -163,10 +164,7 @@ class TestBM25Load:
         from clockify_rag.indexing import build_bm25, bm25_scores
 
         # Create chunks
-        chunks = [
-            {"id": f"c{i}", "text": f"Sample text {i} about time tracking and reports"}
-            for i in range(100)
-        ]
+        chunks = [{"id": f"c{i}", "text": f"Sample text {i} about time tracking and reports"} for i in range(100)]
         bm = build_bm25(chunks)
 
         # Force GC and get baseline memory
@@ -187,10 +185,7 @@ class TestBM25Load:
         """Test BM25 handles large queries efficiently."""
         from clockify_rag.indexing import build_bm25, bm25_scores
 
-        chunks = [
-            {"id": f"c{i}", "text": f"Sample content {i}"}
-            for i in range(100)
-        ]
+        chunks = [{"id": f"c{i}", "text": f"Sample content {i}"} for i in range(100)]
         bm = build_bm25(chunks)
 
         # Large query (1000 words)

@@ -150,6 +150,7 @@ class TestQueryEndpoint:
     def test_query_rejects_too_long_question(self, client):
         """Query should reject overly long questions."""
         from clockify_rag import config
+
         long_question = "a" * (config.MAX_QUERY_LENGTH + 1)
         response = client.post("/v1/query", json={"question": long_question})
         assert response.status_code == 422
@@ -175,33 +176,21 @@ class TestQueryEndpoint:
         from clockify_rag import config
 
         # Too high
-        response = client.post(
-            "/v1/query",
-            json={"question": "test", "top_k": config.MAX_TOP_K + 1}
-        )
+        response = client.post("/v1/query", json={"question": "test", "top_k": config.MAX_TOP_K + 1})
         assert response.status_code == 422
 
         # Too low
-        response = client.post(
-            "/v1/query",
-            json={"question": "test", "top_k": 0}
-        )
+        response = client.post("/v1/query", json={"question": "test", "top_k": 0})
         assert response.status_code == 422
 
     def test_query_validates_threshold_range(self, client):
         """Query should validate threshold is 0-1."""
         # Too high
-        response = client.post(
-            "/v1/query",
-            json={"question": "test", "threshold": 1.5}
-        )
+        response = client.post("/v1/query", json={"question": "test", "threshold": 1.5})
         assert response.status_code == 422
 
         # Too low
-        response = client.post(
-            "/v1/query",
-            json={"question": "test", "threshold": -0.1}
-        )
+        response = client.post("/v1/query", json={"question": "test", "threshold": -0.1})
         assert response.status_code == 422
 
     def test_query_success_response_schema(self, client):
@@ -341,23 +330,27 @@ class TestContentTypeHandling:
     def test_query_requires_json(self, client):
         """Query should require JSON content-type."""
         response = client.post(
-            "/v1/query",
-            content="question=test",
-            headers={"content-type": "application/x-www-form-urlencoded"}
+            "/v1/query", content="question=test", headers={"content-type": "application/x-www-form-urlencoded"}
         )
         assert response.status_code == 422
 
     def test_query_accepts_json(self, client):
         """Query should accept JSON content-type."""
-        with patch("clockify_rag.api.answer_once", return_value={
-            "answer": "test", "refused": False, "confidence": 80,
-            "selected_chunks": [], "selected_chunk_ids": [],
-            "metadata": {}, "routing": {}, "timing": {}
-        }):
+        with patch(
+            "clockify_rag.api.answer_once",
+            return_value={
+                "answer": "test",
+                "refused": False,
+                "confidence": 80,
+                "selected_chunks": [],
+                "selected_chunk_ids": [],
+                "metadata": {},
+                "routing": {},
+                "timing": {},
+            },
+        ):
             response = client.post(
-                "/v1/query",
-                json={"question": "test question"},
-                headers={"content-type": "application/json"}
+                "/v1/query", json={"question": "test question"}, headers={"content-type": "application/json"}
             )
         assert response.status_code == 200
 
@@ -396,9 +389,14 @@ class TestQueryParameterValidation:
     def test_accepts_valid_top_k(self, client):
         """Should accept valid top_k values."""
         mock_result = {
-            "answer": "Test", "refused": False, "confidence": 80,
-            "selected_chunks": [], "selected_chunk_ids": [],
-            "metadata": {}, "routing": {}, "timing": {}
+            "answer": "Test",
+            "refused": False,
+            "confidence": 80,
+            "selected_chunks": [],
+            "selected_chunk_ids": [],
+            "metadata": {},
+            "routing": {},
+            "timing": {},
         }
 
         with patch("clockify_rag.api.answer_once", return_value=mock_result):
@@ -408,9 +406,14 @@ class TestQueryParameterValidation:
     def test_accepts_valid_threshold(self, client):
         """Should accept valid threshold values."""
         mock_result = {
-            "answer": "Test", "refused": False, "confidence": 80,
-            "selected_chunks": [], "selected_chunk_ids": [],
-            "metadata": {}, "routing": {}, "timing": {}
+            "answer": "Test",
+            "refused": False,
+            "confidence": 80,
+            "selected_chunks": [],
+            "selected_chunk_ids": [],
+            "metadata": {},
+            "routing": {},
+            "timing": {},
         }
 
         with patch("clockify_rag.api.answer_once", return_value=mock_result):
@@ -420,9 +423,14 @@ class TestQueryParameterValidation:
     def test_accepts_debug_flag(self, client):
         """Should accept debug flag."""
         mock_result = {
-            "answer": "Test", "refused": False, "confidence": 80,
-            "selected_chunks": [], "selected_chunk_ids": [],
-            "metadata": {}, "routing": {}, "timing": {}
+            "answer": "Test",
+            "refused": False,
+            "confidence": 80,
+            "selected_chunks": [],
+            "selected_chunk_ids": [],
+            "metadata": {},
+            "routing": {},
+            "timing": {},
         }
 
         with patch("clockify_rag.api.answer_once", return_value=mock_result):
