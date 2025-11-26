@@ -25,6 +25,7 @@ from .config import (
     RAG_EMBED_MODEL,
     RAG_OLLAMA_URL,
 )
+from .circuit_breaker import CircuitOpenError, get_embedding_circuit_breaker
 from .exceptions import EmbeddingError
 from .http_utils import http_post_with_retries
 
@@ -207,14 +208,20 @@ def embed_texts(texts: List[str], retries: Optional[int] = None) -> np.ndarray:
     Raises:
         requests.Timeout: If Ollama is unreachable or too slow
         ValueError: If texts is empty
+        CircuitOpenError: If embedding service circuit breaker is open
     """
     if not texts:
         return np.zeros((0, EMB_DIM), dtype=np.float32)
 
+    # Circuit breaker check before attempting embedding
+    cb = get_embedding_circuit_breaker()
+    if not cb.allow_request():
+        raise CircuitOpenError("ollama_embeddings", cb.get_retry_after())
+
     def _embed_batch() -> np.ndarray:
         # Use the REST API directly to guarantee timeout/retry control
         payloads = []
-        for text in texts:
+        for idx, text in enumerate(texts):
             resp = http_post_with_retries(
                 f"{RAG_OLLAMA_URL}/api/embeddings",
                 {"model": RAG_EMBED_MODEL, "prompt": text},
@@ -223,13 +230,28 @@ def embed_texts(texts: List[str], retries: Optional[int] = None) -> np.ndarray:
             )
             if not isinstance(resp, dict) or "embedding" not in resp:
                 raise EmbeddingError("Embedding response missing 'embedding' field")
-            payloads.append(resp["embedding"])
+
+            embedding = resp["embedding"]
+            # Per-call dimension validation to catch model mismatches early
+            actual_dim = len(embedding)
+            if actual_dim != EMB_DIM:
+                raise EmbeddingError(
+                    f"Embedding dimension mismatch at index {idx}: got {actual_dim}, expected {EMB_DIM}. "
+                    f"Check that EMB_DIM config matches the model '{RAG_EMBED_MODEL}' output."
+                )
+            payloads.append(embedding)
 
         embeddings_array = _normalize_vectors(payloads)
         logger.debug("Successfully embedded and normalized %d texts: shape %s", len(texts), embeddings_array.shape)
         return embeddings_array
 
-    return _retry_embed("embed_texts", retries, _embed_batch)
+    try:
+        result = _retry_embed("embed_texts", retries, _embed_batch)
+        cb.record_success()
+        return result
+    except Exception:
+        cb.record_failure()
+        raise
 
 
 def embed_query(text: str, retries: Optional[int] = None) -> np.ndarray:
@@ -245,9 +267,15 @@ def embed_query(text: str, retries: Optional[int] = None) -> np.ndarray:
     Raises:
         requests.Timeout: If Ollama is unreachable or too slow
         ValueError: If text is empty
+        CircuitOpenError: If embedding service circuit breaker is open
     """
     if not text:
         raise ValueError("Cannot embed empty text")
+
+    # Circuit breaker check before attempting embedding
+    cb = get_embedding_circuit_breaker()
+    if not cb.allow_request():
+        raise CircuitOpenError("ollama_embeddings", cb.get_retry_after())
 
     def _embed_single() -> np.ndarray:
         resp = http_post_with_retries(
@@ -260,12 +288,27 @@ def embed_query(text: str, retries: Optional[int] = None) -> np.ndarray:
         if not isinstance(embedding_list, list):
             raise EmbeddingError("Embedding response missing 'embedding' list")
         embedding_array = np.array(embedding_list, dtype=np.float32)
+
+        # Per-call dimension validation to catch model mismatches early
+        actual_dim = len(embedding_array)
+        if actual_dim != EMB_DIM:
+            raise EmbeddingError(
+                f"Embedding dimension mismatch: got {actual_dim}, expected {EMB_DIM}. "
+                f"Check that EMB_DIM config matches the model '{RAG_EMBED_MODEL}' output."
+            )
+
         norm = np.linalg.norm(embedding_array) + 1e-9
         embedding_array = embedding_array / norm
         logger.debug("Successfully embedded and normalized query: shape %s", embedding_array.shape)
         return embedding_array
 
-    return _retry_embed("embed_query", retries, _embed_single)
+    try:
+        result = _retry_embed("embed_query", retries, _embed_single)
+        cb.record_success()
+        return result
+    except Exception:
+        cb.record_failure()
+        raise
 
 
 def clear_cache():

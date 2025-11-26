@@ -6,7 +6,34 @@ Clockify/CAKE internal support RAG service using Qwen models.
 """
 
 import json
+import re
 from typing import Any, Dict, Optional, Sequence
+
+
+def _escape_chunk_text(text: str) -> str:
+    """Escape text that could break prompt parsing or enable injection.
+
+    Prevents:
+    - Triple quote escapes that could break content delimiters
+    - Fake article markers that could confuse the LLM
+    - Other prompt injection patterns
+
+    Args:
+        text: Raw chunk text to escape
+
+    Returns:
+        Escaped text safe for embedding in prompts
+    """
+    if not text:
+        return text
+    # Escape triple quotes that could break our content delimiters
+    escaped = text.replace('"""', "\u201c\u201d\u201d")  # Replace with smart quotes
+    # Neutralize fake article markers that could confuse the LLM
+    escaped = re.sub(r"\[ARTICLE\s+id=", "[CONTENT id=", escaped, flags=re.IGNORECASE)
+    # Neutralize other potential injection patterns
+    escaped = re.sub(r"\[/?CONTEXT\s*", "[CONTENT ", escaped, flags=re.IGNORECASE)
+    escaped = re.sub(r"\[/?SYSTEM\s*", "[CONTENT ", escaped, flags=re.IGNORECASE)
+    return escaped
 
 
 # Qwen System Prompt for Internal Clockify/CAKE Support
@@ -97,7 +124,7 @@ def build_rag_user_prompt(
 
         block_lines.append("content:")
         block_lines.append('"""')
-        block_lines.append(chunk["text"])
+        block_lines.append(_escape_chunk_text(chunk["text"]))
         block_lines.append('"""')
 
         context_blocks.append("\n".join(block_lines))

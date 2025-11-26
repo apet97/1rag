@@ -34,6 +34,7 @@ from .config import (
     ALLOW_PROXIES,
     get_llm_client_mode,
 )
+from .circuit_breaker import CircuitOpenError, get_ollama_circuit_breaker
 from .exceptions import LLMError, EmbeddingError, LLMUnavailableError, LLMBadResponseError
 from .http_utils import get_session
 
@@ -237,7 +238,13 @@ class OllamaAPIClient(BaseLLMClient):
 
         Raises:
             LLMError: If the request fails after all retries
+            CircuitOpenError: If the LLM service circuit breaker is open
         """
+        # Circuit breaker check before attempting request
+        cb = get_ollama_circuit_breaker()
+        if not cb.allow_request():
+            raise CircuitOpenError("ollama_llm", cb.get_retry_after())
+
         model = model or self.gen_model
         options = options or {
             "temperature": 0,
@@ -262,6 +269,7 @@ class OllamaAPIClient(BaseLLMClient):
             response.raise_for_status()
             result = response.json()
         except requests.exceptions.Timeout as e:
+            cb.record_failure()  # Track failure for circuit breaker
             logger.error(
                 "Chat completion timeout (read %.1fs) model=%s host=%s: %s",
                 req_timeout[1],
@@ -271,6 +279,7 @@ class OllamaAPIClient(BaseLLMClient):
             )
             raise LLMUnavailableError(f"Chat completion timeout for model {model}") from e
         except requests.exceptions.ConnectionError as e:
+            cb.record_failure()  # Track failure for circuit breaker
             logger.error(
                 "Chat completion connection error model=%s host=%s: %s",
                 model,
@@ -279,6 +288,7 @@ class OllamaAPIClient(BaseLLMClient):
             )
             raise LLMUnavailableError(f"Chat completion connection error for model {model}") from e
         except requests.exceptions.HTTPError as e:
+            cb.record_failure()  # Track failure for circuit breaker
             status = getattr(e.response, "status_code", getattr(response, "status_code", "unknown"))
             logger.error(
                 "Chat completion HTTP error model=%s host=%s status=%s: %s",
@@ -289,6 +299,7 @@ class OllamaAPIClient(BaseLLMClient):
             )
             raise LLMError(f"Chat completion HTTP error (status {status})") from e
         except ValueError as e:
+            cb.record_failure()  # Track failure for circuit breaker
             logger.error(
                 "Chat completion invalid JSON model=%s host=%s: %s",
                 model,
@@ -297,6 +308,7 @@ class OllamaAPIClient(BaseLLMClient):
             )
             raise LLMBadResponseError(f"Chat completion returned invalid JSON for model {model}") from e
         except requests.exceptions.RequestException as e:
+            cb.record_failure()  # Track failure for circuit breaker
             logger.error(
                 "Chat completion request error model=%s host=%s: %s",
                 model,
@@ -305,10 +317,12 @@ class OllamaAPIClient(BaseLLMClient):
             )
             raise LLMError(f"Chat completion request error: {e}") from e
         except Exception as e:
+            cb.record_failure()  # Track failure for circuit breaker
             logger.error("Chat completion unexpected error model=%s: %s", model, e)
             raise LLMError(f"Chat completion unexpected error: {e}") from e
 
         validated = self._validate_chat_response(result, model)
+        cb.record_success()  # Track success for circuit breaker
         duration = time.time() - start_time
         logger.debug("Chat completion finished in %.2fs model=%s", duration, model)
         return validated
