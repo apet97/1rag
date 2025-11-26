@@ -418,9 +418,7 @@ class Settings(BaseSettings):
 
         # Cross-field validations
         if self.retrieval.default_top_k > self.retrieval.max_top_k:
-            warnings.append(
-                f"DEFAULT_TOP_K ({self.retrieval.default_top_k}) > MAX_TOP_K ({self.retrieval.max_top_k})"
-            )
+            warnings.append(f"DEFAULT_TOP_K ({self.retrieval.default_top_k}) > MAX_TOP_K ({self.retrieval.max_top_k})")
 
         if self.retrieval.chunk_overlap >= self.retrieval.chunk_chars:
             warnings.append(

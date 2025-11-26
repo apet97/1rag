@@ -207,7 +207,9 @@ def setup_logging(
 
     # Log configuration applied
     rotation_info = f"rotation={use_rotation}, max_bytes={max_bytes}, backups={backup_count}" if log_file else ""
-    root.info(f"Logging configured: level={level}, format={format_type}, file={log_file or 'none'}, quiet={quiet}, correlation_ids={enable_correlation_ids}, {rotation_info}")
+    root.info(
+        f"Logging configured: level={level}, format={format_type}, file={log_file or 'none'}, quiet={quiet}, correlation_ids={enable_correlation_ids}, {rotation_info}"
+    )
 
 
 def get_logger(name: str) -> logging.Logger:

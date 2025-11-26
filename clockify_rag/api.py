@@ -239,7 +239,13 @@ def create_app() -> FastAPI:
             allow_origins=config.ALLOWED_ORIGINS,
             allow_credentials=True,
             allow_methods=["*"],
-            allow_headers=[config.API_KEY_HEADER or "x-api-key", "content-type", "accept", "x-correlation-id", "x-request-id"],
+            allow_headers=[
+                config.API_KEY_HEADER or "x-api-key",
+                "content-type",
+                "accept",
+                "x-correlation-id",
+                "x-request-id",
+            ],
         )
 
     # ========================================================================
@@ -255,9 +261,7 @@ def create_app() -> FastAPI:
         """
         # Extract from headers (common patterns)
         correlation_id = (
-            request.headers.get("x-correlation-id")
-            or request.headers.get("x-request-id")
-            or generate_correlation_id()
+            request.headers.get("x-correlation-id") or request.headers.get("x-request-id") or generate_correlation_id()
         )
 
         # Set in context for logging (propagates to thread pool via ContextVar)
