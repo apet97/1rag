@@ -5,7 +5,7 @@ import logging
 import os
 import threading
 import time
-from collections import deque
+from collections import OrderedDict, deque
 
 from .metrics import MetricNames, increment_counter, set_gauge
 
@@ -77,13 +77,17 @@ class QueryCache:
         """
         self.maxsize = maxsize
         self.ttl_seconds = ttl_seconds
-        self.cache: dict = {}  # {question_hash: (answer, metadata_with_timestamp, timestamp)}
-        # FIX (Error #4): Add maxlen as defense-in-depth safety net
-        # maxlen = maxsize * 2 provides safety buffer if cleanup fails
-        self.access_order: deque = deque(maxlen=maxsize * 2)  # For LRU eviction
+        # PERF FIX: Use OrderedDict for O(1) LRU operations instead of dict + deque
+        # OrderedDict.move_to_end() is O(1) vs deque.remove() which is O(n)
+        self._cache: OrderedDict = OrderedDict()  # {question_hash: (answer, metadata_with_timestamp, timestamp)}
         self.hits = 0
         self.misses = 0
         self._lock = threading.RLock()  # Thread safety lock
+
+    @property
+    def cache(self) -> dict:
+        """Backwards-compatible access to cache dict."""
+        return self._cache
 
     def _hash_question(self, question: str, params: dict = None) -> str:
         """Generate cache key from question and retrieval parameters.
@@ -113,12 +117,12 @@ class QueryCache:
         with self._lock:
             key = self._hash_question(question, params)
 
-            if key not in self.cache:
+            if key not in self._cache:
                 self.misses += 1
                 increment_counter(MetricNames.CACHE_MISSES)
                 return None
 
-            answer, metadata, timestamp = self.cache[key]
+            answer, metadata, timestamp = self._cache[key]
             # Ensure metadata exposes cache timestamp for downstream logging
             metadata_timestamp = metadata.get("timestamp")
             if metadata_timestamp is None:
@@ -129,15 +133,13 @@ class QueryCache:
 
             # Check if expired
             if age > self.ttl_seconds:
-                del self.cache[key]
-                self.access_order.remove(key)
+                del self._cache[key]
                 self.misses += 1
                 increment_counter(MetricNames.CACHE_MISSES)
                 return None
 
-            # Cache hit - update access order
-            self.access_order.remove(key)
-            self.access_order.append(key)
+            # PERF FIX: O(1) move_to_end() instead of O(n) remove() + append()
+            self._cache.move_to_end(key)
             self.hits += 1
             increment_counter(MetricNames.CACHE_HITS)
             logger.debug(f"[cache] HIT question_hash={key[:8]} age={age:.1f}s")
@@ -155,10 +157,10 @@ class QueryCache:
         with self._lock:
             key = self._hash_question(question, params)
 
-            # Evict oldest entry if cache full
-            if len(self.cache) >= self.maxsize and key not in self.cache:
-                oldest = self.access_order.popleft()
-                del self.cache[oldest]
+            # PERF FIX: O(1) eviction using OrderedDict
+            # Evict oldest entry if cache full (oldest is first in OrderedDict)
+            if len(self._cache) >= self.maxsize and key not in self._cache:
+                oldest, _ = self._cache.popitem(last=False)  # O(1) pop from front
                 logger.debug(f"[cache] EVICT question_hash={oldest[:8]} (LRU)")
 
             # Store entry with timestamp
@@ -168,21 +170,19 @@ class QueryCache:
             timestamp = time.time()
             metadata_copy = copy.deepcopy(metadata) if metadata is not None else {}
             metadata_copy["timestamp"] = timestamp
-            self.cache[key] = (answer, metadata_copy, timestamp)
 
-            # Update access order
-            if key in self.access_order:
-                self.access_order.remove(key)
-            self.access_order.append(key)
+            # PERF FIX: O(1) update - if key exists, move_to_end; otherwise just add
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            self._cache[key] = (answer, metadata_copy, timestamp)
 
             logger.debug(f"[cache] PUT question_hash={key[:8]}")
-            set_gauge(MetricNames.CACHE_SIZE, len(self.cache))
+            set_gauge(MetricNames.CACHE_SIZE, len(self._cache))
 
     def clear(self):
         """Clear all cache entries."""
         with self._lock:
-            self.cache.clear()
-            self.access_order.clear()
+            self._cache.clear()
             self.hits = 0
             self.misses = 0
             logger.info("[cache] CLEAR")
@@ -200,7 +200,7 @@ class QueryCache:
             return {
                 "hits": self.hits,
                 "misses": self.misses,
-                "size": len(self.cache),
+                "size": len(self._cache),
                 "maxsize": self.maxsize,
                 "hit_rate": hit_rate,
             }
@@ -217,21 +217,21 @@ class QueryCache:
 
         with self._lock:
             try:
+                # PERF FIX: OrderedDict maintains order, so we save entries in LRU order
                 cache_data = {
-                    "version": "1.0",
+                    "version": "1.1",  # Bumped version for new format without access_order
                     "maxsize": self.maxsize,
                     "ttl_seconds": self.ttl_seconds,
                     "entries": [
                         {"key": key, "answer": answer, "metadata": metadata, "timestamp": timestamp}
-                        for key, (answer, metadata, timestamp) in self.cache.items()
+                        for key, (answer, metadata, timestamp) in self._cache.items()
                     ],
-                    "access_order": list(self.access_order),
                     "hits": self.hits,
                     "misses": self.misses,
                 }
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(cache_data, f, ensure_ascii=False, indent=2)
-                logger.info(f"[cache] SAVE {len(self.cache)} entries to {path}")
+                logger.info(f"[cache] SAVE {len(self._cache)} entries to {path}")
             except Exception as e:
                 logger.warning(f"[cache] Failed to save cache: {e}")
 
@@ -257,16 +257,26 @@ class QueryCache:
                 with open(path, "r", encoding="utf-8") as f:
                     cache_data = json.load(f)
 
-                # Validate version
+                # Validate version - support both 1.0 and 1.1 formats
                 version = cache_data.get("version", "1.0")
-                if version != "1.0":
+                if version not in ("1.0", "1.1"):
                     logger.warning(f"[cache] Incompatible cache version {version}, skipping load")
                     return 0
 
                 # Restore entries, filtering out expired ones
+                # PERF FIX: OrderedDict maintains insertion order for LRU
                 now = time.time()
                 loaded_count = 0
-                for entry in cache_data.get("entries", []):
+
+                # For v1.0, we had access_order; for v1.1, entries are already in LRU order
+                entries = cache_data.get("entries", [])
+                if version == "1.0":
+                    # Reorder entries based on access_order from old format
+                    access_order = cache_data.get("access_order", [])
+                    entry_map = {e["key"]: e for e in entries}
+                    entries = [entry_map[k] for k in access_order if k in entry_map]
+
+                for entry in entries:
                     key = entry["key"]
                     answer = entry["answer"]
                     metadata = entry["metadata"]
@@ -277,13 +287,8 @@ class QueryCache:
                     if age > self.ttl_seconds:
                         continue
 
-                    self.cache[key] = (answer, metadata, timestamp)
+                    self._cache[key] = (answer, metadata, timestamp)
                     loaded_count += 1
-
-                # Restore access order (only for non-expired keys)
-                self.access_order = deque(
-                    [k for k in cache_data.get("access_order", []) if k in self.cache], maxlen=self.maxsize * 2
-                )
 
                 # Restore stats (reset to avoid inflated numbers from old sessions)
                 # self.hits = cache_data.get("hits", 0)
@@ -318,6 +323,7 @@ def log_query(
 ):
     """Log query with structured JSON format for monitoring and analytics.
 
+    Uses rotating file handler to prevent unbounded disk usage.
     FIX (Error #6): Sanitizes user input to prevent log injection attacks.
     """
     from . import config as _config
@@ -332,6 +338,7 @@ def log_query(
         LOG_QUERY_INCLUDE_CHUNKS,
         QUERY_LOG_FILE,
     )
+    from .logging_config import get_query_logger
     from .utils import sanitize_for_log
 
     normalized_chunks = []
@@ -408,7 +415,19 @@ def log_query(
         log_entry["answer"] = LOG_QUERY_ANSWER_PLACEHOLDER
 
     try:
-        with open(QUERY_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
+        # PERF FIX: Use rotating logger to prevent unbounded disk usage
+        # Default: 10MB max file size, keeps 5 backups (rag_queries.jsonl.1, .2, etc.)
+        from .logging_config import flush_query_logger, reset_query_logger
+
+        # Reset logger if file path changed (e.g., in tests)
+        # This ensures we get a fresh logger with the correct path
+        query_logger = get_query_logger(
+            log_file=QUERY_LOG_FILE,
+            max_bytes=10 * 1024 * 1024,  # 10MB
+            backup_count=5,
+        )
+        query_logger.info(json.dumps(log_entry, ensure_ascii=False))
+        # Flush immediately to ensure log is written (important for tests)
+        flush_query_logger()
     except Exception as e:
         logger.warning(f"Failed to log query: {e}")

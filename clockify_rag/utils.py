@@ -225,8 +225,9 @@ def build_lock():
                 lock_data = json.loads(f.read())
             if lock_data.get("pid") == os.getpid():
                 os.remove(BUILD_LOCK)
-        except Exception:
-            pass
+        except Exception as e:
+            # Non-critical: lock file may already be removed or unreadable
+            logger.debug("Failed to clean up build lock: %s", e)
 
 
 # ====== CONFIG VALIDATION ======
@@ -471,8 +472,9 @@ def _fsync_dir(path: str) -> None:
             os.fsync(fd)
         finally:
             os.close(fd)
-    except Exception:
-        pass  # Best-effort on platforms/filesystems without dir fsync
+    except Exception as e:
+        # Best-effort on platforms/filesystems without dir fsync
+        logger.debug("Directory fsync skipped for %s: %s", d, e)
 
 
 def atomic_write_bytes(path: str, data: bytes) -> None:
@@ -538,8 +540,8 @@ def atomic_save_npy(arr: np.ndarray, path: str) -> None:
         if tmp and os.path.exists(tmp):
             try:
                 os.remove(tmp)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to clean up temp file %s: %s", tmp, e)
 
 
 # ====== LOGGING UTILITIES ======
@@ -548,8 +550,9 @@ def log_event(event: str, **fields):
     try:
         record = {"event": event, **fields}
         logger.info(json.dumps(record, ensure_ascii=False))
-    except Exception:
+    except Exception as e:
         # Fallback to plain string if JSON encoding fails
+        logger.debug("JSON serialization failed for event %s: %s", event, e)
         logger.info(f"{event} {fields}")
 
 
