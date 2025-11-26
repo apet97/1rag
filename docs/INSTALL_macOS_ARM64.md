@@ -351,10 +351,10 @@ python3 -c "import torch; print(torch.backends.mps.is_available())"
 ```bash
 # Application should auto-fallback to BM25
 # But to explicitly disable FAISS:
-USE_ANN=none python3 -m clockify_rag.cli_modern ingest
+ANN=none python3 -m clockify_rag.cli_modern ingest
 
 # Or use HNSW instead
-USE_ANN=hnsw python3 -m clockify_rag.cli_modern ingest
+ANN=hnsw python3 -m clockify_rag.cli_modern ingest
 ```
 
 ### Problem: Slow embeddings (>5 seconds per query)

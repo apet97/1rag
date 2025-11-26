@@ -9,6 +9,7 @@ the corporate Ollama instance. Designed for VPN environments with:
 - VPN-safe error handling (no indefinite hangs)
 """
 
+import asyncio
 import logging
 import os
 import threading
@@ -134,19 +135,33 @@ def get_llm_client(temperature: float = 0.0) -> ChatOllama:
 
 
 def get_llm_client_async(temperature: float = 0.0) -> ChatOllama:
-    """Create an async-capable ChatOllama client (experimental).
+    """Create an async-capable ChatOllama client.
 
-    Note: LangChain's ChatOllama doesn't have native async support yet.
-    This function returns the same as get_llm_client() but documents the
-    interface for future async work.
+    LangChain's ChatOllama supports async operations via inherited methods
+    from BaseChatModel (ainvoke, abatch, astream). This function returns
+    a ChatOllama instance that can be used with both sync and async patterns.
 
     Args:
         temperature: Sampling temperature (0.0-1.0)
 
     Returns:
-        ChatOllama instance (currently synchronous)
+        ChatOllama instance capable of async operations via ainvoke()
+
+    Usage:
+        ```python
+        import asyncio
+        from clockify_rag.llm_client import get_llm_client_async
+
+        async def ask():
+            llm = get_llm_client_async()
+            response = await llm.ainvoke("What is 2+2?")
+            return response.content
+
+        result = asyncio.run(ask())
+        ```
     """
-    # TODO: Switch to async client once langchain-community adds native async support
+    # ChatOllama inherits async support from BaseChatModel (ainvoke, abatch, astream)
+    # These methods use asyncio.to_thread() internally for the sync implementation
     return get_llm_client(temperature)
 
 
@@ -198,6 +213,72 @@ def invoke_llm(
         response = llm.invoke(prompt)
         cb.record_success()
         return response.content
+    except Exception:
+        cb.record_failure()
+        raise
+
+
+async def invoke_llm_async(
+    prompt: Union[str, List[BaseMessage]],
+    temperature: float = 0.0,
+    timeout: float = 120.0,
+) -> str:
+    """Invoke the LLM asynchronously with circuit breaker protection and timeout.
+
+    This is the async equivalent of invoke_llm(), providing:
+    - Circuit breaker protection to prevent hammering unresponsive services
+    - Automatic failure tracking and recovery
+    - Non-blocking LLM calls suitable for async FastAPI endpoints
+    - Per-call timeout enforcement
+
+    Args:
+        prompt: Either a string prompt or a list of LangChain messages
+        temperature: Sampling temperature (0.0-1.0; 0.0 = deterministic)
+        timeout: Maximum time in seconds to wait for LLM response (default 120.0)
+
+    Returns:
+        The LLM response content as a string
+
+    Raises:
+        CircuitOpenError: If the LLM service circuit breaker is open
+        asyncio.TimeoutError: If the LLM call exceeds the timeout
+        Exception: Any underlying LLM errors (connection, timeout, etc.)
+
+    Usage:
+        ```python
+        from clockify_rag.llm_client import invoke_llm_async
+
+        # In an async context (FastAPI, asyncio.run, etc.)
+        async def handle_query(question: str):
+            response = await invoke_llm_async(f"Answer this: {question}")
+            return response
+
+        # With messages
+        from langchain_core.messages import HumanMessage, SystemMessage
+        messages = [
+            SystemMessage(content="You are a helpful assistant."),
+            HumanMessage(content="What is 2+2?"),
+        ]
+        response = await invoke_llm_async(messages)
+
+        # With custom timeout
+        response = await invoke_llm_async("Quick question", timeout=30.0)
+        ```
+    """
+    cb = get_ollama_circuit_breaker()
+
+    if not cb.allow_request():
+        raise CircuitOpenError("ollama_llm", cb.get_retry_after())
+
+    try:
+        llm = get_llm_client_async(temperature)
+        # Use ainvoke for async operation with timeout enforcement
+        response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
+        cb.record_success()
+        return response.content
+    except asyncio.TimeoutError:
+        cb.record_failure()
+        raise
     except Exception:
         cb.record_failure()
         raise

@@ -634,7 +634,8 @@ def retrieve(
                         qv_n.shape[0],
                     )
                     faiss_index = None
-            except Exception:
+            except Exception as e:
+                logger.debug("FAISS dimension check failed: %s", e)
                 faiss_index = None
 
         if faiss_index:
@@ -977,7 +978,8 @@ def _sort_article_chunks(chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
     try:
         return sorted(chunks, key=_sort_key)
-    except Exception:
+    except Exception as e:
+        logger.debug("Chunk sorting failed, returning unsorted: %s", e)
         return chunks
 
 
@@ -1017,7 +1019,8 @@ def pack_snippets(
     if order:
         try:
             best_article_key = _article_key(chunks[order[0]])
-        except Exception:
+        except Exception as e:
+            logger.debug("Failed to get best article key: %s", e)
             best_article_key = None
     for idx in order:
         chunk = chunks[idx]

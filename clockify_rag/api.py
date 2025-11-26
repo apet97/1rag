@@ -5,7 +5,8 @@ Provides REST API endpoints:
 - GET /v1/config: Current configuration
 - POST /v1/query: Submit a question
 - POST /v1/ingest: Trigger index build
-- GET /v1/metrics: System metrics
+- GET /v1/metrics: System metrics (JSON/Prometheus/CSV via format param)
+- GET /metrics: Standard Prometheus scraping endpoint
 """
 
 import asyncio
@@ -30,6 +31,13 @@ from . import config
 from .answer import answer_once
 from .caching import get_rate_limiter as _get_rate_limiter
 from .cli import ensure_index_ready
+from .correlation import (
+    generate_correlation_id,
+    get_correlation_id,
+    set_correlation_id,
+    clear_correlation_id,
+    validate_correlation_id,
+)
 from .exceptions import ValidationError
 from .indexing import build
 from .metrics import MetricNames, get_metrics
@@ -113,6 +121,7 @@ class QueryResponse(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(None, description="Additional metadata (confidence routing, errors)")
     routing: Optional[Dict[str, Any]] = Field(None, description="Routing recommendation (if available)")
     timing: Optional[Dict[str, Any]] = Field(None, description="Latency breakdown in milliseconds")
+    correlation_id: Optional[str] = Field(None, description="Request correlation ID for tracing")
 
 
 class HealthResponse(BaseModel):
@@ -231,8 +240,43 @@ def create_app() -> FastAPI:
             allow_origins=config.ALLOWED_ORIGINS,
             allow_credentials=True,
             allow_methods=["*"],
-            allow_headers=[config.API_KEY_HEADER or "x-api-key", "content-type", "accept"],
+            allow_headers=[
+                config.API_KEY_HEADER or "x-api-key",
+                "content-type",
+                "accept",
+                "x-correlation-id",
+                "x-request-id",
+            ],
         )
+
+    # ========================================================================
+    # Correlation ID Middleware
+    # ========================================================================
+    @app.middleware("http")
+    async def correlation_id_middleware(request: Request, call_next):
+        """Add correlation ID to request context for distributed tracing.
+
+        Extracts correlation ID from incoming headers (X-Correlation-ID or X-Request-ID)
+        or generates a new one. Validates input to prevent log injection.
+        """
+        # Extract and validate from headers
+        raw_id = request.headers.get("x-correlation-id") or request.headers.get("x-request-id")
+        correlation_id = validate_correlation_id(raw_id) or generate_correlation_id()
+
+        # Set in context for logging (propagates to thread pool via ContextVar)
+        set_correlation_id(correlation_id)
+        # Also store on request.state so exception handlers can access it
+        # after the ContextVar is cleared in finally
+        request.state.correlation_id = correlation_id
+
+        try:
+            response = await call_next(request)
+            # Add to response headers for client tracing
+            response.headers["x-correlation-id"] = correlation_id
+            return response
+        finally:
+            # Clear context after request completes
+            clear_correlation_id()
 
     _clear_index_state(app)
 
@@ -245,6 +289,38 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=401, detail="Missing API key")
         if api_key not in config.API_ALLOWED_KEYS:
             raise HTTPException(status_code=403, detail="Invalid API key")
+
+    # ========================================================================
+    # Exception Handlers (ensure correlation ID on error responses)
+    # ========================================================================
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(request: Request, exc: HTTPException):
+        """Handle HTTP exceptions with correlation ID header."""
+        # Read from request.state first (survives middleware finally block),
+        # fall back to ContextVar, then generate new if neither available
+        correlation_id = (
+            getattr(request.state, "correlation_id", None) or get_correlation_id() or generate_correlation_id()
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers={"x-correlation-id": correlation_id},
+        )
+
+    @app.exception_handler(Exception)
+    async def general_exception_handler(request: Request, exc: Exception):
+        """Handle unexpected exceptions with correlation ID header."""
+        # Read from request.state first (survives middleware finally block),
+        # fall back to ContextVar, then generate new if neither available
+        correlation_id = (
+            getattr(request.state, "correlation_id", None) or get_correlation_id() or generate_correlation_id()
+        )
+        logger.exception(f"Unhandled exception [correlation_id={correlation_id}]: {exc}")
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Internal server error"},
+            headers={"x-correlation-id": correlation_id},
+        )
 
     # ========================================================================
     # Health Check Endpoint
@@ -411,6 +487,7 @@ def create_app() -> FastAPI:
                 metadata=metadata or {},
                 routing=result.get("routing"),
                 timing=result.get("timing"),
+                correlation_id=get_correlation_id(),
             )
 
         except ValidationError as e:
@@ -504,6 +581,23 @@ def create_app() -> FastAPI:
             payload["chunks_loaded"] = len(app.state.chunks) if app.state.chunks else 0
 
         return JSONResponse(payload)
+
+    @app.get("/metrics")
+    async def prometheus_metrics() -> Response:
+        """Standard Prometheus metrics endpoint.
+
+        This is the conventional endpoint path for Prometheus scraping.
+        Returns metrics in Prometheus text format.
+
+        Example scrape config:
+            scrape_configs:
+              - job_name: 'clockify-rag'
+                static_configs:
+                  - targets: ['localhost:8000']
+        """
+        collector = get_metrics()
+        payload = collector.export_prometheus()
+        return Response(payload, media_type="text/plain; version=0.0.4; charset=utf-8")
 
     return app
 

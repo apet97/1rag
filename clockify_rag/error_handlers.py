@@ -256,6 +256,9 @@ def graceful_error_handler(error_type: str, default_return: Any = None, log_leve
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
+            except (SystemExit, KeyboardInterrupt):
+                # Never swallow these - always re-raise
+                raise
             except Exception as e:
                 if error_type == "ALL" or error_type in str(type(e)):
                     error_msg = format_error_message(

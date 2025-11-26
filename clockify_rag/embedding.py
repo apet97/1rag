@@ -1,5 +1,7 @@
 """Embedding generation using local SentenceTransformer or Ollama API."""
 
+import atexit
+import gc
 import json
 import logging
 import os
@@ -20,6 +22,41 @@ _MAX_OUTSTANDING_REQUESTS = 64
 
 # Global state for lazy-loaded cross-encoder (OPTIMIZATION: Fast, accurate reranking)
 _CROSS_ENCODER = None
+
+
+def cleanup_embedding_models():
+    """Clean up embedding model resources to free memory.
+
+    This function releases the SentenceTransformer and CrossEncoder models
+    from memory. Useful for:
+    - Process shutdown (registered via atexit)
+    - Testing (reset state between tests)
+    - Memory-constrained environments
+
+    After cleanup, models will be lazily reloaded on next use.
+    """
+    global _ST_ENCODER, _CROSS_ENCODER
+
+    cleaned = []
+
+    if _ST_ENCODER is not None:
+        del _ST_ENCODER
+        _ST_ENCODER = None
+        cleaned.append("SentenceTransformer")
+
+    if _CROSS_ENCODER is not None:
+        del _CROSS_ENCODER
+        _CROSS_ENCODER = None
+        cleaned.append("CrossEncoder")
+
+    if cleaned:
+        # Force garbage collection to actually free memory
+        gc.collect()
+        logger.debug("Cleaned up embedding models: %s", ", ".join(cleaned))
+
+
+# Register cleanup on process exit
+atexit.register(cleanup_embedding_models)
 
 
 def _load_st_encoder():
