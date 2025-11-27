@@ -213,10 +213,10 @@ def invoke_llm(
 
 
 async def invoke_llm_async(
-        prompt: Union[str, List[BaseMessage]],
-        temperature: float = 0.0,
-        timeout: float = 120.0,
-    ) -> str:
+    prompt: Union[str, List[BaseMessage]],
+    temperature: float = 0.0,
+    timeout: float = 120.0,
+) -> str:
     """Invoke the LLM asynchronously with circuit breaker protection and timeout.
 
     This is the async equivalent of invoke_llm(), providing:

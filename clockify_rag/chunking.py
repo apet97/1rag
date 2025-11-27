@@ -555,12 +555,12 @@ def extract_metadata(text: str) -> Dict[str, str]:
     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
     urls = re.findall(url_pattern, text)
     if urls:
-            metadata["urls"] = urls[:5]  # Limit to first 5 URLs
+        metadata["urls"] = urls[:5]  # Limit to first 5 URLs
 
     # Extract email addresses
     email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
     emails = re.findall(email_pattern, text)
     if emails:
-            metadata["emails"] = emails[:5]  # Limit to first 5 emails
+        metadata["emails"] = emails[:5]  # Limit to first 5 emails
 
     return metadata

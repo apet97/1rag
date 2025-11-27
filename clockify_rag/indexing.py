@@ -235,7 +235,9 @@ def build_bm25(chunks: list) -> dict:
     }
 
 
-def bm25_scores(query: str, bm: dict, k1: Optional[float] = None, b: Optional[float] = None, top_k: Optional[int] = None) -> np.ndarray:
+def bm25_scores(
+    query: str, bm: dict, k1: Optional[float] = None, b: Optional[float] = None, top_k: Optional[int] = None
+) -> np.ndarray:
     """Compute BM25 scores with optional early termination (Rank 24)."""
     if k1 is None:
         k1 = config.BM25_K1

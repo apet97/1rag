@@ -226,8 +226,8 @@ def get_circuit_breaker(
             timeout = reset_timeout or getattr(config, "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0)
             _CIRCUIT_BREAKERS[name] = CircuitBreaker(
                 name=name,
-            failure_threshold=int(threshold),
-            reset_timeout=float(timeout),
+                failure_threshold=int(threshold),
+                reset_timeout=float(timeout),
             )
             logger.debug("circuit_breaker: created name=%s threshold=%d timeout=%.1fs", name, threshold, timeout)
         return _CIRCUIT_BREAKERS[name]

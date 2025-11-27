@@ -71,7 +71,9 @@ def _get_env_value(
     return default
 
 
-def _parse_env_float(key: str, default: float, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float:
+def _parse_env_float(
+    key: str, default: float, min_val: Optional[float] = None, max_val: Optional[float] = None
+) -> float:
     """Parse float from environment with validation.
 
     FIX (Error #13): Prevents crashes from invalid env var values.
