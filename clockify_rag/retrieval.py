@@ -481,6 +481,9 @@ def normalize_scores_zscore(arr: np.ndarray) -> np.ndarray:
     a = np.asarray(arr, dtype="float32")
     if a.size == 0:
         return a
+    # Guard against NaN/inf to avoid warnings in degenerate cases
+    if not np.isfinite(a).all():
+        a = np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
     m, s = a.mean(), a.std()
     if s == 0:
         # All scores identical = no discriminative signal, return zeros
