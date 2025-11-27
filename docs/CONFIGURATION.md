@@ -43,7 +43,7 @@ See [README.md](../README.md) for the zero-config quickstart.
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `DEFAULT_TOP_K` | `15` | Candidates fetched per retriever before filtering. |
-| `DEFAULT_PACK_TOP` | `8` | Snippets packed into the prompt. |
+| `DEFAULT_PACK_TOP` | `10` | Snippets packed into the prompt. |
 | `DEFAULT_THRESHOLD` | `0.25` | Minimum hybrid score to include a chunk. |
 | `DEFAULT_NUM_CTX` | `32768` | Context window passed to the LLM. |
 | `DEFAULT_NUM_PREDICT` | `512` | Max output tokens. |

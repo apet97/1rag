@@ -78,7 +78,7 @@ RAG_EMBED_MODEL=nomic-embed-text          # Embedding model (768-dim)
 CTX_BUDGET=12000                         # Context token budget
 DEFAULT_TOP_K=15                         # Retrieval depth (default candidates)
 MAX_TOP_K=50                             # Maximum top-K ceiling (safety cap)
-DEFAULT_PACK_TOP=8                       # Snippets to pack in context
+DEFAULT_PACK_TOP=10                      # Snippets to pack in context
 
 # Security and Privacy
 RAG_LOG_INCLUDE_ANSWER=1                 # Include answers in logs (0 for privacy)

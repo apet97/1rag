@@ -119,7 +119,7 @@ EMB_MODEL=nomic-embed-text
 
 # Retrieval
 DEFAULT_TOP_K=15
-DEFAULT_PACK_TOP=8
+DEFAULT_PACK_TOP=10
 DEFAULT_THRESHOLD=0.25
 
 # Context budget

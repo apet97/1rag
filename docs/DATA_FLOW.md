@@ -89,7 +89,7 @@ The RAG system processes user questions through a multi-stage pipeline combining
 ┌─────────────────┐
 │   Reranking &   │  retrieval.py: pack_snippets()
 │  Token Budget   │  • Sort by hybrid score (BM25 + dense)
-│                 │  • Pack top 8 chunks (DEFAULT_PACK_TOP)
+│                 │  • Pack top 10 chunks (DEFAULT_PACK_TOP)
 │                 │  • Token budget: 60% of num_ctx (~7,200 tokens)
 │                 │  • Reserve 40% for system prompt + generation
 │                 │  • Truncation: Ellipsis if chunk exceeds budget

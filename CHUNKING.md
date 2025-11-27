@@ -101,7 +101,7 @@ The chunking configuration works in tandem with retrieval parameters to prevent 
 ```bash
 DEFAULT_TOP_K=15      # Number of chunks to retrieve (default)
 MAX_TOP_K=50          # Hard ceiling to prevent context overflow
-DEFAULT_PACK_TOP=8    # Number of chunks to pack into final context
+DEFAULT_PACK_TOP=10    # Number of chunks to pack into final context
 CTX_TOKEN_BUDGET=12000  # Token budget for snippet packing
 ```
 

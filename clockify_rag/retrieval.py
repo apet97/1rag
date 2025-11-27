@@ -764,11 +764,15 @@ def retrieve(
     else:
         top_idx = np.array([], dtype=np.int32)
 
-    # Deduplication
+    # Deduplication (stable by article key to avoid cross-article collisions)
     seen = set()
     filtered = []
     for i in top_idx:
-        key = (chunks[i]["title"], chunks[i]["section"])
+        try:
+            dedup_key = (_article_key(chunks[i]), chunks[i].get("section"))
+        except Exception:
+            dedup_key = (chunks[i].get("title"), chunks[i].get("section"))
+        key = dedup_key
         if key in seen:
             continue
         seen.add(key)

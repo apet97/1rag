@@ -461,6 +461,7 @@ def create_app() -> FastAPI:
                 top_k=request.top_k,
                 pack_top=request.pack_top,
                 threshold=request.threshold,
+                use_rerank=True,
                 hnsw=hnsw,
             )
             result = await loop.run_in_executor(None, answer_future)

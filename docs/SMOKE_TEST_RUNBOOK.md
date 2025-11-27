@@ -296,7 +296,7 @@ export RAG_OLLAMA_URL=http://your-ollama:11434
 # Retrieval tuning
 export DEFAULT_TOP_K=15                 # Default retrieval fan-out
 export MAX_TOP_K=50                     # Hard ceiling to prevent overflow
-export DEFAULT_PACK_TOP=8               # Snippets in context
+export DEFAULT_PACK_TOP=10              # Snippets in context
 export CTX_TOKEN_BUDGET=12000           # Token budget for context
 
 # Performance

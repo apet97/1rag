@@ -378,8 +378,8 @@ RETRIEVAL_K = DEFAULT_TOP_K  # Backward compatibility and semantic clarity
 MAX_TOP_K = _parse_env_int("MAX_TOP_K", 50, min_val=1, max_val=200)
 
 DEFAULT_PACK_TOP = _parse_env_int(
-    "DEFAULT_PACK_TOP", 8, min_val=1, max_val=50
-)  # Was 6, now 8 (more snippets in context)
+    "DEFAULT_PACK_TOP", 10, min_val=1, max_val=50
+)  # Was 8, now 10 (more snippets in context)
 DEFAULT_THRESHOLD = _parse_env_float(
     "DEFAULT_THRESHOLD", 0.25, min_val=0.0, max_val=1.0
 )  # Was 0.30, now 0.25 (lower bar)

@@ -448,6 +448,7 @@ def query(
             top_k=top_k,
             pack_top=pack_top,
             threshold=threshold,
+            use_rerank=True,
             hnsw=hnsw,
         )
 
@@ -571,6 +572,7 @@ def chat(
             top_k=top_k,
             pack_top=pack_top,
             threshold=threshold,
+            use_rerank=True,
             debug=debug,
         )
     except KeyboardInterrupt:
