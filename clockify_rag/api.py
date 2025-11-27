@@ -203,6 +203,7 @@ def create_app() -> FastAPI:
         # Ensure a sufficiently-sized executor for run_in_executor workloads (queries/ingest)
         executor = ThreadPoolExecutor(max_workers=_threadpool_workers())
         asyncio.get_running_loop().set_default_executor(executor)
+        _app.state.executor = executor
         try:
             logger.info("Loading index on startup...")
             try:
@@ -468,7 +469,8 @@ def create_app() -> FastAPI:
                 use_rerank=True,
                 hnsw=hnsw,
             )
-            result = await loop.run_in_executor(None, answer_future)
+            executor = getattr(app.state, "executor", None)
+            result = await loop.run_in_executor(executor, answer_future)
 
             elapsed_ms = (time.time() - start_time) * 1000
 
