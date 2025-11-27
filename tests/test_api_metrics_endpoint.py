@@ -64,8 +64,8 @@ def patched_pipeline(monkeypatch, sample_chunks, sample_embeddings, sample_bm25)
         packed_ids = [chunks[idx]["id"] for idx in selected[:pack_top]]
         return "context", packed_ids, 42, []
 
-    def fake_rerank(question, chunks, mmr_selected, scores, use_rerank, **kwargs):
-        return mmr_selected, {}, False, "disabled", 0.0
+    def fake_rerank(question, chunks, mmr_selected, scores, seed=None, num_ctx=None, num_predict=None, retries=None):
+        return mmr_selected, {}, False, "disabled"
 
     def fake_ask_llm(_question, _context, **_kwargs):
         return json.dumps({"answer": "Use the timer [1]", "confidence": 55})

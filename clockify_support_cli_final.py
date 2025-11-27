@@ -25,22 +25,14 @@ DESIGN
 
 # Standard library imports
 import atexit
-import hashlib
-import json
 import logging
 import os
 import sys
-import threading
-import time
-from typing import Any
 
-# Third-party imports
-import numpy as np
 # Package imports
 import clockify_rag.config as config
-from clockify_rag.caching import get_query_cache, get_rate_limiter, QueryCache, RateLimiter, log_query
-from clockify_rag.utils import _release_lock_if_owner, _log_config_summary
-from clockify_rag.exceptions import EmbeddingError, LLMError, IndexLoadError, BuildError
+from clockify_rag.caching import get_query_cache, get_rate_limiter
+from clockify_rag.utils import _release_lock_if_owner
 from clockify_rag.cli import (
     setup_cli_args,
     configure_logging_and_config,
@@ -48,7 +40,6 @@ from clockify_rag.cli import (
     handle_ask_command,
     handle_chat_command,
     chat_repl,
-    warmup_on_startup
 )
 from clockify_rag.api_client import get_llm_client
 
@@ -123,6 +114,7 @@ def run_selftest() -> bool:
     if index_ok and ok and strict_mode:
         try:
             from clockify_rag.cli import ensure_index_ready
+
             ensure_index_ready(retries=0)
             print("[SELFTEST] Retrieval path OK.")
         except Exception as e:
@@ -130,25 +122,7 @@ def run_selftest() -> bool:
             ok = False
 
     return ok and (index_ok or not strict_mode)
-from clockify_rag.error_handlers import print_system_health
 
-# Re-export config constants and functions for backward compatibility with tests
-from clockify_rag.config import (
-    LOG_QUERY_INCLUDE_CHUNKS,
-    QUERY_LOG_FILE,
-)
-
-# Re-export functions used by tests
-from clockify_rag.answer import answer_once
-from clockify_rag.retrieval import retrieve, coverage_ok
-from clockify_rag.indexing import build
-from clockify_rag.answer import (
-    apply_mmr_diversification,
-    apply_reranking,
-    pack_snippets,
-    generate_llm_answer,
-)
-from clockify_rag.utils import inject_policy_preamble
 
 # ====== MODULE GLOBALS ======
 logger = logging.getLogger(__name__)
@@ -161,6 +135,7 @@ QUERY_CACHE = get_query_cache()
 
 
 # ====== MAIN ENTRY POINT ======
+
 
 def main():
     """Main entry point - delegates to CLI module for all functionality."""
@@ -190,7 +165,7 @@ def main():
             handle_ask_command(args)
         elif args.cmd == "chat":
             handle_chat_command(args)
-    
+
     except KeyboardInterrupt:
         logger.info("Operation interrupted by user")
         sys.exit(1)
@@ -204,8 +179,8 @@ if __name__ == "__main__":
     # Check for --profile flag early (before parsing to avoid double-parse)
     if "--profile" in sys.argv:
         import cProfile
-        import pstats
         import io
+        import pstats
 
         print("=" * 60)
         print("cProfile: Performance profiling enabled")
@@ -237,8 +212,5 @@ if __name__ == "__main__":
             profiler.dump_stats(profile_file)
             print(f"\nFull profile saved to: {profile_file}")
             print(f"View with: python -m pstats {profile_file}")
-# The run_selftest function is now defined at the top of the file
-
-
-if __name__ == "__main__":
-    main()
+    else:
+        main()
