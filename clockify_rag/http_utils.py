@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 _thread_local = threading.local()
 
 # FIX (Error #3): Track all thread-local sessions for cleanup to prevent memory leaks
-_sessions_registry = weakref.WeakSet()
+_sessions_registry: "weakref.WeakSet[requests.Session]" = weakref.WeakSet()
 
 # Global requests session for keep-alive and retry logic (legacy, for non-threaded callers)
 REQUESTS_SESSION = None
@@ -91,7 +91,7 @@ def _mount_retries(sess: requests.Session, retries: int):
             status_forcelist=[429, 500, 502, 503, 504],
             method_whitelist=frozenset({"GET", "POST"}),
         )
-        retry_strategy = retry_cls(**kwargs)
+        retry_strategy = retry_cls(**kwargs)  # type: ignore[arg-type]
 
     # Rank 27: Explicit connection pooling parameters
     # pool_connections: number of connection pools to cache (1 per host)

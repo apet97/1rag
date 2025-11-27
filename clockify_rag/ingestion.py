@@ -226,7 +226,7 @@ def ingest_document(file_path: str, output_path: Optional[str] = None) -> str:
 
 
 def ingest_directory(
-    directory_path: str, output_path: Optional[str] = None, supported_extensions: List[str] = None
+    directory_path: str, output_path: Optional[str] = None, supported_extensions: Optional[List[str]] = None
 ) -> str:
     """Ingest all documents in a directory and combine into a single knowledge base.
 

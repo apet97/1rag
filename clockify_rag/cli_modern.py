@@ -131,9 +131,9 @@ def get_index_info() -> dict:
     all_required = all(os.path.exists(fname) for fname in required_files)
 
     # Cache statistics
-    cache_stats = {
+    cache_stats: dict = {
         "entries": 0,
-        "size_mb": 0,
+        "size_mb": 0.0,
         "exists": False,
     }
     cache_path = config.FILES.get("emb_cache", "emb_cache.jsonl")
@@ -180,7 +180,7 @@ def _extract_source_urls(result: dict, chunks: list) -> list[str]:
         if isinstance(src, str) and src.strip().lower().startswith("http"):
             urls.add(src.strip())
 
-    candidates = []
+    candidates: list = []
     candidates.extend(result.get("selected_chunk_ids") or [])
     candidates.extend(meta.get("source_chunk_ids") or [])
     candidates.extend(meta.get("sources_used") or [])

@@ -350,7 +350,7 @@ def create_app() -> FastAPI:
         ollama_ok = False
         loop = asyncio.get_running_loop()
         try:
-            await loop.run_in_executor(None, partial(check_ollama_connectivity, config.RAG_OLLAMA_URL, 2))
+            await loop.run_in_executor(None, partial(check_ollama_connectivity, config.RAG_OLLAMA_URL or "", 2))
             ollama_ok = True
         except Exception as e:
             # Ollama connectivity failure is acceptable for health check
@@ -387,9 +387,9 @@ def create_app() -> FastAPI:
     async def get_config() -> ConfigResponse:
         """Get current configuration."""
         return ConfigResponse(
-            ollama_url=config.RAG_OLLAMA_URL,
-            gen_model=config.RAG_CHAT_MODEL,
-            emb_model=config.RAG_EMBED_MODEL,
+            ollama_url=config.RAG_OLLAMA_URL or "",
+            gen_model=config.RAG_CHAT_MODEL or "",
+            emb_model=config.RAG_EMBED_MODEL or "",
             chunk_size=config.CHUNK_CHARS,
             top_k=config.DEFAULT_TOP_K,
             pack_top=config.DEFAULT_PACK_TOP,

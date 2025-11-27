@@ -46,7 +46,7 @@ def _extract_source_urls(chunks: list, result: dict) -> list[str]:
         if cid is not None:
             id_to_chunk[str(cid)] = c
 
-    candidates = []
+    candidates: list = []
     candidates.extend(result.get("selected_chunk_ids") or [])
     candidates.extend(meta.get("source_chunk_ids") or [])
 

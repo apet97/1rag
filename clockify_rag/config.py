@@ -71,7 +71,7 @@ def _get_env_value(
     return default
 
 
-def _parse_env_float(key: str, default: float, min_val: float = None, max_val: float = None) -> float:
+def _parse_env_float(key: str, default: float, min_val: Optional[float] = None, max_val: Optional[float] = None) -> float:
     """Parse float from environment with validation.
 
     FIX (Error #13): Prevents crashes from invalid env var values.
@@ -105,7 +105,7 @@ def _parse_env_float(key: str, default: float, min_val: float = None, max_val: f
     return parsed
 
 
-def _parse_env_int(key: str, default: int, min_val: int = None, max_val: int = None) -> int:
+def _parse_env_int(key: str, default: int, min_val: Optional[int] = None, max_val: Optional[int] = None) -> int:
     """Parse int from environment with validation.
 
     FIX (Error #13): Prevents crashes from invalid env var values.
@@ -236,9 +236,9 @@ def current_llm_settings(default_client_mode: str = "") -> LLMSettings:
     """Return a dataclass capturing the current Ollama + model configuration."""
 
     return LLMSettings(
-        base_url=RAG_OLLAMA_URL,
-        chat_model=RAG_CHAT_MODEL,
-        embed_model=RAG_EMBED_MODEL,
+        base_url=RAG_OLLAMA_URL or "",
+        chat_model=RAG_CHAT_MODEL or "",
+        embed_model=RAG_EMBED_MODEL or "",
         client_mode=get_llm_client_mode(default_client_mode),
     )
 
@@ -328,14 +328,14 @@ def get_llm_model() -> str:
     global _LLM_MODEL_CACHE
 
     if _LLM_MODEL_CACHE is not None:
-        return _LLM_MODEL_CACHE
+        return _LLM_MODEL_CACHE or RAG_CHAT_MODEL or ""
 
     client_mode = (get_llm_client_mode("") or "").lower()
     if client_mode in {"mock", "ci", "test"}:
         _LLM_MODEL_CACHE = RAG_CHAT_MODEL
         return _LLM_MODEL_CACHE
 
-    _LLM_MODEL_CACHE = RAG_CHAT_MODEL
+    _LLM_MODEL_CACHE = RAG_CHAT_MODEL or ""
     return _LLM_MODEL_CACHE
 
 
@@ -539,8 +539,8 @@ RATE_LIMIT_WINDOW = _parse_env_int("RATE_LIMIT_WINDOW", 60, min_val=1, max_val=3
 # ====== API AUTH CONFIG ======
 API_AUTH_MODE = (_get_env_value("API_AUTH_MODE", "none") or "none").strip().lower()
 _api_keys_raw = _get_env_value("API_ALLOWED_KEYS", "")
-if _api_keys_raw.strip():
-    API_ALLOWED_KEYS = frozenset(key.strip() for key in _api_keys_raw.split(",") if key.strip())
+if (_api_keys_raw or "").strip():
+    API_ALLOWED_KEYS = frozenset(key.strip() for key in (_api_keys_raw or "").split(",") if key.strip())
 else:
     API_ALLOWED_KEYS = frozenset()
 API_KEY_HEADER = (_get_env_value("API_KEY_HEADER", "x-api-key") or "x-api-key").strip() or "x-api-key"

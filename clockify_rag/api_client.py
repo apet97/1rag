@@ -188,9 +188,9 @@ class OllamaAPIClient(BaseLLMClient):
             rerank_read_timeout: Rerank-specific timeout (defaults to config)
             retries: Number of retries for failed requests (defaults to config)
         """
-        self.base_url = base_url or RAG_OLLAMA_URL
-        self.gen_model = gen_model or RAG_CHAT_MODEL
-        self.emb_model = emb_model or RAG_EMBED_MODEL
+        self.base_url: str = base_url or RAG_OLLAMA_URL or ""
+        self.gen_model: str = gen_model or RAG_CHAT_MODEL or ""
+        self.emb_model: str = emb_model or RAG_EMBED_MODEL or ""
         self.chat_connect_timeout = chat_connect_timeout or CHAT_CONNECT_T
         self.chat_read_timeout = chat_read_timeout or CHAT_READ_T
         self.emb_connect_timeout = emb_connect_timeout or EMB_CONNECT_T
@@ -201,8 +201,9 @@ class OllamaAPIClient(BaseLLMClient):
         # Set up session with proper proxy configuration
         self.session = get_session(retries=self.retries)
         self.session.trust_env = ALLOW_PROXIES
-        self._chat_endpoint = f"{self.base_url.rstrip('/')}/api/chat"
-        self._emb_endpoint = f"{self.base_url.rstrip('/')}/api/embeddings"
+        base = self.base_url.rstrip("/") if self.base_url else ""
+        self._chat_endpoint = f"{base}/api/chat"
+        self._emb_endpoint = f"{base}/api/embeddings"
 
     def _get_session(self, retries: int) -> requests.Session:
         """Return a requests.Session configured for the desired retry count."""
@@ -256,7 +257,12 @@ class OllamaAPIClient(BaseLLMClient):
             "repeat_penalty": 1.05,
         }
 
-        payload: ChatCompletionRequest = {"model": model, "messages": messages, "options": options, "stream": stream}
+        payload: ChatCompletionRequest = {
+            "model": model or self.gen_model,
+            "messages": messages,  # type: ignore[arg-type]
+            "options": options,
+            "stream": stream,
+        }
 
         req_timeout = timeout or (self.chat_connect_timeout, self.chat_read_timeout)
         req_retries = retries or self.retries
@@ -392,8 +398,7 @@ class OllamaAPIClient(BaseLLMClient):
         # Get session with appropriate retry settings for this request
         session = self._get_session(req_retries)
         response = None
-
-        payload: EmbeddingRequest = {"model": model, "prompt": text}
+        payload: EmbeddingRequest = {"model": model, "prompt": text, "options": None}
 
         logger.debug(f"Creating embedding for text of length {len(text)} with model {model}")
         start_time = time.time()

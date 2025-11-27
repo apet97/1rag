@@ -9,6 +9,7 @@ import platform
 import threading
 import time
 from collections import Counter
+from typing import Optional
 
 import numpy as np
 
@@ -30,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Global FAISS index with thread safety
 _FAISS_INDEX = None
-_FAISS_INDEX_PATH = None
+_FAISS_INDEX_PATH: Optional[str] = None
 _FAISS_LOCK = threading.Lock()
 
 
@@ -135,7 +136,7 @@ def build_faiss_index(vecs: np.ndarray, nlist: int = 256, metric: str = "ip") ->
     return index
 
 
-def save_faiss_index(index, path: str = None):
+def save_faiss_index(index, path: Optional[str] = None):
     """Save FAISS index to disk."""
     if index is None or path is None:
         return
@@ -145,7 +146,7 @@ def save_faiss_index(index, path: str = None):
         logger.debug(f"Saved FAISS index to {path}")
 
 
-def load_faiss_index(path: str = None):
+def load_faiss_index(path: Optional[str] = None):
     """Load FAISS index from disk with thread-safe lazy loading."""
     global _FAISS_INDEX, _FAISS_INDEX_PATH
 
@@ -174,7 +175,7 @@ def load_faiss_index(path: str = None):
         return None
 
 
-def get_faiss_index(path: str = None):
+def get_faiss_index(path: Optional[str] = None):
     """Thread-safe getter for global FAISS index.
 
     FIX (Error #1): Single source of truth for FAISS index state.
@@ -213,9 +214,9 @@ def build_bm25(chunks: list) -> dict:
     """Build BM25 index."""
     docs = [tokenize(c["text"]) for c in chunks]
     N = len(docs)
-    df = Counter()
-    doc_tfs = []
-    doc_lens = []
+    df: Counter = Counter()
+    doc_tfs: list[dict] = []
+    doc_lens: list[int] = []
     for toks in docs:
         tf = Counter(toks)
         doc_tfs.append(tf)
@@ -234,7 +235,7 @@ def build_bm25(chunks: list) -> dict:
     }
 
 
-def bm25_scores(query: str, bm: dict, k1: float = None, b: float = None, top_k: int = None) -> np.ndarray:
+def bm25_scores(query: str, bm: dict, k1: Optional[float] = None, b: Optional[float] = None, top_k: Optional[int] = None) -> np.ndarray:
     """Compute BM25 scores with optional early termination (Rank 24)."""
     if k1 is None:
         k1 = config.BM25_K1
@@ -257,7 +258,7 @@ def bm25_scores(query: str, bm: dict, k1: float = None, b: float = None, top_k: 
                 term_upper_bounds[w] = idf[w] * (k1 + 1)
 
         total_upper_bound = sum(term_upper_bounds.values())
-        top_scores = []
+        top_scores: list[tuple[float, int]] = []
         threshold = 0.0
 
         for i, tf in enumerate(doc_tfs):
@@ -359,7 +360,7 @@ def build(md_path: str, retries=None):
         logger.info(f"  Cache: {len(chunks) - len(cache_miss_indices)}/{len(chunks)} hits ({hit_rate:.1f}%)")
 
         # Embed cache misses
-        new_embeddings = []
+        new_embeddings: list = []
         if cache_miss_indices:
             texts_to_embed = [chunks[i]["text"] for i in cache_miss_indices]
             logger.info(f"  Computing {len(texts_to_embed)} new embeddings...")
@@ -489,7 +490,7 @@ def build(md_path: str, retries=None):
         logger.info("=" * 70)
 
 
-def load_index(kb_path: str = None):
+def load_index(kb_path: Optional[str] = None):
     """Load all index artifacts with dimension and freshness validation.
 
     FIX: Validates that stored embeddings match the current config.EMB_BACKEND and config.EMB_DIM

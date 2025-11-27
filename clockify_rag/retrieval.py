@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ====== RETRIEVAL PROFILING ======
 # FIX (Error #15): Add thread-safe lock for concurrent access to profiling state
 _RETRIEVE_PROFILE_LOCK = __import__("threading").RLock()
-RETRIEVE_PROFILE_LAST = {}
+RETRIEVE_PROFILE_LAST: dict = {}
 
 
 def get_retrieve_profile():
@@ -163,7 +163,7 @@ def compute_confidence_from_scores(
 
 
 # ====== INPUT VALIDATION ======
-def validate_query_length(question: str, max_length: int = None) -> str:
+def validate_query_length(question: str, max_length: Optional[int] = None) -> str:
     """Validate and sanitize user query to prevent DoS attacks.
 
     FIX (Error #5): Prevent unbounded user input from causing memory/CPU exhaustion.
@@ -348,7 +348,7 @@ def approx_tokens(chars: int) -> int:
     return max(1, chars // 4)
 
 
-def count_tokens(text: str, model: str = None) -> int:
+def count_tokens(text: str, model: Optional[str] = None) -> int:
     """Count actual tokens using tiktoken for supported models.
 
     Falls back to model-specific heuristics for Qwen and other models.
@@ -884,7 +884,7 @@ def rerank_with_llm(
         "repeat_penalty": 1.05,
     }
 
-    rerank_scores = {}
+    rerank_scores: Dict[int, float] = {}
     rerank_model = getattr(config, "RERANK_MODEL", "") or config.RAG_CHAT_MODEL
 
     try:

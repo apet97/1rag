@@ -125,12 +125,6 @@ def get_llm_client(temperature: float = 0.0) -> ChatOllama:
         base_url=config.RAG_OLLAMA_URL,
         model=model_name,
         temperature=temperature,
-        # VPN safety: never stream over flaky corporate networks
-        # Non-streaming ensures predictable request completion time
-        streaming=False,
-        # Reuse cached HTTP client for connection pool efficiency
-        # This avoids creating new connection pools on every call
-        client=_get_http_client(),
     )
 
 
@@ -212,17 +206,17 @@ def invoke_llm(
         llm = get_llm_client(temperature)
         response = llm.invoke(prompt)
         cb.record_success()
-        return response.content
+        return str(getattr(response, "content", response))
     except Exception:
         cb.record_failure()
         raise
 
 
 async def invoke_llm_async(
-    prompt: Union[str, List[BaseMessage]],
-    temperature: float = 0.0,
-    timeout: float = 120.0,
-) -> str:
+        prompt: Union[str, List[BaseMessage]],
+        temperature: float = 0.0,
+        timeout: float = 120.0,
+    ) -> str:
     """Invoke the LLM asynchronously with circuit breaker protection and timeout.
 
     This is the async equivalent of invoke_llm(), providing:
@@ -275,7 +269,7 @@ async def invoke_llm_async(
         # Use ainvoke for async operation with timeout enforcement
         response = await asyncio.wait_for(llm.ainvoke(prompt), timeout=timeout)
         cb.record_success()
-        return response.content
+        return str(getattr(response, "content", response))
     except asyncio.TimeoutError:
         cb.record_failure()
         raise

@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections import OrderedDict, deque
+from typing import Optional
 
 from .metrics import MetricNames, increment_counter, set_gauge
 
@@ -23,7 +24,7 @@ class RateLimiter:
         """Initialize rate limiter."""
         self.max_requests = max_requests
         self.window_seconds = window_seconds
-        self._timestamps = deque()
+        self._timestamps: deque[float] = deque()
         self._lock = threading.RLock()
 
     def allow_request(self) -> bool:
@@ -89,7 +90,7 @@ class QueryCache:
         """Backwards-compatible access to cache dict."""
         return self._cache
 
-    def _hash_question(self, question: str, params: dict = None) -> str:
+    def _hash_question(self, question: str, params: Optional[dict] = None) -> str:
         """Generate cache key from question and retrieval parameters.
 
         Args:
@@ -104,7 +105,7 @@ class QueryCache:
             cache_input = question + str(sorted_params)
         return hashlib.md5(cache_input.encode("utf-8")).hexdigest()
 
-    def get(self, question: str, params: dict = None):
+    def get(self, question: str, params: Optional[dict] = None):
         """Retrieve cached answer if available and not expired.
 
         Args:
@@ -145,7 +146,7 @@ class QueryCache:
             logger.debug(f"[cache] HIT question_hash={key[:8]} age={age:.1f}s")
             return answer, metadata
 
-    def put(self, question: str, answer: str, metadata: dict, params: dict = None):
+    def put(self, question: str, answer: str, metadata: dict, params: Optional[dict] = None):
         """Store answer in cache.
 
         Args:
@@ -319,7 +320,12 @@ def get_query_cache():
 
 
 def log_query(
-    query: str, answer: str, retrieved_chunks: list, latency_ms: float, refused: bool = False, metadata: dict = None
+    query: str,
+    answer: str,
+    retrieved_chunks: list,
+    latency_ms: float,
+    refused: bool = False,
+    metadata: Optional[dict] = None,
 ):
     """Log query with structured JSON format for monitoring and analytics.
 
@@ -348,9 +354,9 @@ def log_query(
             normalized = chunk.copy()
             chunk_id = normalized.get("id") or normalized.get("chunk_id")
             normalized["id"] = chunk_id
-            normalized["dense"] = float(normalized.get("dense", normalized.get("score", 0.0)))
-            normalized["bm25"] = float(normalized.get("bm25", 0.0))
-            normalized["hybrid"] = float(normalized.get("hybrid", normalized["dense"]))
+            normalized["dense"] = float(normalized.get("dense", normalized.get("score", 0.0)) or 0.0)
+            normalized["bm25"] = float(normalized.get("bm25", 0.0) or 0.0)
+            normalized["hybrid"] = float(normalized.get("hybrid", normalized["dense"]) or 0.0)
             # Redact chunk text for security/privacy unless explicitly enabled
             if not LOG_QUERY_INCLUDE_CHUNKS:
                 normalized.pop("chunk", None)  # Remove full chunk text

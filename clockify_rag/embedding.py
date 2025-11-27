@@ -37,7 +37,7 @@ def cleanup_embedding_models():
     """
     global _ST_ENCODER, _CROSS_ENCODER
 
-    cleaned = []
+    cleaned: list[str] = []
 
     if _ST_ENCODER is not None:
         del _ST_ENCODER
@@ -225,7 +225,7 @@ def embed_texts(texts: list, retries: int | None = None, suppress_errors: bool =
         with ThreadPoolExecutor(max_workers=config.EMB_MAX_WORKERS) as executor:
             # Priority #7: Use sliding window approach instead of submitting all at once
             # Submit initial batch
-            pending_futures = {}
+            pending_futures: dict = {}
             text_iter = enumerate(texts)
 
             # Submit initial batch up to max_outstanding without dropping the item

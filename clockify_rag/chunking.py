@@ -161,7 +161,7 @@ def _iter_markdown_sources(md_path: pathlib.Path):
         yield md_path, md_path.read_text(encoding="utf-8", errors="ignore")
 
 
-def sliding_chunks(text: str, maxc: int = None, overlap: int = None) -> list:
+def sliding_chunks(text: str, maxc: Optional[int] = None, overlap: Optional[int] = None) -> list:
     """Advanced overlapping chunks with multiple strategies and semantic awareness.
 
     Uses hierarchical chunking strategies:
@@ -310,7 +310,7 @@ def sentence_aware_chunking(text: str, maxc: int, overlap: int) -> list:
             sentences = nltk.sent_tokenize(text)
 
             # Build chunks by accumulating sentences
-            current_chunk = []
+            current_chunk: list[str] = []
             current_len = 0
 
             for sent in sentences:
@@ -345,7 +345,7 @@ def sentence_aware_chunking(text: str, maxc: int, overlap: int) -> list:
 
                     # Start new chunk with overlap (last N sentences that fit in overlap)
                     overlap_chars = 0
-                    overlap_sents = []
+                    overlap_sents: list[str] = []
                     for prev_sent in reversed(current_chunk):
                         if overlap_chars + len(prev_sent) <= overlap:
                             overlap_sents.insert(0, prev_sent)
@@ -536,7 +536,7 @@ def extract_metadata(text: str) -> Dict[str, str]:
     Returns:
         Dictionary of extracted metadata
     """
-    metadata = {}
+    metadata: Dict[str, Any] = {}
 
     # Extract dates (common formats)
     date_patterns = [
@@ -555,12 +555,12 @@ def extract_metadata(text: str) -> Dict[str, str]:
     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
     urls = re.findall(url_pattern, text)
     if urls:
-        metadata["urls"] = urls[:5]  # Limit to first 5 URLs
+            metadata["urls"] = urls[:5]  # Limit to first 5 URLs
 
     # Extract email addresses
     email_pattern = r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b"
     emails = re.findall(email_pattern, text)
     if emails:
-        metadata["emails"] = emails[:5]  # Limit to first 5 emails
+            metadata["emails"] = emails[:5]  # Limit to first 5 emails
 
     return metadata
