@@ -59,9 +59,9 @@ jobs:
 
     - name: Verify environment (strict mode)
       run: |
-        poetry run python scripts/verify_env.py --strict --json
-        echo "✓ Environment verification passed (strict)"
-      continue-on-error: true  # Allow to fail for now until all optional deps are in CI
+        poetry run python scripts/verify_env.py --strict --json || true
+        echo "⚠️ Strict verify_env is informational only in CI (Ollama/index may be absent)"
+      continue-on-error: true  # Keep non-blocking for missing Ollama/index
 
     - name: Run tests with pytest
       env:
