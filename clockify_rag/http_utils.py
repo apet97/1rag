@@ -75,7 +75,7 @@ def _mount_retries(sess: requests.Session, retries: int):
             allowed_methods=frozenset({"GET", "POST"}),
             respect_retry_after_header=True,
         )
-        retry_strategy = retry_cls(**kwargs)
+        retry_strategy = retry_cls(**kwargs)  # type: ignore[arg-type]
     except Exception:
         # older urllib3
         from urllib3.util import Retry as RetryOld

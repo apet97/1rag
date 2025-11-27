@@ -259,7 +259,7 @@ class OllamaAPIClient(BaseLLMClient):
 
         payload: ChatCompletionRequest = {
             "model": model or self.gen_model,
-            "messages": messages,  # type: ignore[arg-type]
+            "messages": messages,
             "options": options,
             "stream": stream,
         }
@@ -582,8 +582,8 @@ class MockLLMClient(BaseLLMClient):
         emb_model: Optional[str] = None,
         embed_dim: Optional[int] = None,
     ) -> None:
-        self.gen_model = gen_model or RAG_CHAT_MODEL
-        self.emb_model = emb_model or RAG_EMBED_MODEL
+        self.gen_model: str = gen_model or RAG_CHAT_MODEL or ""
+        self.emb_model: str = emb_model or RAG_EMBED_MODEL or ""
         if embed_dim is not None:
             self.embed_dim = embed_dim
         else:
@@ -632,8 +632,9 @@ class MockLLMClient(BaseLLMClient):
             content = f"[mock-answer] {snippet or 'No question provided.'}"
 
         now = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        resolved_model: str = model or self.gen_model
         response: ChatCompletionResponse = {
-            "model": model or self.gen_model,
+            "model": resolved_model,
             "created_at": now,
             "message": {"role": "assistant", "content": content},
             "done": True,

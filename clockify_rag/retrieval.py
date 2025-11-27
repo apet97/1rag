@@ -22,6 +22,7 @@ from typing import Any, Optional, Dict, List, Tuple
 
 import numpy as np
 import clockify_rag.config as config
+from .api_client import ChatCompletionOptions, ChatMessage
 from .embedding import embed_query as _embedding_embed_query
 from .exceptions import LLMError, ValidationError
 from .indexing import bm25_scores, get_faiss_index
@@ -362,15 +363,14 @@ def count_tokens(text: str, model: Optional[str] = None) -> int:
     """
     from . import config
 
-    if model is None:
-        model = config.RAG_CHAT_MODEL
+    model_name: str = model or config.RAG_CHAT_MODEL or ""
 
     # Try tiktoken for GPT models
-    if "gpt" in model.lower():
+    if "gpt" in model_name.lower():
         try:
             import tiktoken
 
-            encoding = tiktoken.encoding_for_model(model)
+            encoding = tiktoken.encoding_for_model(model_name)
             return len(encoding.encode(text))
         except (ImportError, KeyError):
             pass
@@ -378,7 +378,7 @@ def count_tokens(text: str, model: Optional[str] = None) -> int:
     # For Qwen and other models, use improved heuristic
     # Qwen tokenizer tends to be more efficient than GPT for English (~3.5 chars/token)
     # but less efficient for CJK content (~1.5 chars/token)
-    if "qwen" in model.lower():
+    if "qwen" in model_name.lower():
         # Count CJK characters (Chinese, Japanese, Korean)
         import re
 
@@ -872,9 +872,11 @@ def rerank_with_llm(
 
     from .api_client import chat_completion
 
-    messages = [{"role": "user", "content": RERANK_PROMPT.format(q=question, passages=passages_text)}]
+    messages: List[ChatMessage] = [
+        {"role": "user", "content": RERANK_PROMPT.format(q=question, passages=passages_text)}
+    ]
 
-    options = {
+    options: ChatCompletionOptions = {
         "temperature": 0,
         "seed": seed,
         "num_ctx": num_ctx,
@@ -1223,12 +1225,12 @@ def ask_llm(
         system_prompt = get_system_prompt()
         user_prompt = USER_WRAPPER.format(snips=snippets_block, q=question)
 
-    messages = [
+    messages: List[ChatMessage] = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
 
-    options = {
+    options: ChatCompletionOptions = {
         "temperature": 0,
         "seed": seed,
         "num_ctx": num_ctx,
@@ -1249,7 +1251,7 @@ def ask_llm(
         msg = (response.get("message") or {}).get("content")
         if msg:
             return msg
-        return response.get("response", "")
+        return str(response.get("response", ""))
     except LLMError:
         # Re-raise LLMError as is
         raise

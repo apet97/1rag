@@ -681,7 +681,8 @@ def handle_chat_command(args):
                     "options": dict(options),
                     "stream": False,
                 }
-                url = f"{config.RAG_OLLAMA_URL.rstrip('/')}/api/chat"
+                base_url = (config.RAG_OLLAMA_URL or "").rstrip("/")
+                url = f"{base_url}/api/chat"
                 resp1 = http_post_with_retries(
                     url,
                     payload,

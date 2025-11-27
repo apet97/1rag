@@ -334,7 +334,7 @@ def get_llm_model() -> str:
 
     client_mode = (get_llm_client_mode("") or "").lower()
     if client_mode in {"mock", "ci", "test"}:
-        _LLM_MODEL_CACHE = RAG_CHAT_MODEL
+        _LLM_MODEL_CACHE = RAG_CHAT_MODEL or ""
         return _LLM_MODEL_CACHE
 
     _LLM_MODEL_CACHE = RAG_CHAT_MODEL or ""

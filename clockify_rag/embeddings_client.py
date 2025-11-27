@@ -12,7 +12,7 @@ Ollama instance. Designed for:
 import logging
 import os
 import time
-from typing import List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
 import numpy as np
 import requests
@@ -71,7 +71,7 @@ except ImportError as e:
             _HAS_LANGCHAIN = False
 
 # Global instance (lazy-loaded)
-_EMBEDDING_CLIENT = None  # type: ignore
+_EMBEDDING_CLIENT = None
 _EMBEDDING_DIM: int | None = None
 _RETRYABLE_EXC = (
     requests.exceptions.Timeout,
@@ -81,10 +81,10 @@ _RETRYABLE_EXC = (
 )
 
 
-def _build_ollama_client_kwargs() -> dict:
+def _build_ollama_client_kwargs() -> dict[str, Any]:
     """Return kwargs for OllamaEmbeddings constructor with explicit timeouts where supported."""
 
-    kwargs = {"base_url": RAG_OLLAMA_URL, "model": RAG_EMBED_MODEL}
+    kwargs: dict[str, Any] = {"base_url": RAG_OLLAMA_URL, "model": RAG_EMBED_MODEL}
 
     # Best-effort: newer langchain-ollama versions accept client/timeout params.
     try:

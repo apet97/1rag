@@ -238,7 +238,7 @@ def doctor(
 
         # Check Ollama connectivity
         try:
-            normalized = check_ollama_connectivity(config.RAG_OLLAMA_URL, timeout=3)
+            normalized = check_ollama_connectivity(config.RAG_OLLAMA_URL or "", timeout=3)
             output["ollama"] = {"connected": True, "endpoint": normalized, "error": None}
         except Exception as e:
             output["ollama"] = {"connected": False, "endpoint": config.RAG_OLLAMA_URL, "error": str(e)}
@@ -310,7 +310,7 @@ def doctor(
 
     # Ollama Connectivity
     try:
-        normalized = check_ollama_connectivity(config.RAG_OLLAMA_URL, timeout=3)
+        normalized = check_ollama_connectivity(config.RAG_OLLAMA_URL or "", timeout=3)
         console.print(f"✅ Ollama: Connected to {normalized}")
     except Exception as e:
         console.print(f"❌ Ollama: Connection failed - {e}")
@@ -320,9 +320,9 @@ def doctor(
     config_table = Table(title="⚙️ Configuration", show_header=False)
     config_table.add_column("Key", style="cyan")
     config_table.add_column("Value", style="white")
-    config_table.add_row("Ollama URL", config.RAG_OLLAMA_URL)
-    config_table.add_row("Generation Model", config.RAG_CHAT_MODEL)
-    config_table.add_row("Embedding Model", config.RAG_EMBED_MODEL)
+    config_table.add_row("Ollama URL", str(config.RAG_OLLAMA_URL or ""))
+    config_table.add_row("Generation Model", str(config.RAG_CHAT_MODEL or ""))
+    config_table.add_row("Embedding Model", str(config.RAG_EMBED_MODEL or ""))
     config_table.add_row("Chunk Size", str(config.CHUNK_CHARS))
     config_table.add_row("Top-K Retrieval", str(config.DEFAULT_TOP_K))
     config_table.add_row("Pack Top", str(config.DEFAULT_PACK_TOP))
@@ -615,7 +615,7 @@ def eval(
     console.print(f"📊 Running evaluation on {questions_file}")
 
     try:
-        import ragas
+        import ragas  # type: ignore[import-not-found]
 
         console.print(f"✅ RAGAS {ragas.__version__} loaded")
     except ImportError:

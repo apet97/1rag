@@ -174,6 +174,7 @@ def main():
         logger.debug("Full traceback:", exc_info=True)
         sys.exit(1)
 
+
 if __name__ == "__main__":
     # Rank 29: cProfile profiling support
     # Check for --profile flag early (before parsing to avoid double-parse)

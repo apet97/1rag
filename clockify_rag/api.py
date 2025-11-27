@@ -452,15 +452,19 @@ def create_app() -> FastAPI:
                     )
 
             loop = asyncio.get_running_loop()
+            resolved_top_k = int(request.top_k) if request.top_k is not None else config.DEFAULT_TOP_K
+            resolved_pack_top = int(request.pack_top) if request.pack_top is not None else config.DEFAULT_PACK_TOP
+            resolved_threshold = float(request.threshold) if request.threshold is not None else config.DEFAULT_THRESHOLD
+
             answer_future = partial(
                 answer_once,
                 request.question,
                 chunks,
                 vecs_n,
                 bm,
-                top_k=request.top_k,
-                pack_top=request.pack_top,
-                threshold=request.threshold,
+                top_k=resolved_top_k,
+                pack_top=resolved_pack_top,
+                threshold=resolved_threshold,
                 use_rerank=True,
                 hnsw=hnsw,
             )

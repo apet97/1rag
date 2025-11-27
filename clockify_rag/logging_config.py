@@ -156,6 +156,7 @@ def setup_logging(
     correlation_filter = CorrelationIdFilter() if enable_correlation_ids else None
 
     # Create formatter based on type
+    formatter: logging.Formatter
     if format_type == "json":
         formatter = JSONFormatter()
     else:
@@ -178,7 +179,7 @@ def setup_logging(
 
         # Use RotatingFileHandler for automatic log rotation
         if use_rotation:
-            file_handler = logging.handlers.RotatingFileHandler(
+            file_handler: logging.Handler = logging.handlers.RotatingFileHandler(
                 log_file,
                 mode="a",
                 maxBytes=max_bytes,

@@ -361,8 +361,11 @@ def build(md_path: str, retries=None):
         hit_rate = (len(chunks) - len(cache_miss_indices)) / len(chunks) * 100 if chunks else 0
         logger.info(f"  Cache: {len(chunks) - len(cache_miss_indices)}/{len(chunks)} hits ({hit_rate:.1f}%)")
 
+        # Compute expected dimension based on current backend
+        expected_dim = config.EMB_DIM_LOCAL if config.EMB_BACKEND == "local" else config.EMB_DIM_OLLAMA
+
         # Embed cache misses
-        new_embeddings: list = []
+        new_embeddings: np.ndarray = np.empty((0, expected_dim), dtype=np.float32)
         if cache_miss_indices:
             texts_to_embed = [chunks[i]["text"] for i in cache_miss_indices]
             logger.info(f"  Computing {len(texts_to_embed)} new embeddings...")
@@ -377,10 +380,7 @@ def build(md_path: str, retries=None):
                 emb_cache[chunk_hash] = new_embeddings[i].astype(np.float32)
 
         # Reconstruct full embedding matrix with dimension validation
-        # Compute expected dimension based on current backend
-        expected_dim = config.EMB_DIM_LOCAL if config.EMB_BACKEND == "local" else config.EMB_DIM_OLLAMA
-
-        vecs = []
+        vecs_list: list = []
         new_emb_idx = 0
         for i in range(len(chunks)):
             if cache_hits[i] is not None:
@@ -393,7 +393,7 @@ def build(md_path: str, retries=None):
                         f"This should have been filtered by load_embedding_cache(). "
                         f"Try deleting {config.FILES['emb_cache']} and rebuilding."
                     )
-                vecs.append(cached_emb)
+                vecs_list.append(cached_emb)
             else:
                 new_emb = new_embeddings[new_emb_idx]
                 # Validate new embedding dimension
@@ -403,13 +403,13 @@ def build(md_path: str, retries=None):
                         f"expected {expected_dim} for backend={config.EMB_BACKEND}. "
                         f"Check {config.EMB_BACKEND} configuration or model output."
                     )
-                vecs.append(new_emb)
+                vecs_list.append(new_emb)
                 new_emb_idx += 1
 
         # Final sanity check before array construction
-        if vecs:
-            first_dim = len(vecs[0])
-            for idx, vec in enumerate(vecs):
+        if vecs_list:
+            first_dim = len(vecs_list[0])
+            for idx, vec in enumerate(vecs_list):
                 if len(vec) != first_dim:
                     raise BuildError(
                         f"Dimension mismatch at index {idx}: "
@@ -417,7 +417,7 @@ def build(md_path: str, retries=None):
                         f"Cannot mix embeddings with different dimensions."
                     )
 
-        vecs = np.array(vecs, dtype=np.float32)
+        vecs = np.array(vecs_list, dtype=np.float32)
 
         if cache_miss_indices:
             save_embedding_cache(emb_cache)

@@ -129,7 +129,7 @@ def extract_text_from_docx(file_path: str) -> str:
         ValueError: If DOCX parsing fails or dependency not available
     """
     try:
-        import docx
+        import docx  # type: ignore[import-untyped]
     except ImportError:
         raise ValueError("python-docx not installed. Install with: pip install python-docx")
 
@@ -179,7 +179,7 @@ def convert_to_markdown_format(content: str, title: str = "Document Content", ur
     return md_content
 
 
-def ingest_document(file_path: str, output_path: Optional[str] = None) -> str:
+def ingest_document(file_path: str | Path, output_path: Optional[str] = None) -> str:
     """Ingest a document of various formats and convert to normalized format for RAG.
 
     Args:
@@ -226,7 +226,7 @@ def ingest_document(file_path: str, output_path: Optional[str] = None) -> str:
 
 
 def ingest_directory(
-    directory_path: str, output_path: Optional[str] = None, supported_extensions: Optional[List[str]] = None
+    directory_path: str | Path, output_path: Optional[str] = None, supported_extensions: Optional[List[str]] = None
 ) -> str:
     """Ingest all documents in a directory and combine into a single knowledge base.
 
@@ -300,7 +300,7 @@ def validate_ingestion_output(content: str) -> Tuple[bool, List[str]]:
 
 
 # For backward compatibility with existing code
-def build_docs_from_source(source_path: str, output_path: Optional[str] = None) -> str:
+def build_docs_from_source(source_path: str | Path, output_path: Optional[str] = None) -> str:
     """Backward-compatible function to build docs from various sources.
 
     Args:

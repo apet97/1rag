@@ -62,7 +62,7 @@ def check_remote_models() -> Tuple[bool, str]:
     try:
         from . import config
 
-        models = config._check_remote_models(config.RAG_OLLAMA_URL, timeout=5.0)
+        models = config._check_remote_models(config.RAG_OLLAMA_URL or "", timeout=5.0)
         if not models:
             return True, "Remote Ollama unreachable (will use primary model on retry)"
 
@@ -122,9 +122,10 @@ def check_end_to_end() -> Tuple[bool, str]:
         logger.info("Testing LLM generation...")
         llm = get_llm_client(temperature=0.0)
         response = llm.invoke([HumanMessage(content="What is 1+1?")])
-        if not response.content or "2" not in response.content.lower():
-            return False, f"LLM returned unexpected response: {response.content}"
-        logger.info(f"✓ LLM generation works: {response.content[:60]}...")
+        content = str(response.content or "")
+        if not content or "2" not in content.lower():
+            return False, f"LLM returned unexpected response: {content}"
+        logger.info(f"✓ LLM generation works: {content[:60]}...")
 
         return True, "End-to-end test passed"
     except Exception as e:

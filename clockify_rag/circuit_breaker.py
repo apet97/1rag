@@ -222,8 +222,12 @@ def get_circuit_breaker(
     """
     with _REGISTRY_LOCK:
         if name not in _CIRCUIT_BREAKERS:
-            threshold = failure_threshold or getattr(config, "CIRCUIT_BREAKER_THRESHOLD", 5)
-            timeout = reset_timeout or getattr(config, "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0)
+            threshold = (
+                failure_threshold if failure_threshold is not None else getattr(config, "CIRCUIT_BREAKER_THRESHOLD", 5)
+            )
+            timeout = (
+                reset_timeout if reset_timeout is not None else getattr(config, "CIRCUIT_BREAKER_RESET_TIMEOUT", 60.0)
+            )
             _CIRCUIT_BREAKERS[name] = CircuitBreaker(
                 name=name,
                 failure_threshold=int(threshold),
